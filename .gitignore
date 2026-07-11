@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+documents/*
+!documents/README.md
+workspace/*
+!workspace/README.md
+reports/
