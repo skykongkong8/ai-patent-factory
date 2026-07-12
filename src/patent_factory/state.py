@@ -103,22 +103,26 @@ class StateStore:
         self.export_directories = frozenset(directories)
         if not directories:
             return
-        registered = {
-            Path(row["path"]).absolute(): (row["byte_hash"], row["byte_size"])
-            for row in self.connection.execute("SELECT path,byte_hash,byte_size FROM artifact_exports")
-        }
-        configured = set(directories)
-        if any(path.parent not in configured for path in registered):
-            raise StateError("artifact registry path is outside configured export directories")
-        for directory in directories:
-            recover_artifact_exports(
-                directory,
-                {
-                    path: expected
-                    for path, expected in registered.items()
-                    if path.parent == directory
-                },
-            )
+        # Recovery mutates the export directory, so coordinate it with the same
+        # SQLite writer lock used by publishers. Otherwise a second StateStore
+        # can mistake another writer's live temporary file for crash residue.
+        with immediate_transaction(self.connection):
+            registered = {
+                Path(row["path"]).absolute(): (row["byte_hash"], row["byte_size"])
+                for row in self.connection.execute("SELECT path,byte_hash,byte_size FROM artifact_exports")
+            }
+            configured = set(directories)
+            if any(path.parent not in configured for path in registered):
+                raise StateError("artifact registry path is outside configured export directories")
+            for directory in directories:
+                recover_artifact_exports(
+                    directory,
+                    {
+                        path: expected
+                        for path, expected in registered.items()
+                        if path.parent == directory
+                    },
+                )
 
     def _snapshot(self, run_id: str) -> RunSnapshot:
         row = self.connection.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
@@ -199,6 +203,11 @@ class StateStore:
 
     def _activate_revision(self, run_id: str, kind: str, revision_id: str, fault_at: FaultInjector) -> None:
         prior = self.connection.execute("SELECT revision_id FROM current_artifacts WHERE run_id=? AND kind=?", (run_id,kind)).fetchone()
+        pending_gate = self.connection.execute(
+            "SELECT 1 FROM gate_envelopes WHERE run_id=? AND status='pending'", (run_id,)
+        ).fetchone()
+        if pending_gate and (prior is None or prior[0] != revision_id):
+            raise GateMismatchError("pending gate must be resolved before artifact mutation")
         if prior and prior[0] != revision_id:
             self._invalidate_from(run_id, prior[0])
         inject_fault(fault_at, "after_invalidation")
@@ -252,6 +261,11 @@ class StateStore:
         )
         if artifact is None:
             raise StateError("published idempotency record has no artifact")
+        current = self.connection.execute(
+            "SELECT 1 FROM current_artifacts WHERE run_id=? AND revision_id=?", (run_id, artifact.revision_id)
+        ).fetchone()
+        if artifact.stale or current is None:
+            raise StaleRevisionError("idempotent result was invalidated")
         export = self.connection.execute(
             "SELECT path,byte_hash,byte_size FROM artifact_exports WHERE revision_id=?",
             (artifact.revision_id,),
@@ -273,6 +287,11 @@ class StateStore:
             prior_record = self.connection.execute("SELECT * FROM idempotency_records WHERE run_id=? AND operation=? AND idempotency_key=?", (run_id,operation,idempotency_key)).fetchone()
             if prior_record:
                 artifact = _as_revision(self.connection.execute("SELECT * FROM artifact_revisions WHERE revision_id=?", (prior_record["artifact_revision_id"],)).fetchone()) if prior_record["artifact_revision_id"] else None
+                current = self.connection.execute(
+                    "SELECT 1 FROM current_artifacts WHERE run_id=? AND revision_id=?", (run_id, artifact.revision_id)
+                ).fetchone() if artifact is not None else None
+                if artifact is not None and (artifact.stale or current is None):
+                    raise StaleRevisionError("idempotent result was invalidated")
                 return TransitionResult(self._snapshot(run_id),prior_record["event_id"],artifact,True)
             prior = self._snapshot(run_id)
             self._validate_direct_transition(prior.state, target)
@@ -299,9 +318,6 @@ class StateStore:
         directory = Path(export_directory).absolute()
         if directory not in self.export_directories:
             raise ArtifactError("artifact_path: export directory is not configured")
-        replay = self._published_replay(run_id, operation, idempotency_key)
-        if replay is not None:
-            return replay
         dependency_ids = tuple(sorted(set(dependencies)))
         artifact_hash = digest({
             "content": artifact_content,
@@ -315,11 +331,6 @@ class StateStore:
             if replay is not None:
                 return replay
             prior = self._snapshot(run_id)
-            self._validate_direct_transition(prior.state, target)
-            inject_fault(fault_at,"before_export")
-            exported = export_immutable_json(export_path,artifact_content,fault_hook=export_fault_hook)
-            inject_fault(fault_at,"after_export_publish")
-            inject_fault(fault_at,"before_database")
             decision_hashes: set[str] = set()
             if consumed_decision_id:
                 decision = self.connection.execute(
@@ -340,6 +351,11 @@ class StateStore:
                     raise GateMismatchError("a current consumed approval for the exact operation is required")
                 self._require_current_hash(run_id,decision["subject_revision_hash"])
                 decision_hashes.update((decision["subject_revision_hash"],decision["approval_scope_hash"]))
+            self._validate_direct_transition(prior.state, target)
+            inject_fault(fault_at,"before_export")
+            exported = export_immutable_json(export_path,artifact_content,fault_hook=export_fault_hook)
+            inject_fault(fault_at,"after_export_publish")
+            inject_fault(fault_at,"before_database")
             artifact = self._add_revision(run_id,artifact_kind,artifact_content,artifact_schema_version,dependency_ids,fault_at,activate=False)
             now = utc_now()
             export_id = "ex_" + digest({"revision_id":artifact.revision_id,"path":exported.path,"byte_hash":exported.content_hash})[:20]
@@ -377,13 +393,17 @@ class StateStore:
         with immediate_transaction(self.connection):
             prior = self._snapshot(run_id)
             self._require_current_hash(run_id,subject_revision_hash)
-            if desired_return != prior.state and desired_return not in ALLOWED_TRANSITIONS.get(gate_state,frozenset()):
-                raise GateMismatchError("return state is not permitted for this gate")
+            if desired_return != prior.state:
+                raise GateMismatchError("return state must equal the exact suspended state")
             if gate_state not in ALLOWED_TRANSITIONS.get(prior.state,frozenset()):
                 raise StateError(f"gate {gate_kind.value} cannot suspend {prior.state.value}")
             scope_json = canonical_json(approval_scope)
             scope_hash = digest(approval_scope)
             now = utc_now()
+            self.connection.execute(
+                "UPDATE gate_decisions SET stale=1 WHERE decision_id IN (SELECT gd.decision_id FROM gate_decisions gd JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id WHERE gd.run_id=? AND ge.kind=? AND gd.stale=0 AND gd.used_at IS NULL AND (gd.subject_revision_hash<>? OR gd.approval_scope_hash<>?))",
+                (run_id,gate_kind.value,subject_revision_hash,scope_hash),
+            )
             gate_id = "ge_" + digest({"run_id":run_id,"kind":gate_kind.value,"state":prior.state.value,"operation":suspended_operation,"subject":subject_revision_hash,"scope":scope_hash,"return":desired_return.value})[:20]
             self.connection.execute("INSERT INTO gate_envelopes VALUES(?,?,?,?,?,?,?,?,?,?,?, 'pending')", (gate_id,run_id,gate_kind.value,gate_state.value,prior.state.value,suspended_operation,subject_revision_hash,scope_json,scope_hash,desired_return.value,now))
             inject_fault(fault_at,"after_gate")
@@ -439,12 +459,13 @@ class StateStore:
                 "JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id WHERE gd.decision_id=?",
                 (decision_id,),
             ).fetchone()
-            if row is None or row["stale"] or row["consumed_at"] or row["used_at"]:
+            if row is None or row["stale"] or row["used_at"]:
                 raise GateMismatchError("decision is unavailable")
             if row["suspended_operation"] != suspended_operation or row["subject_revision_hash"] != subject_revision_hash or row["approval_scope_hash"] != digest(approval_scope):
                 raise GateMismatchError("decision does not authorize this operation, subject, and scope")
             if row["action"] not in AUTHORIZING_GATE_ACTIONS[GateKind(row["gate_kind"])]:
                 raise GateMismatchError("decision action does not authorize the guarded operation")
             now = utc_now()
-            self.connection.execute("UPDATE gate_decisions SET consumed_at=? WHERE decision_id=?", (now,decision_id))
-            return GateDecision(row["decision_id"],row["gate_id"],row["run_id"],row["action"],row["actor"],row["subject_revision_hash"],row["approval_scope_hash"],row["suspended_operation"],RunState(row["return_state"]),row["reason"],row["created_at"],False,now)
+            consumed_at = row["consumed_at"] or now
+            self.connection.execute("UPDATE gate_decisions SET consumed_at=? WHERE decision_id=? AND consumed_at IS NULL", (consumed_at,decision_id))
+            return GateDecision(row["decision_id"],row["gate_id"],row["run_id"],row["action"],row["actor"],row["subject_revision_hash"],row["approval_scope_hash"],row["suspended_operation"],RunState(row["return_state"]),row["reason"],row["created_at"],False,consumed_at)

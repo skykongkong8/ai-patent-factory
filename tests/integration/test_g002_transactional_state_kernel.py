@@ -6,7 +6,7 @@ from pathlib import Path
 
 from patent_factory.database import InjectedFailure, RunBusyError, connect_database
 from patent_factory.models import GateKind, RunState
-from patent_factory.state import ALLOWED_TRANSITIONS, GATE_ACTIONS, GATE_STATE_SET, GateMismatchError, StateError, StateStore
+from patent_factory.state import ALLOWED_TRANSITIONS, GATE_ACTIONS, GATE_STATE_SET, GateMismatchError, StaleRevisionError, StateError, StateStore
 
 
 class TransactionalStateKernelTests(unittest.TestCase):
@@ -271,8 +271,8 @@ class TransactionalStateKernelTests(unittest.TestCase):
                 store.consume_decision(decision.decision_id,suspended_operation="share:anywhere",subject_revision_hash=draft.content_hash,approval_scope=scope)
             consumed = store.consume_decision(decision.decision_id,suspended_operation="export:attorney",subject_revision_hash=draft.content_hash,approval_scope=scope)
             self.assertEqual(consumed.decision_id,decision.decision_id)
-            with self.assertRaises(GateMismatchError):
-                store.consume_decision(decision.decision_id,suspended_operation="export:attorney",subject_revision_hash=draft.content_hash,approval_scope=scope)
+            retried = store.consume_decision(decision.decision_id,suspended_operation="export:attorney",subject_revision_hash=draft.content_hash,approval_scope=scope)
+            self.assertEqual(retried.consumed_at,consumed.consumed_at)
             connection.close()
 
     def test_gate_actions_are_explicit_and_unknown_or_non_authorizing_actions_write_nothing_reusable(self):
@@ -310,6 +310,73 @@ class TransactionalStateKernelTests(unittest.TestCase):
                 store.consume_decision(decision.decision_id,suspended_operation="export",subject_revision_hash=draft.content_hash,approval_scope=scope)
             row = connection.execute("SELECT consumed_at,used_at,consumed_by_event_id FROM gate_decisions WHERE decision_id=?",(decision.decision_id,)).fetchone()
             self.assertEqual(tuple(row),(None,None,None))
+            connection.close()
+
+    def test_pending_gate_rejects_subject_mutation_and_remains_decidable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            connection = self.database(temporary)
+            store = StateStore(connection)
+            draft = self._draft_ready(connection,store)
+            scope = {"recipient":"attorney"}
+            envelope = store.suspend_gate("run",GateKind.SENSITIVE_DISCLOSURE,suspended_operation="export",subject_revision_hash=draft.content_hash,approval_scope=scope,return_state=RunState.DRAFT_READY,actor="user",reason="gate")
+            before = connection.execute("SELECT count(*) FROM artifact_revisions").fetchone()[0]
+            with self.assertRaisesRegex(GateMismatchError,"pending gate"):
+                store.add_revision("run","draft",{"body":"changed"})
+            self.assertEqual(connection.execute("SELECT count(*) FROM artifact_revisions").fetchone()[0],before)
+            self.assertEqual(connection.execute("SELECT status FROM gate_envelopes WHERE gate_id=?",(envelope.gate_id,)).fetchone()[0],"pending")
+            self.assertEqual(store.snapshot("run").state,RunState.SENSITIVE_DISCLOSURE_REQUIRED)
+            _,result = store.decide_gate(envelope.gate_id,action="approve",actor="user",reason="yes",subject_revision_hash=draft.content_hash,approval_scope=scope)
+            self.assertEqual(result.snapshot.state,RunState.DRAFT_READY)
+            connection.close()
+
+    def test_changed_gate_scope_stales_prior_unused_approval(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            connection = self.database(temporary)
+            store = StateStore(connection)
+            draft = self._draft_ready(connection,store)
+            first_scope = {"recipient":"attorney-a"}
+            first = store.suspend_gate("run",GateKind.SENSITIVE_DISCLOSURE,suspended_operation="export",subject_revision_hash=draft.content_hash,approval_scope=first_scope,return_state=RunState.DRAFT_READY,actor="user",reason="first")
+            decision,_ = store.decide_gate(first.gate_id,action="approve",actor="user",reason="yes",subject_revision_hash=draft.content_hash,approval_scope=first_scope)
+            second_scope = {"recipient":"attorney-b"}
+            second = store.suspend_gate("run",GateKind.SENSITIVE_DISCLOSURE,suspended_operation="export",subject_revision_hash=draft.content_hash,approval_scope=second_scope,return_state=RunState.DRAFT_READY,actor="user",reason="scope changed")
+            self.assertEqual(second.approval_scope,second_scope)
+            self.assertEqual(connection.execute("SELECT stale FROM gate_decisions WHERE decision_id=?",(decision.decision_id,)).fetchone()[0],1)
+            with self.assertRaises(GateMismatchError):
+                store.consume_decision(decision.decision_id,suspended_operation="export",subject_revision_hash=draft.content_hash,approval_scope=first_scope)
+            connection.close()
+
+    def test_gate_return_state_is_the_exact_suspended_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            connection = self.database(temporary)
+            store = StateStore(connection)
+            draft = self._draft_ready(connection, store)
+            before = tuple(connection.execute("SELECT state,state_version FROM runs WHERE run_id='run'").fetchone())
+            with self.assertRaisesRegex(GateMismatchError, "exact suspended state"):
+                store.suspend_gate(
+                    "run",
+                    GateKind.SENSITIVE_DISCLOSURE,
+                    suspended_operation="export",
+                    subject_revision_hash=draft.content_hash,
+                    approval_scope={"recipient": "attorney"},
+                    return_state=RunState.VALIDATED,
+                    actor="user",
+                    reason="invalid bypass",
+                )
+            self.assertEqual(connection.execute("SELECT count(*) FROM gate_envelopes").fetchone()[0], 0)
+            self.assertEqual(tuple(connection.execute("SELECT state,state_version FROM runs WHERE run_id='run'").fetchone()), before)
+            connection.close()
+
+    def test_invalidated_idempotent_artifact_cannot_replay(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            connection = self.database(temporary)
+            store = StateStore(connection)
+            store.create_run("run")
+            upstream = store.add_revision("run", "profile", {"value": 1})
+            first = store.transition("run", RunState.PROFILE_PENDING, actor="system", reason="initial", operation="profile", idempotency_key="fixed", artifact_kind="profile-step", artifact_content={"value": 1}, dependencies=(upstream.revision_id,))
+            store.add_revision("run", "profile", {"value": 2})
+            self.assertEqual(connection.execute("SELECT stale FROM artifact_revisions WHERE revision_id=?", (first.artifact.revision_id,)).fetchone()[0], 1)
+            with self.assertRaisesRegex(StaleRevisionError, "invalidated"):
+                store.transition("run", RunState.PROFILE_PENDING, actor="system", reason="replay", operation="profile", idempotency_key="fixed")
             connection.close()
 
     def test_decision_boundary_rolls_back_and_changed_subject_stales_decision(self):

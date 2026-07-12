@@ -52,6 +52,10 @@ def private_root(path: Path, label: str, *, create: bool = False) -> Path:
                 pass
     if not absolute.exists() or not stat.S_ISDIR(absolute.stat(follow_symlinks=False).st_mode):
         raise PathPolicyError(f"{label} rejected: directory required")
+    try:
+        absolute.chmod(0o700)
+    except OSError:
+        pass
     return absolute.resolve(strict=True)
 
 

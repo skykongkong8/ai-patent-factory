@@ -144,5 +144,22 @@ class PrivacyTests(unittest.TestCase):
                 delete_run(Path(temporary), workspace)
 
 
+    def test_existing_private_root_is_hardened_to_owner_only(self):
+        from patent_factory.paths import private_root
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = root / "documents"
+            documents.mkdir(mode=0o755)
+            documents.chmod(0o755)
+            previous = Path.cwd()
+            try:
+                os.chdir(root)
+                private_root(Path("documents"), "documents root")
+            finally:
+                os.chdir(previous)
+            if os.name == "posix":
+                self.assertEqual(documents.stat().st_mode & 0o777, 0o700)
+
 if __name__ == "__main__":
     unittest.main()

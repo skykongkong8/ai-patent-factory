@@ -8,7 +8,7 @@ from pathlib import Path
 from patent_factory.database import InjectedFailure, connect_database
 from patent_factory.models import GateKind, RunState
 from patent_factory.privacy import DataClass, EgressApproval, guarded_hosted_call
-from patent_factory.state import GateMismatchError, StateStore
+from patent_factory.state import GateMismatchError, StaleRevisionError, StateStore
 
 
 TABLES = (
@@ -402,6 +402,16 @@ class PublishRegisterIntegrationTests(unittest.TestCase):
             self.assertEqual(verify.execute("SELECT count(*) FROM idempotency_records WHERE operation='export:report'").fetchone()[0],1)
             verify.close()
 
+
+    def test_invalidated_published_artifact_cannot_replay(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            connection, store, upstream, exports = self.setup_run(temporary)
+            first, _ = self.publish(store, upstream, exports)
+            store.add_revision("run", "profile", {"name": "changed"})
+            with self.assertRaisesRegex(StaleRevisionError, "invalidated"):
+                self.publish(store, upstream, exports)
+            self.assertEqual(connection.execute("SELECT stale FROM artifact_revisions WHERE revision_id=?", (first.artifact.revision_id,)).fetchone()[0], 1)
+            connection.close()
 
 if __name__ == "__main__":
     unittest.main()
