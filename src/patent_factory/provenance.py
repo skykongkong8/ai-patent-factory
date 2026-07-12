@@ -17,6 +17,13 @@ class EpistemicLabel(StrEnum):
     CREATIVE_SUGGESTION = "creative_suggestion"
 
 
+class SourceRepresentation(StrEnum):
+    """Distinguish exact source text from an interpretation of it."""
+
+    QUOTE = "quote"
+    INTERPRETATION = "interpretation"
+
+
 def normalize(value: Any) -> Any:
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value.strip().replace("\r\n", "\n").replace("\r", "\n"))
@@ -35,6 +42,23 @@ def digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def stable_revision_id(prefix: str, source_locator: str, content_hash: str) -> str:
+    """Return a retrieval-date-independent content revision identifier."""
+
+    normalized_prefix = normalize(prefix)
+    if not isinstance(normalized_prefix, str) or not normalized_prefix.isascii() or not normalized_prefix.isalpha():
+        raise ValueError("revision prefix: ASCII letters required")
+    locator = normalize(source_locator)
+    content = normalize(content_hash)
+    if not locator or not content:
+        raise ValueError("revision identity: source_locator and content_hash required")
+    return f"{normalized_prefix.lower()}_{digest({'source_locator': locator, 'content_hash': content})[:16]}"
+
+
+def evidence_revision_id(source_locator: str, content_hash: str) -> str:
+    return stable_revision_id("ev", source_locator, content_hash)
+
+
 @dataclass(frozen=True)
 class Claim:
     label: EpistemicLabel
@@ -42,6 +66,14 @@ class Claim:
     content_hash: str | None = None
     span_hash: str | None = None
     rationale: str | None = None
+    representation: SourceRepresentation | None = None
+
+    def resolved_representation(self) -> SourceRepresentation:
+        if self.representation is not None:
+            return self.representation
+        if self.label in {EpistemicLabel.SOURCE_FACT, EpistemicLabel.USER_STATEMENT}:
+            return SourceRepresentation.QUOTE
+        return SourceRepresentation.INTERPRETATION
 
     def validate(self, path: str = "claim") -> None:
         if self.label in {EpistemicLabel.SOURCE_FACT, EpistemicLabel.SOURCE_INFERENCE}:
@@ -52,6 +84,16 @@ class Claim:
             raise ValueError(f"{path}: {self.label} requires rationale")
         if self.label is EpistemicLabel.USER_STATEMENT and not self.source_id:
             raise ValueError(f"{path}: user_statement requires source_id")
+        representation = self.resolved_representation()
+        if representation is SourceRepresentation.QUOTE and self.label in {
+            EpistemicLabel.SOURCE_INFERENCE,
+            EpistemicLabel.AGENT_INFERENCE,
+            EpistemicLabel.HYPOTHESIS,
+            EpistemicLabel.CREATIVE_SUGGESTION,
+        }:
+            raise ValueError(f"{path}.representation: {self.label} cannot be quoted source text")
+        if representation is SourceRepresentation.QUOTE and self.label is EpistemicLabel.SOURCE_FACT and not self.span_hash:
+            raise ValueError(f"{path}.span_hash: quoted source_fact requires exact span_hash")
 
     def as_dict(self) -> dict[str, str]:
         self.validate()
@@ -60,6 +102,7 @@ class Claim:
             value = getattr(self, name)
             if value:
                 data[name] = normalize(value)
+        data["representation"] = self.resolved_representation().value
         data["claim_id"] = "cl_" + digest(data)[:16]
         return data
 
@@ -72,6 +115,7 @@ def claim_from_dict(data: dict[str, Any], path: str = "claim") -> Claim:
             content_hash=data.get("content_hash"),
             span_hash=data.get("span_hash"),
             rationale=data.get("rationale"),
+            representation=SourceRepresentation(data["representation"]) if data.get("representation") else None,
         )
     except (KeyError, ValueError) as exc:
         raise ValueError(f"{path}: invalid epistemic label") from exc
