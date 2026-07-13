@@ -26,15 +26,64 @@ TERMS_NOTE = "Normalized metadata only; raw KIPRIS responses are not cached or r
 Transport = Callable[[str, float, int], TransportResponse]
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        del request, file_pointer, code, message, headers, new_url
+        return None
+
+
 def _default_transport(url: str, timeout: float, byte_budget: int) -> TransportResponse:
     request = urllib.request.Request(url, headers={"Accept": "application/xml"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    with opener.open(request, timeout=timeout) as response:
         body = response.read(byte_budget + 1)
-        return TransportResponse(response.status, dict(response.headers.items()), bounded_body(body, byte_budget))
+        return TransportResponse(
+            response.status,
+            dict(response.headers.items()),
+            bounded_body(body, byte_budget),
+            final_url=response.geturl(),
+        )
 
 
-def _failure(kind: AdapterFailureKind, message: str, *, retryable: bool = False) -> AdapterResult:
-    return AdapterResult((), None, TERMS_NOTE, {"usable": 0}, failure=AdapterFailure(kind, message, retryable))
+def _failure(
+    kind: AdapterFailureKind,
+    message: str,
+    *,
+    retryable: bool = False,
+    rate_limit: dict[str, str] | None = None,
+) -> AdapterResult:
+    return AdapterResult(
+        (), None, TERMS_NOTE, {"usable": 0},
+        rate_limit=rate_limit,
+        failure=AdapterFailure(kind, message, retryable),
+    )
+
+
+def _rate_limit(headers: Any) -> dict[str, str] | None:
+    normalized = {str(key).casefold(): normalize(value) for key, value in dict(headers).items()}
+    result = {
+        name: normalized[header]
+        for name, header in (("limit", "x-ratelimit-limit"), ("remaining", "x-ratelimit-remaining"),
+                             ("reset", "x-ratelimit-reset"), ("retry_after", "retry-after"))
+        if normalized.get(header)
+    }
+    return result or None
+
+
+def _allowed_final_url(value: str) -> bool:
+    try:
+        final = urllib.parse.urlsplit(value)
+        return bool(
+            final.scheme == "https"
+            and final.hostname
+            and final.hostname.casefold() == KIPRIS_HOST
+            and not final.username
+            and not final.password
+            and not final.fragment
+            and final.port in (None, 443)
+        )
+    except ValueError:
+        return False
 
 
 def _text(node: ET.Element, name: str) -> str | None:
@@ -59,10 +108,22 @@ def _result_nodes(root: ET.Element) -> tuple[ET.Element, ...]:
 class KiprisAdapter:
     name = "kipris"
     version = "plus-xml-v1"
+    credential_name = "KIPRIS_PLUS_API_KEY"
 
-    def __init__(self, service_key: str | None, *, transport: Transport | None = None) -> None:
+    def __init__(
+        self,
+        service_key: str | None,
+        *,
+        transport: Transport | None = None,
+        credential_required: bool = True,
+    ) -> None:
         self._service_key = service_key
         self._transport = transport or _default_transport
+        self.requires_credential = credential_required
+
+    @property
+    def credential_present(self) -> bool:
+        return bool(self._service_key)
 
     def _parameters(self, envelope: QueryEnvelope) -> tuple[str, dict[str, Any]]:
         projection = dict(envelope.query_projection)
@@ -113,7 +174,12 @@ class KiprisAdapter:
             return _failure(AdapterFailureKind.TIMEOUT, "KIPRIS request timed out", retryable=True)
         except urllib.error.HTTPError as error:
             if error.code == 429:
-                return _failure(AdapterFailureKind.RATE_LIMIT, "KIPRIS rate limit response", retryable=True)
+                return _failure(
+                    AdapterFailureKind.RATE_LIMIT,
+                    "KIPRIS rate limit response",
+                    retryable=True,
+                    rate_limit=_rate_limit(error.headers or {}),
+                )
             if error.code in {401, 403}:
                 return _failure(AdapterFailureKind.AUTH, "KIPRIS credential was rejected")
             return _failure(AdapterFailureKind.NETWORK, f"KIPRIS HTTP status {error.code}", retryable=error.code >= 500)
@@ -122,8 +188,14 @@ class KiprisAdapter:
         except Exception:
             return _failure(AdapterFailureKind.INTERNAL, "KIPRIS transport failed")
 
+        rate_limit = _rate_limit(response.headers)
+        if response.final_url and not _allowed_final_url(response.final_url):
+            return _failure(AdapterFailureKind.ACCESS_DENIED, "KIPRIS redirect left the allowlist")
         if response.status == 429:
-            return _failure(AdapterFailureKind.RATE_LIMIT, "KIPRIS rate limit response", retryable=True)
+            return _failure(
+                AdapterFailureKind.RATE_LIMIT, "KIPRIS rate limit response",
+                retryable=True, rate_limit=rate_limit,
+            )
         if response.status in {401, 403}:
             return _failure(AdapterFailureKind.AUTH, "KIPRIS credential was rejected")
         if not 200 <= response.status < 300:
@@ -134,42 +206,72 @@ class KiprisAdapter:
             root = ET.fromstring(body)
         except ET.ParseError:
             return _failure(AdapterFailureKind.MALFORMED, "malformed KIPRIS XML")
-        if (_text(root, "successYN") or "Y").upper() == "N":
+        application_status = (_text(root, "successYN") or "").upper()
+        if application_status == "N":
             code = _text(root, "resultCode") or "unknown"
             kind = AdapterFailureKind.AUTH if code == "30" else AdapterFailureKind.MALFORMED
             return _failure(kind, f"KIPRIS application error {code}")
+        if application_status != "Y":
+            return _failure(AdapterFailureKind.MALFORMED, "KIPRIS response misses explicit success status")
+        body_node = root.find(".//body")
+        if body_node is None:
+            return _failure(AdapterFailureKind.MALFORMED, "KIPRIS response misses expected body")
+        if body_node.find(".//items") is None:
+            return _failure(AdapterFailureKind.MALFORMED, "KIPRIS response misses expected items container")
 
-        records: list[AdapterRecord] = []
-        for item in _result_nodes(root):
-            application = _text(item, "applicationNumber")
-            title = _text(item, "inventionTitle")
-            if not application or not title:
-                return _failure(AdapterFailureKind.MALFORMED, "KIPRIS item misses required identity fields")
-            number = normalized_patent_number(application)
-            abstract = _text(item, "astrtCont")
-            classifications = tuple(sorted({value for name in ("ipcNumber", "cpcNumber") if (value := _text(item, name))}))
-            normalized_record = {
-                "abstract": abstract, "applicant": _text(item, "applicantName"),
-                "application_number": number, "classifications": classifications,
-                "filing_date": _text(item, "applicationDate"), "title": title,
-            }
-            records.append(AdapterRecord(
-                source_type="kipris_patent", source_locator=f"kr-patent:{number}",
-                original_identifier=application, title=title, content_hash=digest(normalized_record),
-                language="ko", filing_date=normalized_record["filing_date"],
-                applicant=normalized_record["applicant"], abstract=abstract,
-                classifications=classifications,
-                limitations=("Normalized KIPRIS metadata; not a patentability conclusion.",),
-            ))
-            if len(records) >= envelope.result_budget:
-                break
-        total = int(_text(root, "totalCount") or len(records))
-        rows = int(_text(root, "numOfRows") or max(1, len(records)))
-        page = int(_text(root, "pageNo") or envelope.page)
+        try:
+            total_text = _text(body_node, "totalCount")
+            rows_text = _text(body_node, "numOfRows")
+            page_text = _text(body_node, "pageNo")
+            if total_text is None or rows_text is None or page_text is None:
+                raise ValueError("pagination fields are required")
+            total, rows, page = int(total_text), int(rows_text), int(page_text)
+            if total < 0 or rows < 1 or page < 1 or page != envelope.page:
+                raise ValueError("pagination values are invalid")
+            if envelope.cursor is not None and envelope.cursor != str(page):
+                raise ValueError("pagination cursor does not match page")
+            nodes = _result_nodes(root)
+            if total > 0 and not nodes:
+                raise ValueError("positive result count has no items")
+            records: list[AdapterRecord] = []
+            for item in nodes:
+                application = _text(item, "applicationNumber")
+                title = _text(item, "inventionTitle")
+                if not application or not title:
+                    raise ValueError("KIPRIS item misses required identity fields")
+                number = normalized_patent_number(application)
+                if not number:
+                    raise ValueError("KIPRIS application number is invalid")
+                abstract = _text(item, "astrtCont")
+                classifications = tuple(sorted({
+                    value for name in ("ipcNumber", "cpcNumber")
+                    if (value := _text(item, name))
+                }))
+                normalized_record = {
+                    "abstract": abstract, "applicant": _text(item, "applicantName"),
+                    "application_number": number, "classifications": classifications,
+                    "filing_date": _text(item, "applicationDate"), "title": title,
+                }
+                records.append(AdapterRecord(
+                    source_type="kipris_patent", source_locator=f"kr-patent:{number}",
+                    original_identifier=application, title=title, content_hash=digest(normalized_record),
+                    language="ko", provenance="kipris_plus_api",
+                    filing_date=normalized_record["filing_date"], applicant=normalized_record["applicant"],
+                    abstract=abstract, classifications=classifications,
+                    limitations=("Normalized KIPRIS metadata; not a patentability conclusion.",),
+                ))
+                if len(records) >= envelope.result_budget:
+                    break
+        except (ArithmeticError, TypeError, ValueError):
+            return _failure(AdapterFailureKind.MALFORMED, "malformed KIPRIS response structure")
         next_cursor = str(page + 1) if page < envelope.page_cap and page * rows < total else None
         result = AdapterResult(
             tuple(records), hashlib.sha256(body).hexdigest(), TERMS_NOTE,
-            {"received": len(records), "total_count": total, "usable": len(records)}, next_cursor=next_cursor,
+            {"received": len(records), "total_count": total, "usable": len(records)},
+            next_cursor=next_cursor, rate_limit=rate_limit,
         )
-        result.validate()
-        return result
+        try:
+            result.validate()
+            return result
+        except (TypeError, ValueError):
+            return _failure(AdapterFailureKind.MALFORMED, "malformed normalized KIPRIS result")

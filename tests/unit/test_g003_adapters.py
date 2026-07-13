@@ -1,9 +1,12 @@
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import urllib.error
 
 from patent_factory.adapters.base import TransportResponse
-from patent_factory.adapters.kipris import KIPRIS_HOST, KiprisAdapter
+from patent_factory.adapters.kipris import KIPRIS_HOST, KiprisAdapter, _default_transport
 from patent_factory.adapters.manual_web import ManualWebAdapter
 from patent_factory.models import AdapterFailureKind, QueryEnvelope
 
@@ -21,6 +24,40 @@ def envelope(adapter="kipris", version="plus-xml-v1", capability="word_search", 
 
 
 class KiprisAdapterTests(unittest.TestCase):
+    def test_default_transport_never_follows_http_redirect(self):
+        hits = {"redirect": 0, "sink": 0}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/redirect":
+                    hits["redirect"] += 1
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/sink")
+                    self.end_headers()
+                else:
+                    hits["sink"] += 1
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b"sink")
+
+            def log_message(self, *_):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as captured:
+                _default_transport(
+                    f"http://127.0.0.1:{server.server_port}/redirect", 2, 1_000,
+                )
+            self.assertEqual(captured.exception.code, 302)
+            self.assertEqual(hits, {"redirect": 1, "sink": 0})
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_confirmed_xml_normalizes_and_paginates_without_persisting_key(self):
         body = Path("tests/fixtures/kipris/word-search-v1.xml").read_bytes()
         calls = []
@@ -51,14 +88,50 @@ class KiprisAdapterTests(unittest.TestCase):
             b"<response><successYN>N</successYN><resultCode>30</resultCode><resultMsg>bad</resultMsg></response>",
             b"<not-closed>",
             b'<!DOCTYPE x [<!ENTITY y "z">]><response>&y;</response>',
+            b"<response><body><totalCount>0</totalCount></body></response>",
+            b"<response><successYN>Y</successYN></response>",
+            b"<response><successYN>Y</successYN><body><totalCount>NaN</totalCount><numOfRows>1</numOfRows><pageNo>1</pageNo></body></response>",
+            b"<response><successYN>Y</successYN><body><totalCount>0</totalCount><numOfRows>1</numOfRows><pageNo>1</pageNo></body></response>",
         )
-        expected = (AdapterFailureKind.AUTH, AdapterFailureKind.MALFORMED, AdapterFailureKind.MALFORMED)
+        expected = (
+            AdapterFailureKind.AUTH, AdapterFailureKind.MALFORMED, AdapterFailureKind.MALFORMED,
+            AdapterFailureKind.MALFORMED, AdapterFailureKind.MALFORMED, AdapterFailureKind.MALFORMED,
+            AdapterFailureKind.MALFORMED,
+        )
         for body, kind in zip(payloads, expected):
             with self.subTest(kind=kind):
                 adapter = KiprisAdapter("secret", transport=lambda *_: TransportResponse(200, {}, body))
                 result = adapter.search(envelope())
                 self.assertEqual(result.failure.kind, kind)
                 self.assertEqual(result.records, ())
+
+    def test_explicit_empty_success_and_rate_limit_metadata_are_preserved(self):
+        body = (b"<response><successYN>Y</successYN><body><items/>"
+                b"<numOfRows>30</numOfRows><pageNo>1</pageNo><totalCount>0</totalCount>"
+                b"</body></response>")
+        result = KiprisAdapter(
+            "secret",
+            transport=lambda *_: TransportResponse(
+                200, {"X-RateLimit-Limit": "50", "X-RateLimit-Remaining": "49"}, body,
+            ),
+        ).search(envelope())
+        self.assertTrue(result.successful)
+        self.assertEqual(result.records, ())
+        self.assertEqual(result.rate_limit, {"limit": "50", "remaining": "49"})
+
+    def test_redirected_final_target_is_rejected(self):
+        body = Path("tests/fixtures/kipris/word-search-v1.xml").read_bytes()
+        result = KiprisAdapter(
+            "secret",
+            transport=lambda *_: TransportResponse(200, {}, body, final_url="https://example.com/stolen"),
+        ).search(envelope())
+        self.assertEqual(result.failure.kind, AdapterFailureKind.ACCESS_DENIED)
+        self.assertEqual(result.records, ())
+        invalid_port = KiprisAdapter(
+            "secret",
+            transport=lambda *_: TransportResponse(200, {}, body, final_url="https://plus.kipris.or.kr:bad/x"),
+        ).search(envelope())
+        self.assertEqual(invalid_port.failure.kind, AdapterFailureKind.ACCESS_DENIED)
 
     def test_singleton_fields_directly_under_items_are_normalized(self):
         body = b"""<response><successYN>Y</successYN><body><items>
@@ -70,6 +143,27 @@ class KiprisAdapterTests(unittest.TestCase):
         self.assertTrue(result.successful)
         self.assertEqual(len(result.records), 1)
         self.assertEqual(result.records[0].source_locator, "kr-patent:1020250000001")
+
+    def test_confirmed_bibliography_summary_operation_uses_application_number(self):
+        body = b"""<response><successYN>Y</successYN><body><items><item>
+          <inventionTitle>summary</inventionTitle><applicationNumber>10-2025-0000002</applicationNumber>
+        </item></items><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount>
+        </body></response>"""
+        calls = []
+
+        def transport(url, *_):
+            calls.append(url)
+            return TransportResponse(200, {"Content-Type": "application/xml"}, body)
+
+        query = envelope(
+            capability="bibliography_summary",
+            projection={"application_number": "10-2025-0000002"},
+        )
+        result = KiprisAdapter("secret", transport=transport).search(query)
+        self.assertTrue(result.successful)
+        self.assertEqual(result.records[0].source_locator, "kr-patent:1020250000002")
+        self.assertIn("getBibliographySumryInfoSearch", calls[0])
+        self.assertIn("applicationNumber=10-2025-0000002", calls[0])
 
     def test_oversize_timeout_rate_limit_and_unsupported_are_normalized(self):
         cases = (
@@ -104,6 +198,32 @@ class ManualWebAdapterTests(unittest.TestCase):
             failed = ManualWebAdapter(("example.com",)).search(query)
             self.assertEqual(failed.failure.kind, kind)
             self.assertEqual(failed.records, ())
+
+    def test_closed_schema_hash_normalization_and_explicit_provenance(self):
+        base = {
+            "canonical_url": "https://example.com/public/1", "identifier": "public-1",
+            "title": "public", "content_hash": "A" * 64, "language": "ko",
+            "provenance": "user_import", "limitations": [],
+        }
+        good = envelope(
+            adapter="manual_web", version="import-v1", capability="import", host="example.com",
+            projection={"content_type": "application/json", "records": [base]},
+        )
+        result = ManualWebAdapter(("example.com",)).search(good)
+        self.assertTrue(result.successful)
+        self.assertEqual(result.records[0].content_hash, "a" * 64)
+        self.assertEqual(result.records[0].provenance, "user_import")
+
+        for changed in ({**base, "raw_document": "MANUAL-PRIVATE-CANARY"},
+                        {**base, "content_hash": "not-a-sha256"}):
+            with self.subTest(fields=tuple(changed)):
+                query = envelope(
+                    adapter="manual_web", version="import-v1", capability="import", host="example.com",
+                    projection={"content_type": "application/json", "records": [changed]},
+                )
+                failed = ManualWebAdapter(("example.com",)).search(query)
+                self.assertEqual(failed.failure.kind, AdapterFailureKind.MALFORMED)
+                self.assertNotIn("MANUAL-PRIVATE-CANARY", repr(failed))
 
 
 if __name__ == "__main__":

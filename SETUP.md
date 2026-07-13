@@ -23,4 +23,21 @@ python3 -m patent_factory profile interview --responses documents/interview.json
 
 기본 루트는 `documents/`와 `workspace/`이며 각각 `--documents-root`, `--workspace-root`로 저장소 안의 상대 경로를 지정할 수 있습니다. 입력과 `--responses` 파일은 documents root 아래, `--database`와 `--profile`은 workspace root 아래여야 합니다. 절대 경로, `..`, 루트/중간/대상 symlink, 비정규 파일, 읽기 전 2,000,000바이트를 넘는 문서는 거부합니다.
 
-향후 KIPRIS Plus 자격 증명의 정확한 이름은 `KIPRIS_PLUS_API_KEY`입니다. 값은 환경에만 두고 프로필/로그/문서에 복사하지 마십시오. G001 기능은 네트워크를 사용하지 않습니다. 호스팅 Claude/Codex에 비공개 원문을 제공하는 것은 별도의 외부 전송이므로 명시적 범위 승인 전에는 로컬 CLI만 사용합니다.
+KIPRIS Plus 자격 증명의 정확한 이름은 `KIPRIS_PLUS_API_KEY`입니다. 값은 환경에만 두고 프로필/로그/문서에 복사하지 마십시오. 다음 명령은 네트워크 요청 없이 `missing`, `present`, `simulated_invalid`, `fixture_usable` 중 하나만 출력합니다.
+
+```bash
+python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY
+python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY --fixture-usable
+```
+
+연구 CLI는 미리 `research_ready` 상태로 준비된 실행 디렉터리의 `factory.sqlite3`만 권위 저장소로 사용합니다. fixture와 수동 import 모두 입력 파일을 `documents/` 아래에서만 읽고 실행 디렉터리를 `workspace/` 아래로 제한합니다. 예시는 다음과 같습니다.
+
+```bash
+python3 -m patent_factory research fixture documents/kipris.xml \
+  --run workspace/runs/example --run-id example --query 센서
+
+python3 -m patent_factory research manual documents/manual-results.json \
+  --run workspace/runs/example --run-id example --query 센서 --allow-host example.com
+```
+
+CLI는 상태 커널을 우회하지 않고 `research_ready -> research_running -> research_complete|research_incomplete`만 수행합니다. 결과와 실패는 실행별 SQLite에 기록되고, 결정적 bundle manifest는 실행 디렉터리의 소유자 전용 `research-exports/`에 상태 전이와 함께 등록된 불변 파일로 내보냅니다. 현재/레거시 API의 구분, 오류, 한도, 이용조건, 미확인 사항은 [KIPRIS contract spike](docs/kipris-contract-spike.md)에 있습니다. 호스팅 Claude/Codex에 비공개 원문을 제공하는 것은 별도의 외부 전송이므로 명시적 범위 승인 전에는 로컬 CLI만 사용합니다.

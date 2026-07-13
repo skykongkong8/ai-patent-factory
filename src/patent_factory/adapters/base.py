@@ -12,6 +12,7 @@ class TransportResponse:
     status: int
     headers: Mapping[str, str]
     body: bytes
+    final_url: str | None = None
 
 
 class SearchAdapter(Protocol):

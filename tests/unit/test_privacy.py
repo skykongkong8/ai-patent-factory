@@ -9,6 +9,7 @@ from patent_factory.privacy import (
     EgressApproval,
     PrivacyError,
     assert_canaries_absent,
+    credential_diagnostic,
     delete_run,
     guarded_hosted_call,
     redact_mapping,
@@ -38,6 +39,16 @@ class PrivacyTests(unittest.TestCase):
         status = secret_status("KIPRIS_PLUS_API_KEY", {"KIPRIS_PLUS_API_KEY": "CANARY-SECRET"})
         self.assertEqual(status, {"name": "KIPRIS_PLUS_API_KEY", "present": True, "status": "configured"})
         self.assertNotIn("CANARY-SECRET", repr(status))
+
+    def test_credential_diagnostic_is_redacted_for_all_offline_states(self):
+        environment = {"KIPRIS_PLUS_API_KEY": "CANARY-SECRET"}
+        configured = credential_diagnostic("KIPRIS_PLUS_API_KEY", environment)
+        invalid = credential_diagnostic("KIPRIS_PLUS_API_KEY", environment, simulated_invalid=True)
+        fixture = credential_diagnostic("KIPRIS_PLUS_API_KEY", environment, fixture_usable=True)
+        missing = credential_diagnostic("KIPRIS_PLUS_API_KEY", {})
+        self.assertEqual([item["status"] for item in (configured, invalid, fixture, missing)],
+                         ["present", "simulated_invalid", "fixture_usable", "missing"])
+        self.assertNotIn("CANARY-SECRET", repr((configured, invalid, fixture, missing)))
 
     def test_hosted_callback_is_blocked_without_current_exact_approval(self):
         calls = []

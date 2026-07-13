@@ -7,9 +7,16 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
-from .database import connect_database, export_profile, ingest
+from .adapters.base import TransportResponse
+from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
+from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
+from .database import connect_database, export_profile, ingest, utc_now
+from .models import QueryEnvelope
 from .paths import contained_input, contained_output, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
+from .provenance import digest, normalize
+from .research import PlannedQuery, run_research
+from .state import StateError
 
 QUESTIONS = (
     ("name", "이름 또는 식별명을 입력하세요"),
@@ -51,6 +58,23 @@ def build_parser() -> argparse.ArgumentParser:
     interview.add_argument("--database", type=Path, help="SQLite state (default: WORKSPACE_ROOT/profile.sqlite3)")
     interview.add_argument("--documents-root", type=Path, default=Path("documents"))
     interview.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    research = commands.add_parser("research", help="run bounded fixture or manual research")
+    research_commands = research.add_subparsers(dest="research_command", required=True)
+    for name in ("fixture", "manual"):
+        command = research_commands.add_parser(name, help=f"run one {name} research operation")
+        command.add_argument("source", type=Path)
+        command.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+        command.add_argument("--run-id", required=True)
+        command.add_argument("--query", required=True)
+        command.add_argument("--idempotency-key")
+        command.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic offline fixtures")
+        command.add_argument("--byte-budget", type=int, default=1_000_000)
+        command.add_argument("--result-budget", type=int, default=30)
+        command.add_argument("--documents-root", type=Path, default=Path("documents"))
+        command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    manual = research_commands.choices["manual"]
+    manual.add_argument("--allow-host", action="append", required=True)
     return parser
 
 
@@ -131,6 +155,82 @@ def _profile(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     }, 0)
 
 
+def _bounded_bytes(path: Path, byte_budget: int, label: str) -> bytes:
+    if not 1 <= byte_budget <= 10_000_000:
+        raise CliError(f"{label} byte budget must be between 1 and 10000000")
+    if path.stat().st_size > byte_budget:
+        raise CliError(f"{label} exceeds byte budget")
+    payload = path.read_bytes()
+    if len(payload) > byte_budget:
+        raise CliError(f"{label} exceeds byte budget")
+    return payload
+
+
+def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    documents_root = private_root(args.documents_root, "documents root")
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "research run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
+    source = contained_input(args.source, documents_root, "research source")
+
+    if args.research_command == "fixture":
+        body = _bounded_bytes(source, args.byte_budget, "KIPRIS fixture")
+
+        def fixture_transport(url: str, timeout: float, byte_budget: int) -> TransportResponse:
+            del url, timeout, byte_budget
+            return TransportResponse(200, {"Content-Type": "application/xml"}, body)
+
+        adapter = KiprisAdapter(
+            "fixture-only", transport=fixture_transport, credential_required=False,
+        )
+        envelope = QueryEnvelope(
+            run_id=normalize(args.run_id), adapter="kipris", adapter_version="plus-xml-v1",
+            capability="word_search", allowed_scheme="https", allowed_host=KIPRIS_HOST,
+            deadline_seconds=10, page=1, page_cap=5, result_budget=args.result_budget,
+            byte_budget=args.byte_budget, retry_budget=0, retry_ownership="research_runner",
+            query_projection={"word": normalize(args.query), "year": 0, "patent": True, "utility": True},
+        )
+        planned = PlannedQuery(envelope, args.query, args.query, "origin", 0)
+    else:
+        encoded = _bounded_bytes(source, args.byte_budget, "manual import")
+        imported = json.loads(encoded.decode("utf-8"))
+        if not isinstance(imported, dict) or not isinstance(imported.get("records"), list):
+            raise CliError("manual import must be an object with a records list")
+        allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
+        if not allowed_hosts or any(not host for host in allowed_hosts):
+            raise CliError("manual import requires a non-empty host allowlist")
+        sanitized_records = sanitize_manual_records(imported["records"], allowed_hosts)
+        adapter = ManualWebAdapter(allowed_hosts)
+        envelope = QueryEnvelope(
+            run_id=normalize(args.run_id), adapter="manual_web", adapter_version="import-v1",
+            capability="import", allowed_scheme="https", allowed_host=allowed_hosts[0],
+            deadline_seconds=10, page=1, page_cap=1, result_budget=args.result_budget,
+            byte_budget=args.byte_budget, retry_budget=0, retry_ownership="research_runner",
+            query_projection={"content_type": "application/json", "records": sanitized_records},
+        )
+        planned = PlannedQuery(envelope, args.query, args.query, "manual_import", 0)
+
+    envelope.validate()
+    idempotency_key = args.idempotency_key or "research-" + digest({
+        "request_fingerprint": envelope.request_fingerprint,
+        "source_mode": args.research_command,
+    })[:20]
+    with connect_database(database_path) as connection:
+        result = run_research(
+            connection,
+            run_root=run_root,
+            run_id=envelope.run_id,
+            adapter=adapter,
+            query=planned,
+            idempotency_key=idempotency_key,
+            retrieved_at=args.retrieved_at,
+        )
+    payload = result.as_dict()
+    payload.update({"started_at": started_at, "ended_at": utc_now()})
+    return payload, 0 if payload["status"] == "complete" else 4
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -138,9 +238,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "init":
             emit(_initialize(args.documents, args.workspace))
             return 0
-        payload, code = _profile(args)
+        payload, code = _research(args) if args.command == "research" else _profile(args)
         emit(payload)
         return code
-    except (CliError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+    except (CliError, OSError, StateError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         emit({"error": str(exc), "status": "error"})
         return 2

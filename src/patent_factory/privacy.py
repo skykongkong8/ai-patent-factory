@@ -96,6 +96,29 @@ def secret_status(name: str, environ: Mapping[str, str] | None = None) -> dict[s
     return {"name": name, "present": present, "status": "configured" if present else "missing"}
 
 
+def credential_diagnostic(
+    name: str,
+    environ: Mapping[str, str] | None = None,
+    *,
+    simulated_invalid: bool = False,
+    fixture_usable: bool = False,
+) -> dict[str, Any]:
+    """Return one redacted, offline-verifiable credential state."""
+
+    if simulated_invalid and fixture_usable:
+        raise PrivacyError("credential_diagnostic: conflicting simulation modes")
+    status = secret_status(name, environ)
+    if fixture_usable:
+        return {**status, "mode": "fixture", "status": "fixture_usable"}
+    if simulated_invalid:
+        return {**status, "mode": "simulated", "status": "simulated_invalid"}
+    return {
+        **status,
+        "mode": "environment",
+        "status": "present" if status["present"] else "missing",
+    }
+
+
 def _walk_strings(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]

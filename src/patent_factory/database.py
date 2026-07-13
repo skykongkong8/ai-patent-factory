@@ -10,9 +10,9 @@ from typing import Any, Callable, Iterable, Iterator
 
 from .paths import owner_only_file
 from .profile import IncomingFact, PROFILE_VERSION, atomic_write_profile
-from .provenance import canonical_json, digest
+from .provenance import canonical_json, digest, normalize
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 BUSY_TIMEOUT_MS = 250
 
 SCHEMA_V1 = """
@@ -128,6 +128,36 @@ CREATE TABLE IF NOT EXISTS research_operations (
 );
 """
 
+
+def _migrate_v6(connection: sqlite3.Connection) -> None:
+    event_columns = {row["name"] for row in connection.execute("PRAGMA table_info(adapter_events)")}
+    if "rate_limit_json" not in event_columns:
+        connection.execute("ALTER TABLE adapter_events ADD COLUMN rate_limit_json TEXT")
+    evidence_columns = {row["name"] for row in connection.execute("PRAGMA table_info(evidence_records)")}
+    if "provenance" not in evidence_columns:
+        connection.execute(
+            "ALTER TABLE evidence_records ADD COLUMN provenance TEXT NOT NULL DEFAULT 'adapter_retrieval'"
+        )
+    for row in connection.execute(
+        "SELECT run_id,evidence_id,source_type,record_json FROM evidence_records"
+    ):
+        fallback = "user_import" if row["source_type"] == "manual_web" else "adapter_retrieval"
+        try:
+            record = json.loads(row["record_json"])
+            candidate = normalize(record.get("provenance", "")) if isinstance(record, dict) else ""
+        except (TypeError, ValueError, json.JSONDecodeError):
+            candidate = ""
+        if (
+            not candidate
+            or len(candidate) > 100
+            or any(not (character.isalnum() or character in "._-") for character in candidate)
+        ):
+            candidate = fallback
+        connection.execute(
+            "UPDATE evidence_records SET provenance=? WHERE run_id=? AND evidence_id=?",
+            (candidate, row["run_id"], row["evidence_id"]),
+        )
+
 class DatabaseCorruptError(RuntimeError):
     code = "database_corrupt"
 
@@ -205,6 +235,11 @@ def _migrate(connection: sqlite3.Connection, version: int, fault_at: FaultInject
             _execute_script(connection, SCHEMA_V5)
             connection.execute("PRAGMA user_version=5")
             inject_fault(fault_at, "migration_v5")
+            version = 5
+        if version == 5:
+            _migrate_v6(connection)
+            connection.execute("PRAGMA user_version=6")
+            inject_fault(fault_at, "migration_v6")
         connection.commit()
     except BaseException:
         connection.rollback()

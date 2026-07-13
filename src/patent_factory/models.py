@@ -141,6 +141,7 @@ class AdapterRecord:
     title: str
     content_hash: str
     language: str
+    provenance: str = "adapter_retrieval"
     canonical_url: str | None = None
     filing_date: str | None = None
     applicant: str | None = None
@@ -151,7 +152,7 @@ class AdapterRecord:
     limitations: tuple[str, ...] = ()
 
     def validate(self) -> None:
-        for name in ("source_type", "source_locator", "original_identifier", "title", "content_hash", "language"):
+        for name in ("source_type", "source_locator", "original_identifier", "title", "content_hash", "language", "provenance"):
             if not normalize(getattr(self, name)):
                 raise ValueError(f"adapter_record.{name}: required")
 
@@ -163,7 +164,8 @@ class AdapterRecord:
             "excerpt_hashes": list(self.excerpt_hashes), "filing_date": self.filing_date,
             "interpretations": list(self.interpretations), "language": self.language,
             "limitations": list(self.limitations), "original_identifier": self.original_identifier,
-            "source_locator": self.source_locator, "source_type": self.source_type, "title": self.title,
+            "provenance": self.provenance, "source_locator": self.source_locator,
+            "source_type": self.source_type, "title": self.title,
         })
 
 
