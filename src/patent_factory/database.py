@@ -12,7 +12,7 @@ from .paths import owner_only_file
 from .profile import IncomingFact, PROFILE_VERSION, atomic_write_profile
 from .provenance import canonical_json, digest
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 BUSY_TIMEOUT_MS = 250
 
 SCHEMA_V1 = """
@@ -40,6 +40,92 @@ CREATE TABLE IF NOT EXISTS gate_decisions (decision_id TEXT PRIMARY KEY, gate_id
 SCHEMA_V3 = """
 CREATE TABLE IF NOT EXISTS artifact_exports (export_id TEXT PRIMARY KEY, revision_id TEXT NOT NULL UNIQUE REFERENCES artifact_revisions(revision_id) ON DELETE CASCADE, run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE, path TEXT NOT NULL UNIQUE, byte_hash TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK(byte_size >= 0), created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS artifact_exports_run ON artifact_exports(run_id,revision_id);
+"""
+
+SCHEMA_V5 = """
+CREATE TABLE IF NOT EXISTS research_queries (
+  query_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  request_fingerprint TEXT NOT NULL,
+  envelope_json TEXT NOT NULL,
+  plan_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(run_id, request_fingerprint)
+);
+CREATE INDEX IF NOT EXISTS research_queries_run ON research_queries(run_id, created_at, query_id);
+CREATE TABLE IF NOT EXISTS adapter_events (
+  event_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  query_id TEXT NOT NULL REFERENCES research_queries(query_id) ON DELETE CASCADE,
+  adapter TEXT NOT NULL,
+  adapter_version TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('success','failure')),
+  response_hash TEXT,
+  failure_kind TEXT,
+  failure_json TEXT,
+  terms_note TEXT NOT NULL,
+  coverage_json TEXT NOT NULL,
+  next_cursor TEXT
+);
+CREATE INDEX IF NOT EXISTS adapter_events_query ON adapter_events(run_id, query_id, retrieved_at, event_id);
+CREATE TABLE IF NOT EXISTS evidence_records (
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  evidence_id TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_locator TEXT NOT NULL,
+  original_identifier TEXT NOT NULL,
+  title TEXT NOT NULL,
+  canonical_url TEXT,
+  content_hash TEXT NOT NULL,
+  language TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(run_id, evidence_id),
+  UNIQUE(run_id, source_locator, content_hash)
+);
+CREATE INDEX IF NOT EXISTS evidence_records_locator ON evidence_records(run_id, source_locator);
+CREATE TABLE IF NOT EXISTS retrieval_observations (
+  observation_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  query_id TEXT NOT NULL REFERENCES research_queries(query_id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES adapter_events(event_id) ON DELETE CASCADE,
+  evidence_id TEXT,
+  retrieved_at TEXT NOT NULL,
+  response_hash TEXT,
+  access_status TEXT NOT NULL CHECK(access_status IN ('success','failure')),
+  terms_note TEXT NOT NULL,
+  FOREIGN KEY(run_id, evidence_id) REFERENCES evidence_records(run_id, evidence_id) ON DELETE CASCADE,
+  UNIQUE(event_id, evidence_id)
+);
+CREATE TABLE IF NOT EXISTS research_edges (
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  query_id TEXT NOT NULL REFERENCES research_queries(query_id) ON DELETE CASCADE,
+  observation_id TEXT NOT NULL REFERENCES retrieval_observations(observation_id) ON DELETE CASCADE,
+  evidence_id TEXT NOT NULL,
+  source_rank INTEGER NOT NULL CHECK(source_rank >= 1),
+  PRIMARY KEY(query_id, observation_id, evidence_id),
+  FOREIGN KEY(run_id, evidence_id) REFERENCES evidence_records(run_id, evidence_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS coverage_limitations (
+  limitation_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  query_id TEXT NOT NULL REFERENCES research_queries(query_id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES adapter_events(event_id) ON DELETE CASCADE,
+  failure_kind TEXT NOT NULL,
+  limitation TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(event_id, failure_kind)
+);
+CREATE TABLE IF NOT EXISTS research_operations (
+  run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  idempotency_key TEXT NOT NULL,
+  query_id TEXT NOT NULL REFERENCES research_queries(query_id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES adapter_events(event_id) ON DELETE CASCADE,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(run_id, idempotency_key)
+);
 """
 
 class DatabaseCorruptError(RuntimeError):
@@ -114,6 +200,11 @@ def _migrate(connection: sqlite3.Connection, version: int, fault_at: FaultInject
             _migrate_v4(connection)
             connection.execute("PRAGMA user_version=4")
             inject_fault(fault_at, "migration_v4")
+            version = 4
+        if version == 4:
+            _execute_script(connection, SCHEMA_V5)
+            connection.execute("PRAGMA user_version=5")
+            inject_fault(fault_at, "migration_v5")
         connection.commit()
     except BaseException:
         connection.rollback()

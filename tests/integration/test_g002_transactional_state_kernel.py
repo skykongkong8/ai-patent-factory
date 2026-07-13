@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from patent_factory.database import InjectedFailure, RunBusyError, connect_database
+from patent_factory.database import SCHEMA_VERSION, InjectedFailure, RunBusyError, connect_database
 from patent_factory.models import GateKind, RunState
 from patent_factory.state import ALLOWED_TRANSITIONS, GATE_ACTIONS, GATE_STATE_SET, GateMismatchError, StaleRevisionError, StateError, StateStore
 
@@ -30,7 +30,7 @@ class TransactionalStateKernelTests(unittest.TestCase):
             self.assertIsNone(raw.execute("SELECT 1 FROM sqlite_master WHERE name='runs'").fetchone())
             raw.close()
             migrated = connect_database(path)
-            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             self.assertEqual(migrated.execute("SELECT value_json FROM profile_facts").fetchone()[0], '"kept"')
             migrated.close()
             raw = sqlite3.connect(path)
@@ -69,7 +69,7 @@ class TransactionalStateKernelTests(unittest.TestCase):
             columns = {row["name"] for row in migrated.execute("PRAGMA table_info(gate_decisions)")}
             self.assertIn("used_at",columns)
             self.assertIn("consumed_by_event_id",columns)
-            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0],4)
+            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0],SCHEMA_VERSION)
             self.assertEqual(tuple(migrated.execute("SELECT action,consumed_at,used_at,consumed_by_event_id FROM gate_decisions WHERE decision_id='decision'").fetchone()),("approve","t",None,None))
             migrated.close()
 

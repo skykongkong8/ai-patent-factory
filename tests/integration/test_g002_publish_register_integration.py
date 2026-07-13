@@ -5,7 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from patent_factory.database import InjectedFailure, connect_database
+from patent_factory.database import SCHEMA_VERSION, InjectedFailure, connect_database
 from patent_factory.models import GateKind, RunState
 from patent_factory.privacy import DataClass, EgressApproval, guarded_hosted_call
 from patent_factory.state import GateMismatchError, StaleRevisionError, StateStore
@@ -66,7 +66,7 @@ class PublishRegisterIntegrationTests(unittest.TestCase):
             self.assertIsNone(raw.execute("SELECT 1 FROM sqlite_master WHERE name='artifact_exports'").fetchone())
             raw.close()
             migrated = connect_database(path)
-            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(migrated.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             self.assertEqual(migrated.execute("SELECT state FROM runs WHERE run_id='kept'").fetchone()[0], "new")
             migrated.close()
 

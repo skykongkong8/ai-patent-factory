@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header><successYN>Y</successYN><resultCode>00</resultCode></header>
+  <body>
+    <items>
+      <item>
+        <inventionTitle>센서 기반 제어 장치</inventionTitle>
+        <ipcNumber>G06F 1/00</ipcNumber>
+        <applicationNumber>10-2024-0012345</applicationNumber>
+        <applicationDate>20240102</applicationDate>
+        <applicantName>공개 출원인</applicantName>
+        <astrtCont>공개 초록 예시</astrtCont>
+      </item>
+    </items>
+    <numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>2</totalCount>
+  </body>
+</response>
