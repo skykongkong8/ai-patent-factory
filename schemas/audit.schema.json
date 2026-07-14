@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/audit.schema.json",
+  "title": "audit-batch-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus_set_hash",
+    "feature_map_set_hash",
+    "finalist_set_hash",
+    "results",
+    "run_id",
+    "scorer_config_hash",
+    "version"
+  ],
+  "properties": {
+    "corpus_set_hash": {"$ref": "#/$defs/hash"},
+    "feature_map_set_hash": {"$ref": "#/$defs/hash"},
+    "finalist_set_hash": {"$ref": "#/$defs/hash"},
+    "results": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/result"}
+    },
+    "run_id": {"$ref": "#/$defs/nonEmptyString"},
+    "scorer_config_hash": {"$ref": "#/$defs/hash"},
+    "version": {"const": "audit-batch-v1"}
+  },
+  "$defs": {
+    "candidateId": {"type": "string", "pattern": "^ca_[0-9a-f]{20}$"},
+    "displayPercent": {
+      "type": "string",
+      "pattern": "^(?:(?:0|[1-9][0-9]?)(?:\\.[0-9]{1,6})?|100)$"
+    },
+    "evidenceId": {"type": "string", "pattern": "^ev_[0-9a-f]{16}$"},
+    "exactPercent": {
+      "$comment": "Cross-field numerator/denominator/value/display consistency is enforced by validate_audit_artifact before hashing, publication, or export.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["denominator", "numerator", "value"],
+      "properties": {
+        "denominator": {"type": "integer", "minimum": 1},
+        "numerator": {"type": "integer", "minimum": 0},
+        "value": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "featureId": {"type": "string", "minLength": 1},
+    "finalistId": {"type": "string", "pattern": "^fi_[0-9a-f]{20}$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonEmptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "nullableEvidenceId": {
+      "oneOf": [
+        {"$ref": "#/$defs/evidenceId"},
+        {"type": "null"}
+      ]
+    },
+    "featureIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/featureId"}
+    },
+    "pairScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "C",
+        "C_exact",
+        "D",
+        "D_exact",
+        "F",
+        "F_exact",
+        "Q",
+        "Q_exact",
+        "T",
+        "T_exact",
+        "differentiated_feature_ids",
+        "evidence_id",
+        "label",
+        "matched_feature_ids",
+        "r_hi",
+        "r_hi_exact",
+        "r_obs",
+        "r_obs_exact",
+        "version"
+      ],
+      "properties": {
+        "C": {"$ref": "#/$defs/displayPercent"},
+        "C_exact": {"$ref": "#/$defs/exactPercent"},
+        "D": {"$ref": "#/$defs/displayPercent"},
+        "D_exact": {"$ref": "#/$defs/exactPercent"},
+        "F": {"$ref": "#/$defs/displayPercent"},
+        "F_exact": {"$ref": "#/$defs/exactPercent"},
+        "Q": {"$ref": "#/$defs/displayPercent"},
+        "Q_exact": {"$ref": "#/$defs/exactPercent"},
+        "T": {"$ref": "#/$defs/displayPercent"},
+        "T_exact": {"$ref": "#/$defs/exactPercent"},
+        "differentiated_feature_ids": {"$ref": "#/$defs/featureIds"},
+        "evidence_id": {"$ref": "#/$defs/evidenceId"},
+        "label": {"enum": ["low", "moderate", "high", "excessive"]},
+        "matched_feature_ids": {"$ref": "#/$defs/featureIds"},
+        "r_hi": {"$ref": "#/$defs/displayPercent"},
+        "r_hi_exact": {"$ref": "#/$defs/exactPercent"},
+        "r_obs": {"$ref": "#/$defs/displayPercent"},
+        "r_obs_exact": {"$ref": "#/$defs/exactPercent"},
+        "version": {"const": "simrisk-v1.0.0"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "closest_reference_id",
+        "corpus_hash",
+        "counterargument",
+        "coverage",
+        "finalist_id",
+        "outcome",
+        "pair_scores",
+        "r_hi",
+        "r_obs",
+        "upper_bound_reference_id"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/candidateId"},
+        "closest_reference_id": {"$ref": "#/$defs/nullableEvidenceId"},
+        "corpus_hash": {"$ref": "#/$defs/hash"},
+        "counterargument": {"$ref": "#/$defs/nonEmptyString"},
+        "coverage": {"$ref": "#/$defs/displayPercent"},
+        "finalist_id": {"$ref": "#/$defs/finalistId"},
+        "outcome": {"enum": ["audit_approved", "coverage_insufficient", "decision_required"]},
+        "pair_scores": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/pairScore"}
+        },
+        "r_hi": {"$ref": "#/$defs/displayPercent"},
+        "r_obs": {"$ref": "#/$defs/displayPercent"},
+        "upper_bound_reference_id": {"$ref": "#/$defs/nullableEvidenceId"}
+      }
+    }
+  }
+}

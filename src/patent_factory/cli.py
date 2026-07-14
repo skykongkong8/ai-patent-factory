@@ -7,14 +7,20 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
+from .audit import run_audit_retrieval, run_audit_scoring
 from .adapters.base import TransportResponse
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
 from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
-from .database import connect_database, export_profile, ingest, utc_now
+from .config import load_evaluation_config, load_similarity_config
+from .database import connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts, utc_now
+from .decisions import inspect_gate, resolve_gate
+from .evaluation import run_shortlist
+from .ideation import DomainPivotRequiredError, run_ideation
 from .models import QueryEnvelope
 from .paths import contained_input, contained_output, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
-from .provenance import digest, normalize
+from .privacy import assert_canaries_absent, environment_secret
+from .provenance import digest, normalize, strict_json_loads
 from .research import PlannedQuery, run_research
 from .state import StateError
 
@@ -58,6 +64,17 @@ def build_parser() -> argparse.ArgumentParser:
     interview.add_argument("--database", type=Path, help="SQLite state (default: WORKSPACE_ROOT/profile.sqlite3)")
     interview.add_argument("--documents-root", type=Path, default=Path("documents"))
     interview.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    conflict_inspect = profile_commands.add_parser("conflict-inspect", help="inspect one exact profile conflict batch")
+    conflict_inspect.add_argument("--batch-id", required=True)
+    conflict_inspect.add_argument("--database", type=Path, help="authoritative profile SQLite database")
+    conflict_inspect.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    conflict_decide = profile_commands.add_parser("conflict-decide", help="decide one exact profile conflict batch")
+    conflict_decide.add_argument("--batch-id", required=True)
+    conflict_decide.add_argument("--input", type=Path, required=True)
+    conflict_decide.add_argument("--profile", type=Path, help="profile export")
+    conflict_decide.add_argument("--database", type=Path, help="authoritative profile SQLite database")
+    conflict_decide.add_argument("--byte-budget", type=int, default=2_000_000)
+    conflict_decide.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     research = commands.add_parser("research", help="run bounded fixture or manual research")
     research_commands = research.add_subparsers(dest="research_command", required=True)
@@ -75,6 +92,53 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     manual = research_commands.choices["manual"]
     manual.add_argument("--allow-host", action="append", required=True)
+
+    ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
+    ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+    ideate.add_argument("--run-id", required=True)
+    ideate.add_argument("--profile", type=Path, required=True, help="current profile export under workspace root")
+    ideate.add_argument("--profile-database", type=Path, required=True, help="authoritative profile SQLite database")
+    ideate.add_argument("--input", type=Path, required=True, help="candidate-input-v1 JSON under workspace root")
+    ideate.add_argument("--byte-budget", type=int, default=2_000_000)
+    ideate.add_argument("--decision-id", help="current domain-pivot approval for this exact input")
+    ideate.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    shortlist = commands.add_parser("shortlist", help="persist finalists or explicit insufficient evidence")
+    shortlist.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+    shortlist.add_argument("--run-id", required=True)
+    shortlist.add_argument("--input", type=Path, required=True, help="shortlist-input-v1 JSON under workspace root")
+    shortlist.add_argument("--byte-budget", type=int, default=2_000_000)
+    shortlist.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    audit = commands.add_parser("audit", help="retrieve and score finalist-specific KIPRIS corpora")
+    audit_commands = audit.add_subparsers(dest="audit_command", required=True)
+    retrieve = audit_commands.add_parser("retrieve", help="run deterministic fixture KIPRIS audit queries")
+    retrieve.add_argument("--run", type=Path, required=True)
+    retrieve.add_argument("--run-id", required=True)
+    retrieve.add_argument("--query-input", type=Path, required=True)
+    retrieve.add_argument("--fixture-manifest", type=Path, required=True)
+    retrieve.add_argument("--byte-budget", type=int, default=2_000_000)
+    retrieve.add_argument("--decision-id", help="current credential approval for this exact audit request")
+    retrieve.add_argument("--documents-root", type=Path, default=Path("documents"))
+    retrieve.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    score = audit_commands.add_parser("score", help="score one frozen reviewed feature-map set")
+    score.add_argument("--run", type=Path, required=True)
+    score.add_argument("--run-id", required=True)
+    score.add_argument("--feature-input", type=Path, required=True)
+    score.add_argument("--byte-budget", type=int, default=2_000_000)
+    score.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    gate = commands.add_parser("gate", help="inspect or decide one exact current gate")
+    gate_commands = gate.add_subparsers(dest="gate_command", required=True)
+    for name in ("inspect", "decide"):
+        command = gate_commands.add_parser(name)
+        command.add_argument("--run", type=Path, required=True)
+        command.add_argument("--run-id", required=True)
+        command.add_argument("--gate-id", required=True)
+        command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    gate_commands.choices["decide"].add_argument("--input", type=Path, required=True)
+    gate_commands.choices["decide"].add_argument("--byte-budget", type=int, default=2_000_000)
+
     return parser
 
 
@@ -99,7 +163,7 @@ def _responses(source: str | None, documents_root: Path) -> dict[str, Any]:
             if response_path.stat().st_size > MAX_DOCUMENT_BYTES:
                 raise CliError("interview responses too large")
             text = response_path.read_text(encoding="utf-8")
-        data = json.loads(text)
+        data = strict_json_loads(text)
         if not isinstance(data, dict):
             raise CliError("interview responses must be a JSON object")
         return data
@@ -155,6 +219,25 @@ def _profile(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     }, 0)
 
 
+def _profile_conflict(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    database_path = contained_output(args.database or args.workspace_root / "profile.sqlite3", workspace_root, "profile database")
+    batch_id = normalize(args.batch_id)
+    with connect_database(database_path) as connection:
+        if args.profile_command == "conflict-inspect":
+            return ({"command": "profile.conflict-inspect", **profile_conflict_snapshot(connection, batch_id)}, 0)
+        input_path = contained_input(args.input, workspace_root, "profile conflict decision")
+        decision_input = _json_object(input_path, args.byte_budget, "profile conflict decision")
+        if decision_input.get("batch_id") != batch_id:
+            raise CliError("profile conflict batch id does not match --batch-id")
+        secret = environment_secret("KIPRIS_PLUS_API_KEY")
+        assert_canaries_absent(decision_input, (secret,) if secret else (), boundary="profile_conflict_decision")
+        result = resolve_profile_conflicts(connection, decision_input)
+        profile_path = contained_output(args.profile or args.workspace_root / "profile.json", workspace_root, "profile output")
+        export_profile(connection, profile_path)
+        return ({"command": "profile.conflict-decide", **result}, 0 if result["status"] == "profile_ready" else 3)
+
+
 def _bounded_bytes(path: Path, byte_budget: int, label: str) -> bytes:
     if not 1 <= byte_budget <= 10_000_000:
         raise CliError(f"{label} byte budget must be between 1 and 10000000")
@@ -194,7 +277,7 @@ def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         planned = PlannedQuery(envelope, args.query, args.query, "origin", 0)
     else:
         encoded = _bounded_bytes(source, args.byte_budget, "manual import")
-        imported = json.loads(encoded.decode("utf-8"))
+        imported = strict_json_loads(encoded)
         if not isinstance(imported, dict) or not isinstance(imported.get("records"), list):
             raise CliError("manual import must be an object with a records list")
         allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
@@ -231,6 +314,130 @@ def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return payload, 0 if payload["status"] == "complete" else 4
 
 
+def _json_object(path: Path, byte_budget: int, label: str) -> dict[str, Any]:
+    payload = strict_json_loads(_bounded_bytes(path, byte_budget, label))
+    if not isinstance(payload, dict):
+        raise CliError(f"{label} must be a JSON object")
+    return payload
+
+
+def _ideate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "ideation run", directory=True)
+    profile_path = contained_input(args.profile, workspace_root, "ideation profile")
+    profile_database_path = contained_input(
+        args.profile_database, workspace_root, "ideation profile database"
+    )
+    input_path = contained_input(args.input, workspace_root, "ideation input")
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "ideation database")
+    if profile_database_path == database_path:
+        raise CliError("ideation profile database must be distinct from the run database")
+    profile = _json_object(profile_path, args.byte_budget, "ideation profile")
+    candidate_input = _json_object(input_path, args.byte_budget, "ideation input")
+    with connect_database(profile_database_path) as profile_connection, connect_database(database_path) as connection:
+        try:
+            result = run_ideation(
+                connection, profile_connection=profile_connection, run_root=run_root,
+                run_id=normalize(args.run_id), profile=profile,
+                candidate_input=candidate_input, config=load_evaluation_config(),
+                domain_decision_id=args.decision_id,
+            )
+        except DomainPivotRequiredError as error:
+            return ({
+                "command": "ideate", "gate_id": error.gate.gate_id,
+                "next_state": "domain_pivot_required", "run_id": normalize(args.run_id),
+                "status": "domain_pivot_required",
+            }, 6)
+    payload = result.as_dict()
+    payload.update({"ended_at": utc_now(), "started_at": started_at})
+    return payload, 0
+
+
+def _shortlist(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "shortlist run", directory=True)
+    input_path = contained_input(args.input, workspace_root, "shortlist input")
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "shortlist database")
+    shortlist_input = _json_object(input_path, args.byte_budget, "shortlist input")
+    with connect_database(database_path) as connection:
+        result = run_shortlist(
+            connection, run_root=run_root, run_id=normalize(args.run_id),
+            shortlist_input=shortlist_input, config=load_evaluation_config(),
+        )
+    payload = result.as_dict()
+    payload.update({"ended_at": utc_now(), "started_at": started_at})
+    return payload, 5 if payload["status"] == "insufficient_evidence" else 0
+
+
+def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "audit run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "audit database")
+    if args.audit_command == "retrieve":
+        documents_root = private_root(args.documents_root, "documents root")
+        query_path = contained_input(args.query_input, workspace_root, "audit query input")
+        manifest_path = contained_input(args.fixture_manifest, documents_root, "audit fixture manifest")
+        query_input = _json_object(query_path, args.byte_budget, "audit query input")
+        manifest = _json_object(manifest_path, args.byte_budget, "audit fixture manifest")
+        if set(manifest) != {"responses", "schema_version"} or manifest["schema_version"] != "audit-fixture-manifest-v1" or not isinstance(manifest["responses"], list):
+            raise CliError("audit fixture manifest must be audit-fixture-manifest-v1")
+        responses = {}
+        for item in manifest["responses"]:
+            if not isinstance(item, dict) or set(item) != {"finalist_id", "page", "source", "term"}:
+                raise CliError("audit fixture response has invalid fields")
+            source = contained_input(Path(item["source"]), documents_root, "audit KIPRIS fixture")
+            responses[(item["finalist_id"], normalize(item["term"]), item["page"])] = _bounded_bytes(source, args.byte_budget, "audit KIPRIS fixture")
+
+        def adapter_factory(query, page, finalist):
+            body = responses[(finalist, normalize(query["term"]), page)]
+
+            def transport(url, timeout, byte_budget):
+                del url, timeout, byte_budget
+                return TransportResponse(200, {"Content-Type": "application/xml"}, body)
+
+            return KiprisAdapter("fixture-only", transport=transport, credential_required=False)
+
+        with connect_database(database_path) as connection:
+            result = run_audit_retrieval(
+                connection, run_root=run_root, run_id=normalize(args.run_id),
+                query_input=query_input, config=load_similarity_config(), adapter_factory=adapter_factory,
+                credential_decision_id=args.decision_id,
+            )
+        payload, code = result.as_dict(), 0
+    else:
+        feature_path = contained_input(args.feature_input, workspace_root, "audit feature input")
+        feature_input = _json_object(feature_path, args.byte_budget, "audit feature input")
+        with connect_database(database_path) as connection:
+            result = run_audit_scoring(
+                connection, run_root=run_root, run_id=normalize(args.run_id),
+                feature_input=feature_input, config=load_similarity_config(),
+            )
+        payload = result.as_dict()
+        code = 8 if payload["status"] == "decision_required" else 7 if payload["status"] == "coverage_insufficient" else 0
+    payload.update({"ended_at": utc_now(), "started_at": started_at})
+    return payload, code
+
+
+def _gate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "decision run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "decision database")
+    run_id, gate_id = normalize(args.run_id), normalize(args.gate_id)
+    with connect_database(database_path) as connection:
+        if args.gate_command == "inspect":
+            return ({"command": "gate.inspect", **inspect_gate(connection, run_id, gate_id)}, 0)
+        input_path = contained_input(args.input, workspace_root, "decision input")
+        decision_input = _json_object(input_path, args.byte_budget, "decision input")
+        if decision_input.get("gate_id") != gate_id:
+            raise CliError("decision gate id does not match --gate-id")
+        return resolve_gate(
+            connection, run_root=run_root, run_id=run_id, decision_input=decision_input,
+        ).as_dict(), 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -238,7 +445,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "init":
             emit(_initialize(args.documents, args.workspace))
             return 0
-        payload, code = _research(args) if args.command == "research" else _profile(args)
+        if args.command == "research":
+            payload, code = _research(args)
+        elif args.command == "ideate":
+            payload, code = _ideate(args)
+        elif args.command == "shortlist":
+            payload, code = _shortlist(args)
+        elif args.command == "audit":
+            payload, code = _audit(args)
+        elif args.command == "gate":
+            payload, code = _gate(args)
+        elif args.command == "profile" and args.profile_command in {"conflict-inspect", "conflict-decide"}:
+            payload, code = _profile_conflict(args)
+        else:
+            payload, code = _profile(args)
         emit(payload)
         return code
     except (CliError, OSError, StateError, UnicodeError, ValueError, json.JSONDecodeError) as exc:

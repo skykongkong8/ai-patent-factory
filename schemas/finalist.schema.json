@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/finalist.schema.json",
+  "title": "Korean Patent Proposal Factory finalist-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "axes", "candidate_id", "candidate_revision_hash", "finalist_id", "rank",
+    "selection_priority", "selection_rationale"
+  ],
+  "properties": {
+    "axes": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "axis", "confidence", "contrary_evidence_references", "coverage_assessment",
+          "coverage_limitations", "gaps", "rationale", "rubric_version", "score",
+          "supporting_evidence_references"
+        ],
+        "properties": {
+          "axis": {"enum": ["differentiation", "technical_feasibility", "utility_significance"]},
+          "confidence": {"enum": ["low", "medium", "high"]},
+          "contrary_evidence_references": {"type": "array"},
+          "coverage_assessment": {"type": "string", "minLength": 1},
+          "coverage_limitations": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "gaps": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "rationale": {"type": "string", "minLength": 1},
+          "rubric_version": {"type": "string", "minLength": 1},
+          "score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "supporting_evidence_references": {"type": "array", "minItems": 1}
+        }
+      }
+    },
+    "candidate_id": {"type": "string", "pattern": "^ca_[0-9a-f]{20}$"},
+    "candidate_revision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "finalist_id": {"type": "string", "pattern": "^fi_[0-9a-f]{20}$"},
+    "rank": {"type": "integer", "minimum": 1},
+    "selection_priority": {"type": "integer", "minimum": 1},
+    "selection_rationale": {"type": "string", "minLength": 1}
+  }
+}

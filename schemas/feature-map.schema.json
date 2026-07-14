@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/feature-map.schema.json",
+  "title": "feature-map-set-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corpus_set_hash", "finalist_set_hash", "maps", "run_id", "version"],
+  "properties": {
+    "corpus_set_hash": {"$ref": "#/$defs/hash"},
+    "finalist_set_hash": {"$ref": "#/$defs/hash"},
+    "maps": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/mapEntry"}
+    },
+    "run_id": {"$ref": "#/$defs/nonEmptyString"},
+    "version": {"const": "feature-map-set-v1"}
+  },
+  "$defs": {
+    "candidateSpanHashes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/hash"}
+    },
+    "classification": {"type": "string", "minLength": 1},
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rationale", "reference_span_hashes", "status"],
+      "properties": {
+        "rationale": {"$ref": "#/$defs/nonEmptyString"},
+        "reference_span_hashes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/hash"}
+        },
+        "status": {"enum": ["matched", "different", "not_disclosed", "unavailable"]}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {"enum": ["matched", "different", "not_disclosed"]}
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "reference_span_hashes": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    },
+    "evidenceId": {"type": "string", "pattern": "^ev_[0-9a-f]{16}$"},
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_span_hashes", "category", "essential", "weight"],
+      "properties": {
+        "candidate_span_hashes": {"$ref": "#/$defs/candidateSpanHashes"},
+        "category": {
+          "enum": ["problem", "inputs", "mechanism", "transformations", "outputs", "technical_effects"]
+        },
+        "essential": {"type": "boolean"},
+        "weight": {
+          "type": "string",
+          "pattern": "^(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+        }
+      }
+    },
+    "featureId": {"type": "string", "minLength": 1},
+    "finalistId": {"type": "string", "pattern": "^fi_[0-9a-f]{20}$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "inspectedField": {"enum": ["title", "abstract", "classifications"]},
+    "mapEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_map", "finalist_id", "map_id"],
+      "properties": {
+        "feature_map": {"$ref": "#/$defs/reviewedFeatureMap"},
+        "finalist_id": {"$ref": "#/$defs/finalistId"},
+        "map_id": {"type": "string", "pattern": "^fm_[0-9a-f]{20}$"}
+      }
+    },
+    "nonEmptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "referenceMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisions", "evidence_id", "inspected_fields"],
+      "properties": {
+        "decisions": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/featureId"},
+          "additionalProperties": {"$ref": "#/$defs/decision"}
+        },
+        "evidence_id": {"$ref": "#/$defs/evidenceId"},
+        "inspected_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/inspectedField"}
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewed_at", "reviewed_by", "status"],
+      "properties": {
+        "reviewed_at": {"$ref": "#/$defs/nonEmptyString"},
+        "reviewed_by": {"$ref": "#/$defs/nonEmptyString"},
+        "status": {"const": "reviewed"}
+      }
+    },
+    "reviewedFeatureMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_classifications", "features", "reference_maps", "review"],
+      "properties": {
+        "candidate_classifications": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/classification"}
+        },
+        "features": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/featureId"},
+          "additionalProperties": {"$ref": "#/$defs/feature"}
+        },
+        "reference_maps": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/referenceMap"}
+        },
+        "review": {"$ref": "#/$defs/review"}
+      }
+    }
+  }
+}

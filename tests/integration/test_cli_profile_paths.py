@@ -11,8 +11,9 @@ import sqlite3
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def run_cli(*args):
+def run_cli(*args, extra_environment=None):
     environment = os.environ.copy()
+    environment.update(extra_environment or {})
     environment["PYTHONPATH"] = str(ROOT / "src")
     return subprocess.run([sys.executable, "-m", "patent_factory", *map(str, args)], cwd=ROOT, env=environment, text=True, capture_output=True, check=False)
 
@@ -81,6 +82,57 @@ class CliProfilePathTests(unittest.TestCase):
                     "(SELECT count(*) FROM profile_conflicts)"
                 ).fetchone()
             self.assertEqual(after, counts)
+
+            batch_id = json.loads(result.stdout)["batch_id"]
+            inspected = run_cli(
+                "profile", "conflict-inspect", "--batch-id", batch_id,
+                "--database", database.relative_to(ROOT), "--workspace-root", workspace.relative_to(ROOT),
+            )
+            self.assertEqual(inspected.returncode, 0, inspected.stdout + inspected.stderr)
+            pending = json.loads(inspected.stdout)
+            self.assertEqual((pending["status"], len(pending["conflicts"])), ("pending", 1))
+            decision_path = workspace / "conflict-decision.json"
+            decision = {
+                "action": "choose_value", "actor": "user", "batch_id": batch_id,
+                "choices": [], "reason": "select reviewed incoming value",
+                "schema_version": "profile-conflict-decision-v1", "subject_hash": pending["subject_hash"],
+            }
+            decision_path.write_text(json.dumps(decision), encoding="utf-8")
+            canary = "G006-PROFILE-CONFLICT-CANARY"
+            canary_decision = dict(decision)
+            canary_decision["reason"] = canary
+            canary_decision["choices"] = [{"conflict_id": pending["conflicts"][0]["conflict_id"], "selected": "incoming"}]
+            decision_path.write_text(json.dumps(canary_decision), encoding="utf-8")
+            blocked_canary = run_cli(
+                "profile", "conflict-decide", "--batch-id", batch_id,
+                "--input", decision_path.relative_to(ROOT), "--database", database.relative_to(ROOT),
+                "--profile", profile.relative_to(ROOT), "--workspace-root", workspace.relative_to(ROOT),
+                extra_environment={"KIPRIS_PLUS_API_KEY": canary},
+            )
+            self.assertEqual(blocked_canary.returncode, 2, blocked_canary.stdout + blocked_canary.stderr)
+            self.assertNotIn(canary, blocked_canary.stdout + blocked_canary.stderr)
+            decision_path.write_text(json.dumps(decision), encoding="utf-8")
+            incomplete = run_cli(
+                "profile", "conflict-decide", "--batch-id", batch_id,
+                "--input", decision_path.relative_to(ROOT), "--database", database.relative_to(ROOT),
+                "--profile", profile.relative_to(ROOT), "--workspace-root", workspace.relative_to(ROOT),
+            )
+            self.assertEqual(incomplete.returncode, 2, incomplete.stdout + incomplete.stderr)
+            decision["choices"] = [{"conflict_id": pending["conflicts"][0]["conflict_id"], "selected": "incoming"}]
+            decision_path.write_text(json.dumps(decision), encoding="utf-8")
+            decided = run_cli(
+                "profile", "conflict-decide", "--batch-id", batch_id,
+                "--input", decision_path.relative_to(ROOT), "--database", database.relative_to(ROOT),
+                "--profile", profile.relative_to(ROOT), "--workspace-root", workspace.relative_to(ROOT),
+            )
+            self.assertEqual(decided.returncode, 0, decided.stdout + decided.stderr)
+            self.assertEqual(json.loads(profile.read_text(encoding="utf-8"))["facts"]["name"]["value"], "B")
+            replay = run_cli(
+                "profile", "conflict-decide", "--batch-id", batch_id,
+                "--input", decision_path.relative_to(ROOT), "--database", database.relative_to(ROOT),
+                "--profile", profile.relative_to(ROOT), "--workspace-root", workspace.relative_to(ROOT),
+            )
+            self.assertTrue(json.loads(replay.stdout)["replayed"])
 
     def test_sqlite_is_authoritative_and_exact_success_rerun_has_no_changes(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "documents") as documents_temporary, tempfile.TemporaryDirectory(dir=ROOT / "workspace") as workspace_temporary:

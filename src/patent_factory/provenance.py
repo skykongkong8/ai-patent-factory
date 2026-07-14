@@ -34,6 +34,23 @@ def normalize(value: Any) -> Any:
     return value
 
 
+def strict_json_loads(payload: str | bytes | bytearray) -> Any:
+    """Parse JSON without the standard decoder's silent duplicate-key overwrite."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        normalized_keys: set[str] = set()
+        for key, value in pairs:
+            normalized_key = normalize(key)
+            if normalized_key in normalized_keys:
+                raise ValueError("duplicate JSON object key")
+            normalized_keys.add(normalized_key)
+            result[key] = value
+        return result
+
+    return json.loads(payload, object_pairs_hook=unique_object)
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(normalize(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 

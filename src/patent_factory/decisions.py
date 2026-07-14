@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import stat
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+from .database import FaultInjector
+from .models import ArtifactRevision, GateKind, RunState
+from .privacy import assert_canaries_absent, environment_secret
+from .provenance import digest, normalize
+from .state import GATE_ACTIONS, GateMismatchError, StateError, StateStore, gate_action_target
+
+
+@dataclass(frozen=True)
+class DecisionRun:
+    run_id: str
+    gate_id: str
+    decision_id: str
+    artifact_revision_id: str
+    action: str
+    next_state: str
+    replayed: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "action": self.action, "artifact_ids": [self.artifact_revision_id],
+            "command": "gate.decide", "decision_id": self.decision_id,
+            "gate_id": self.gate_id, "next_state": self.next_state,
+            "replayed": self.replayed, "run_id": self.run_id,
+            "status": self.next_state,
+        }
+
+
+def _artifact(connection: sqlite3.Connection, run_id: str, kind: str) -> tuple[sqlite3.Row, dict[str, Any]]:
+    row = connection.execute(
+        "SELECT ar.* FROM artifact_revisions ar JOIN current_artifacts ca ON ca.revision_id=ar.revision_id "
+        "WHERE ar.run_id=? AND ca.kind=? AND ar.stale=0", (run_id, kind),
+    ).fetchone()
+    if row is None:
+        raise StateError(f"gate decision requires current {kind}")
+    return row, json.loads(row["content_json"])
+
+
+def _exports(connection: sqlite3.Connection, run_root: Path) -> tuple[StateStore, Path]:
+    root = Path(run_root).absolute()
+    if not root.is_dir() or stat.S_ISLNK(root.lstat().st_mode):
+        raise ValueError("decision_export: safe run directory required")
+    directory = root / "decision-exports"
+    if directory.exists() and (not directory.is_dir() or stat.S_ISLNK(directory.lstat().st_mode)):
+        raise ValueError("decision_export: unsafe export directory")
+    directory.mkdir(mode=0o700, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700, follow_symlinks=False)
+    except OSError:
+        pass
+    directories = {directory}
+    for row in connection.execute("SELECT DISTINCT path FROM artifact_exports"):
+        registered = Path(row["path"]).absolute().parent
+        try:
+            registered.relative_to(root)
+        except ValueError as exc:
+            raise StateError("artifact registry path is outside the run directory") from exc
+        directories.add(registered)
+    return StateStore(connection, export_directories=tuple(sorted(directories))), directory
+
+
+def inspect_gate(connection: sqlite3.Connection, run_id: str, gate_id: str) -> dict[str, Any]:
+    row = connection.execute(
+        "SELECT * FROM gate_envelopes WHERE gate_id=? AND run_id=?", (gate_id, run_id),
+    ).fetchone()
+    if row is None:
+        raise GateMismatchError("gate is unavailable")
+    return {
+        "actions": sorted(GATE_ACTIONS[GateKind(row["kind"])]),
+        "approval_scope": json.loads(row["approval_scope_json"]),
+        "approval_scope_hash": row["approval_scope_hash"], "gate_id": gate_id,
+        "kind": row["kind"], "return_state": row["return_state"],
+        "run_id": run_id, "status": row["status"],
+        "subject_revision_hash": row["subject_revision_hash"],
+        "suspended_operation": row["suspended_operation"],
+    }
+
+
+def _text(value: Any, path: str) -> str:
+    item = normalize(value)
+    if not isinstance(item, str) or not item:
+        raise ValueError(f"{path}: non-empty string required")
+    return item
+
+
+def _resolution(
+    connection: sqlite3.Connection, run_id: str, envelope: sqlite3.Row,
+    request: Mapping[str, Any],
+) -> tuple[str, dict[str, Any], tuple[str, ...]]:
+    kind = GateKind(envelope["kind"])
+    action = _text(request["action"], "decision.action")
+    if action not in GATE_ACTIONS[kind]:
+        raise GateMismatchError(f"action is not allowed for {kind.value}")
+    entries = request.get("decisions", [])
+    plan = request.get("plan", {})
+    if not isinstance(entries, list) or not isinstance(plan, Mapping):
+        raise ValueError("decision: decisions array and plan object required")
+    subject = connection.execute(
+        "SELECT * FROM artifact_revisions WHERE run_id=? AND content_hash=? AND stale=0",
+        (run_id, envelope["subject_revision_hash"]),
+    ).fetchone()
+    if subject is None:
+        raise GateMismatchError("decision subject is stale")
+    dependencies = [subject["revision_id"]]
+    payload: dict[str, Any] = {
+        "action": action, "actor": _text(request["actor"], "decision.actor"),
+        "approval_scope_hash": envelope["approval_scope_hash"], "gate_id": envelope["gate_id"],
+        "gate_kind": kind.value, "reason": _text(request["reason"], "decision.reason"),
+        "run_id": run_id, "subject_revision_hash": envelope["subject_revision_hash"],
+        "suspended_operation": envelope["suspended_operation"], "version": "decision-set-v1",
+    }
+    if kind is GateKind.EXCESSIVE_SIMILARITY:
+        audit_row, audit = _artifact(connection, run_id, "audit_batch")
+        finalist_row, finalists = _artifact(connection, run_id, "finalist_set")
+        corpus_row, corpora = _artifact(connection, run_id, "corpus_set")
+        feature_row, features = _artifact(connection, run_id, "feature_map_set")
+        config_row, _config = _artifact(connection, run_id, "scorer_config")
+        if audit_row["content_hash"] != envelope["subject_revision_hash"]:
+            raise GateMismatchError("excessive decision does not bind the current audit")
+        scope = json.loads(envelope["approval_scope_json"])
+        current_bindings = [{
+            "corpus_hash": {entry["finalist_id"]: entry for entry in corpora["corpora"]}[item["finalist_id"]]["corpus_hash"],
+            "finalist_hash": digest({entry["finalist_id"]: entry for entry in finalists["finalists"]}[item["finalist_id"]]),
+            "finalist_id": item["finalist_id"],
+            "map_id": {entry["finalist_id"]: entry for entry in features["maps"]}[item["finalist_id"]]["map_id"],
+        } for item in audit["results"] if item["outcome"] == "decision_required"]
+        if (
+            audit.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("finalist_set_hash") != finalist_row["content_hash"]
+            or scope.get("feature_map_set_hash") != feature_row["content_hash"]
+            or scope.get("scorer_config_hash") != config_row["content_hash"]
+            or scope.get("decision_bindings") != current_bindings
+        ):
+            raise GateMismatchError("excessive decision bindings are stale")
+        affected = sorted(result["finalist_id"] for result in audit["results"] if result["outcome"] == "decision_required")
+        if action == "stop":
+            if entries:
+                raise ValueError("decision.decisions: stop cannot include partial finalist decisions")
+            resolved: list[dict[str, Any]] = []
+        else:
+            if action not in {"retain_with_warning", "refine", "replace"}:
+                raise GateMismatchError("excessive decision action is invalid")
+            if any(not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"} for item in entries):
+                raise ValueError("decision.decisions: exact finalist decision fields required")
+            ids = [item["finalist_id"] for item in entries]
+            if len(ids) != len(set(ids)) or sorted(ids) != affected:
+                raise ValueError("decision.decisions: exactly one current decision per excessive finalist required")
+            allowed = {"retain_with_warning", "refine", "replace"}
+            if any(item["action"] not in allowed for item in entries):
+                raise ValueError("decision.decisions: retain_with_warning, refine, or replace required")
+            aggregate = "replace" if any(item["action"] == "replace" for item in entries) else "refine" if any(item["action"] == "refine" for item in entries) else "retain_with_warning"
+            if action != aggregate:
+                raise ValueError("decision.action: must match policy-derived finalist branch")
+            finalist_map = {item["finalist_id"]: item for item in finalists["finalists"]}
+            corpus_map = {item["finalist_id"]: item for item in corpora["corpora"]}
+            feature_map = {item["finalist_id"]: item for item in features["maps"]}
+            resolved = []
+            for item in sorted(entries, key=lambda value: value["finalist_id"]):
+                finalist_id = item["finalist_id"]
+                resolved.append({
+                    "action": item["action"], "candidate_id": finalist_map[finalist_id]["candidate_id"],
+                    "corpus_hash": corpus_map[finalist_id]["corpus_hash"],
+                    "feature_map_id": feature_map[finalist_id]["map_id"],
+                    "finalist_hash": digest(finalist_map[finalist_id]), "finalist_id": finalist_id,
+                    "reason": _text(item["reason"], f"decision.decisions.{finalist_id}.reason"),
+                    "warning": "Retained despite excessive provisional similarity risk within the retrieved corpus."
+                    if item["action"] == "retain_with_warning" else None,
+                })
+        payload.update({
+            "audit_hash": audit_row["content_hash"], "decisions": resolved,
+            "corpus_set_hash": corpus_row["content_hash"],
+            "feature_map_set_hash": feature_row["content_hash"],
+            "finalist_set_hash": finalist_row["content_hash"], "plan": {},
+            "scorer_config_hash": config_row["content_hash"],
+        })
+        dependencies.extend((finalist_row["revision_id"], corpus_row["revision_id"], feature_row["revision_id"], config_row["revision_id"]))
+    elif kind is GateKind.COVERAGE:
+        if entries:
+            raise ValueError("decision.decisions: coverage uses one branch action")
+        if action not in {"expand", "retry", "stop"}:
+            raise GateMismatchError("coverage decision action is invalid")
+        if action != "stop" and not plan:
+            raise ValueError("decision.plan: expand or retry requires a bounded plan")
+        payload.update({"decisions": [], "plan": dict(plan), "plan_hash": digest(plan)})
+    else:
+        if entries or plan:
+            raise ValueError("decision: this gate accepts only its action and reason")
+        payload.update({"decisions": [], "plan": {}})
+    payload["next_state"] = gate_action_target(kind, action, RunState(envelope["return_state"])).value
+    return action, payload, tuple(sorted(set(dependencies)))
+
+
+def resolve_gate(
+    connection: sqlite3.Connection, *, run_root: Path, run_id: str,
+    decision_input: Mapping[str, Any], fault_at: FaultInjector = None,
+) -> DecisionRun:
+    secret = environment_secret("KIPRIS_PLUS_API_KEY")
+    assert_canaries_absent(decision_input, (secret,) if secret else (), boundary="decision_input")
+    required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
+    if not isinstance(decision_input, Mapping) or set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
+        raise ValueError("decision: exact gate-decision-input-v1 fields required")
+    gate_id = _text(decision_input["gate_id"], "decision.gate_id")
+    envelope = connection.execute("SELECT * FROM gate_envelopes WHERE gate_id=? AND run_id=?", (gate_id, run_id)).fetchone()
+    if envelope is None:
+        raise GateMismatchError("gate is unavailable")
+    if decision_input["subject_revision_hash"] != envelope["subject_revision_hash"] or decision_input["approval_scope"] != json.loads(envelope["approval_scope_json"]):
+        raise GateMismatchError("decision does not match current subject and scope")
+    action, payload, dependencies = _resolution(connection, run_id, envelope, decision_input)
+    store, exports = _exports(connection, run_root)
+    decision, result, _export = store.publish_gate_resolution(
+        gate_id, action=action, actor=payload["actor"], reason=payload["reason"],
+        subject_revision_hash=envelope["subject_revision_hash"],
+        approval_scope=json.loads(envelope["approval_scope_json"]), artifact_content=payload,
+        dependencies=dependencies, export_directory=exports,
+        idempotency_key=digest(decision_input), artifact_kind="gate_resolution", fault_at=fault_at,
+    )
+    assert result.artifact is not None
+    return DecisionRun(run_id, gate_id, decision.decision_id, result.artifact.revision_id,
+                       action, result.snapshot.state.value, result.replayed)

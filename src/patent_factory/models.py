@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping
 
@@ -78,6 +78,7 @@ class QueryEnvelope:
     retry_ownership: str
     query_projection: Mapping[str, Any]
     cursor: str | None = None
+    audit_binding: Mapping[str, str] = field(default_factory=dict)
 
     def validate(self) -> None:
         required = (
@@ -104,6 +105,20 @@ class QueryEnvelope:
             raise ValueError("query_envelope.retry_budget: outside retry budget")
         if not isinstance(self.query_projection, Mapping):
             raise ValueError("query_envelope.query_projection: object required")
+        if not isinstance(self.audit_binding, Mapping):
+            raise ValueError("query_envelope.audit_binding: object required")
+        if self.audit_binding:
+            required_binding = {"purpose", "finalist_set_hash", "finalist_id", "query_group_id"}
+            if set(self.audit_binding) != required_binding:
+                raise ValueError("query_envelope.audit_binding: exact audit fields required")
+            if self.audit_binding.get("purpose") != "final_similarity_audit":
+                raise ValueError("query_envelope.audit_binding.purpose: unsupported")
+            if any(not normalize(self.audit_binding.get(name, "")) for name in required_binding):
+                raise ValueError("query_envelope.audit_binding: non-empty strings required")
+            if len(self.audit_binding["finalist_set_hash"]) != 64 or any(
+                character not in "0123456789abcdef" for character in self.audit_binding["finalist_set_hash"]
+            ):
+                raise ValueError("query_envelope.audit_binding.finalist_set_hash: sha256 required")
 
     def request_body(self) -> dict[str, Any]:
         self.validate()
@@ -116,6 +131,9 @@ class QueryEnvelope:
             "query_projection": normalize(dict(self.query_projection)), "result_budget": self.result_budget,
             "retry_budget": self.retry_budget, "retry_ownership": normalize(self.retry_ownership),
             "run_id": normalize(self.run_id),
+            # This binding is persisted/fingerprinted, but adapters only egress
+            # query_projection fields.
+            "audit_binding": normalize(dict(self.audit_binding)),
         }
 
     @property
@@ -148,6 +166,7 @@ class AdapterRecord:
     abstract: str | None = None
     classifications: tuple[str, ...] = ()
     excerpt_hashes: tuple[str, ...] = ()
+    field_span_hashes: Mapping[str, str] = field(default_factory=dict)
     interpretations: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
 
@@ -162,6 +181,7 @@ class AdapterRecord:
             "abstract": self.abstract, "applicant": self.applicant, "canonical_url": self.canonical_url,
             "classifications": list(self.classifications), "content_hash": self.content_hash,
             "excerpt_hashes": list(self.excerpt_hashes), "filing_date": self.filing_date,
+            "field_span_hashes": dict(self.field_span_hashes),
             "interpretations": list(self.interpretations), "language": self.language,
             "limitations": list(self.limitations), "original_identifier": self.original_identifier,
             "provenance": self.provenance, "source_locator": self.source_locator,

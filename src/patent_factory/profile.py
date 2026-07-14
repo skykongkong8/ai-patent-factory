@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from .provenance import Claim, EpistemicLabel, canonical_json, claim_from_dict, digest, normalize
+from .provenance import Claim, EpistemicLabel, canonical_json, claim_from_dict, digest, normalize, strict_json_loads
 
 PROFILE_VERSION = "profile-v1"
 ALLOWED_SUFFIXES = {".json", ".md", ".txt"}
@@ -38,7 +38,7 @@ def empty_profile() -> dict[str, Any]:
 def load_profile(path: Path) -> dict[str, Any]:
     if not path.exists():
         return empty_profile()
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = strict_json_loads(path.read_text(encoding="utf-8"))
     if data.get("profile_version") != PROFILE_VERSION or not isinstance(data.get("facts"), dict):
         raise ValueError("profile: unsupported or malformed profile")
     return data
@@ -123,7 +123,7 @@ def document_facts(path: Path, root: Path | None = None) -> list[IncomingFact]:
     content_hash = digest(text)
     source_id = "src_" + digest({"locator": source_locator, "content_hash": content_hash})[:16]
     if resolved.suffix.lower() == ".json":
-        data = json.loads(text)
+        data = strict_json_loads(text)
         if isinstance(data, dict) and isinstance(data.get("facts"), list):
             facts = []
             for index, item in enumerate(data["facts"]):

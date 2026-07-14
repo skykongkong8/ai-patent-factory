@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/candidate.schema.json",
+  "title": "Korean Patent Proposal Factory candidate-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_id", "claims", "components", "domain", "evaluation_config_hash",
+    "evidence_references", "expected_effects", "implementation_example", "interactions",
+    "mechanism", "measurable_validation", "outputs", "profile_references",
+    "profile_revision_hash", "required_inputs", "research_revision_hash", "synthesis_trace",
+    "technical_problem", "title", "transformations", "unresolved_dependencies",
+    "unresolved_questions"
+  ],
+  "properties": {
+    "candidate_id": {"type": "string", "pattern": "^ca_[0-9a-f]{20}$"},
+    "claims": {"type": "array", "minItems": 4, "items": {"type": "object"}},
+    "components": {"$ref": "#/$defs/nonEmptyStrings"},
+    "domain": {"$ref": "#/$defs/nonEmptyString"},
+    "evaluation_config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "evidence_references": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidenceReference"}},
+    "expected_effects": {"$ref": "#/$defs/nonEmptyStrings"},
+    "implementation_example": {"$ref": "#/$defs/nonEmptyString"},
+    "interactions": {"$ref": "#/$defs/nonEmptyStrings"},
+    "mechanism": {"$ref": "#/$defs/nonEmptyString"},
+    "measurable_validation": {"$ref": "#/$defs/nonEmptyString"},
+    "outputs": {"$ref": "#/$defs/nonEmptyStrings"},
+    "profile_references": {
+      "type": "array", "minItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["claim_id", "field", "kind"],
+        "properties": {
+          "claim_id": {"type": "string", "pattern": "^cl_[0-9a-f]{16}$"},
+          "field": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["problem", "capability"]}
+        }
+      }
+    },
+    "profile_revision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "required_inputs": {"$ref": "#/$defs/nonEmptyStrings"},
+    "research_revision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "synthesis_trace": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_ids", "method", "narrative"],
+      "properties": {
+        "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "method": {"enum": ["modify", "combine", "adapt", "constrain", "transfer"]},
+        "narrative": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "technical_problem": {"$ref": "#/$defs/nonEmptyString"},
+    "title": {"$ref": "#/$defs/nonEmptyString"},
+    "transformations": {"$ref": "#/$defs/nonEmptyStrings"},
+    "unresolved_dependencies": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+    "unresolved_questions": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}}
+  },
+  "$defs": {
+    "evidenceReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["content_hash", "evidence_id", "limitation", "span_hash"],
+      "properties": {
+        "content_hash": {"$ref": "#/$defs/nonEmptyString"},
+        "evidence_id": {"type": "string", "pattern": "^ev_"},
+        "limitation": {"type": ["string", "null"]},
+        "span_hash": {"type": ["string", "null"]}
+      },
+      "anyOf": [
+        {"properties": {"span_hash": {"type": "string", "minLength": 1}}},
+        {"properties": {"limitation": {"type": "string", "minLength": 1}}}
+      ]
+    },
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "nonEmptyStrings": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonEmptyString"}
+    }
+  }
+}

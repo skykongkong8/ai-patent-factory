@@ -252,12 +252,19 @@ class KiprisAdapter:
                     "application_number": number, "classifications": classifications,
                     "filing_date": _text(item, "applicationDate"), "title": title,
                 }
+                field_span_hashes = {
+                    field: digest({"field": field, "text": value})
+                    for field, value in normalized_record.items()
+                    if field in {"title", "abstract", "classifications"} and value
+                }
+                excerpt_hashes = tuple(sorted(field_span_hashes.values()))
                 records.append(AdapterRecord(
                     source_type="kipris_patent", source_locator=f"kr-patent:{number}",
                     original_identifier=application, title=title, content_hash=digest(normalized_record),
                     language="ko", provenance="kipris_plus_api",
                     filing_date=normalized_record["filing_date"], applicant=normalized_record["applicant"],
                     abstract=abstract, classifications=classifications,
+                    excerpt_hashes=excerpt_hashes, field_span_hashes=field_span_hashes,
                     limitations=("Normalized KIPRIS metadata; not a patentability conclusion.",),
                 ))
                 if len(records) >= envelope.result_budget:

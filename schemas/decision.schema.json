@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision.schema.json",
+  "title": "Gate decision set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action", "actor", "approval_scope_hash", "decided_at", "decision_id",
+    "decisions", "gate_id", "gate_kind", "next_state", "plan", "reason",
+    "run_id", "subject_revision_hash", "suspended_operation", "version"
+  ],
+  "properties": {
+    "version": {"const": "decision-set-v1"},
+    "decision_id": {"type": "string", "pattern": "^gd_[0-9a-f]{20}$"},
+    "gate_id": {"type": "string", "pattern": "^ge_[0-9a-f]{20}$"},
+    "run_id": {"type": "string", "minLength": 1},
+    "gate_kind": {"enum": ["conflict_resolution", "credential", "sensitive_disclosure", "domain_pivot", "coverage", "excessive_similarity"]},
+    "action": {"enum": ["choose_source", "choose_value", "retain_unresolved", "configure_and_verify", "approve", "degrade", "redact", "reject", "expand", "retry", "retain_with_warning", "refine", "replace", "stop"]},
+    "actor": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "subject_revision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "approval_scope_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "suspended_operation": {"type": "string", "minLength": 1},
+    "next_state": {"type": "string", "minLength": 1},
+    "decided_at": {"type": "string", "minLength": 1},
+    "plan": {"type": "object"},
+    "plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "audit_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "corpus_set_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "finalist_set_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "feature_map_set_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "scorer_config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["action", "candidate_id", "corpus_hash", "feature_map_id", "finalist_hash", "finalist_id", "reason", "warning"],
+        "properties": {
+          "action": {"enum": ["retain_with_warning", "refine", "replace"]},
+          "candidate_id": {"type": "string", "minLength": 1},
+          "corpus_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "feature_map_id": {"type": "string", "minLength": 1},
+          "finalist_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "finalist_id": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "warning": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "candidate_schema_version": "candidate-v1",
+  "finalist_schema_version": "finalist-v1",
+  "minimum_finalists": 3,
+  "rubrics": {
+    "differentiation": "preaudit-differentiation-v1",
+    "technical_feasibility": "technical-feasibility-v1",
+    "utility_significance": "utility-significance-v1"
+  },
+  "schema_version": "factory-defaults-v1"
+}

@@ -1,0 +1,12 @@
+{
+  "aggregate_weights": {"classification": "0.15", "difference_credit": "0.20", "features": "0.60", "text": "0.25"},
+  "classification_scores": {"main_group": "0.80", "section": "0.25", "subclass": "0.55", "subgroup": "1", "unrelated": "0"},
+  "corpus_limit": 100,
+  "feature_weights": {"inputs": "0.10", "mechanism": "0.30", "outputs": "0.10", "problem": "0.10", "technical_effects": "0.20", "transformations": "0.20"},
+  "page_cap": 5,
+  "results_per_query": 100,
+  "text_weights": {"abstract": "0.75", "title": "0.25"},
+  "thresholds": {"coverage": "0.80", "excessive": "75", "high": "55", "low": "0", "moderate": "35"},
+  "tokenizer": {"casefold": true, "char_ngram": 3, "normalization": "NFKC", "overlap_metrics": ["token_jaccard", "char_trigram_dice"], "token_pattern": "[0-9a-z가-힣]+"},
+  "version": "simrisk-v1.0.0"
+}

@@ -10,9 +10,9 @@ from typing import Any, Callable, Iterable, Iterator
 
 from .paths import owner_only_file
 from .profile import IncomingFact, PROFILE_VERSION, atomic_write_profile
-from .provenance import canonical_json, digest, normalize
+from .provenance import Claim, EpistemicLabel, canonical_json, digest, normalize
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 BUSY_TIMEOUT_MS = 250
 
 SCHEMA_V1 = """
@@ -158,6 +158,15 @@ def _migrate_v6(connection: sqlite3.Connection) -> None:
             (candidate, row["run_id"], row["evidence_id"]),
         )
 
+
+def _migrate_v7(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS profile_conflict_resolutions ("
+        "resolution_id TEXT PRIMARY KEY,batch_id TEXT NOT NULL UNIQUE REFERENCES ingestion_batches(batch_id),"
+        "subject_hash TEXT NOT NULL,input_hash TEXT NOT NULL,action TEXT NOT NULL,decision_json TEXT NOT NULL,"
+        "actor TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL)"
+    )
+
 class DatabaseCorruptError(RuntimeError):
     code = "database_corrupt"
 
@@ -240,6 +249,12 @@ def _migrate(connection: sqlite3.Connection, version: int, fault_at: FaultInject
             _migrate_v6(connection)
             connection.execute("PRAGMA user_version=6")
             inject_fault(fault_at, "migration_v6")
+            version = 6
+        if version == 6:
+            _migrate_v7(connection)
+            connection.execute("PRAGMA user_version=7")
+            inject_fault(fault_at, "migration_v7")
+            version = 7
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -333,6 +348,9 @@ def ingest(connection: sqlite3.Connection, input_mode: str, incoming: Iterable[I
     input_digest = digest(_batch_payload(input_mode, facts))
     batch_id = "ib_" + input_digest[:16]
     with immediate_transaction(connection):
+        state = connection.execute("SELECT status FROM profile_state WHERE singleton=1").fetchone()
+        if state is not None and state["status"] == "stopped":
+            raise ValueError("profile workflow is stopped")
         if connection.execute("SELECT 1 FROM ingestion_batches WHERE batch_id=?", (batch_id,)).fetchone():
             return replace(_result(connection, batch_id), changes=0)
         conflicts: list[tuple[str, str, str, str]] = []
@@ -367,13 +385,127 @@ def ingest(connection: sqlite3.Connection, input_mode: str, incoming: Iterable[I
         return _result(connection,batch_id)
 
 
-def export_profile(connection: sqlite3.Connection, path: Path) -> dict[str, Any]:
+def profile_payload(connection: sqlite3.Connection) -> dict[str, Any]:
     facts: dict[str, Any] = {}
     for row in connection.execute("SELECT field,value_json FROM profile_facts ORDER BY field"):
         claims = [json.loads(item[0]) for item in connection.execute("SELECT claim_json FROM profile_claims WHERE field=? ORDER BY claim_id", (row["field"],))]
         facts[row["field"]] = {"claims":claims,"value":json.loads(row["value_json"])}
     conflicts = [{"conflict_id":row["conflict_id"],"existing_value_hash":digest(json.loads(row["existing_value_json"])),"field":row["field"],"incoming_value_hash":digest(json.loads(row["incoming_value_json"])),"incoming_source_id":row["incoming_source_id"]} for row in connection.execute("SELECT conflict_id,field,existing_value_json,incoming_value_json,incoming_source_id FROM profile_conflicts ORDER BY field,conflict_id")]
     state = connection.execute("SELECT status,revision FROM profile_state WHERE singleton=1").fetchone()
-    payload = {"conflicts":conflicts,"facts":facts,"profile_revision":state["revision"] if state else _revision(connection),"profile_version":PROFILE_VERSION,"state":state["status"] if state else "profile_pending"}
+    return {"conflicts":conflicts,"facts":facts,"profile_revision":state["revision"] if state else _revision(connection),"profile_version":PROFILE_VERSION,"state":state["status"] if state else "profile_pending"}
+
+
+def profile_conflict_snapshot(connection: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
+    rows = connection.execute(
+        "SELECT conflict_id,field,existing_value_json,incoming_value_json,incoming_source_id "
+        "FROM profile_conflicts WHERE batch_id=? ORDER BY field,conflict_id", (batch_id,),
+    ).fetchall()
+    if not rows:
+        resolved = connection.execute(
+            "SELECT subject_hash,action,decision_json FROM profile_conflict_resolutions WHERE batch_id=?",
+            (batch_id,),
+        ).fetchone()
+        if resolved:
+            return {"action": resolved["action"], "batch_id": batch_id,
+                    "decision": json.loads(resolved["decision_json"]), "status": "decided",
+                    "subject_hash": resolved["subject_hash"]}
+        raise ValueError("profile conflict batch is unavailable")
+    subject = [{
+        "conflict_id": row["conflict_id"], "field": row["field"],
+        "existing_value_hash": digest(json.loads(row["existing_value_json"])),
+        "incoming_source_id": row["incoming_source_id"],
+        "incoming_value_hash": digest(json.loads(row["incoming_value_json"])),
+    } for row in rows]
+    return {"batch_id": batch_id, "conflicts": subject, "status": "pending",
+            "subject_hash": digest(subject)}
+
+
+def resolve_profile_conflicts(
+    connection: sqlite3.Connection, decision_input: dict[str, Any], *,
+    fault_at: FaultInjector = None,
+) -> dict[str, Any]:
+    required = {"action", "actor", "batch_id", "choices", "reason", "schema_version", "subject_hash"}
+    if set(decision_input) != required or decision_input.get("schema_version") != "profile-conflict-decision-v1":
+        raise ValueError("profile conflict decision requires exact profile-conflict-decision-v1 fields")
+    action = normalize(decision_input["action"])
+    if action not in {"choose_source", "choose_value", "retain_unresolved", "stop"}:
+        raise ValueError("profile conflict action is invalid")
+    actor, reason, batch_id = (normalize(decision_input[name]) for name in ("actor", "reason", "batch_id"))
+    if not all(isinstance(item, str) and item for item in (actor, reason, batch_id)):
+        raise ValueError("profile conflict decision text fields are required")
+    input_hash = digest(decision_input)
+    with immediate_transaction(connection):
+        replay = connection.execute("SELECT * FROM profile_conflict_resolutions WHERE batch_id=?", (batch_id,)).fetchone()
+        if replay:
+            if replay["input_hash"] != input_hash:
+                raise ValueError("profile conflict batch was decided differently")
+            return {"action": replay["action"], "batch_id": batch_id,
+                    "profile_revision": _revision(connection), "replayed": True,
+                    "resolution_id": replay["resolution_id"],
+                    "status": connection.execute("SELECT status FROM profile_state WHERE singleton=1").fetchone()[0]}
+        rows = connection.execute(
+            "SELECT * FROM profile_conflicts WHERE batch_id=? ORDER BY field,conflict_id", (batch_id,),
+        ).fetchall()
+        if not rows:
+            raise ValueError("profile conflict batch is unavailable")
+        subject = [{
+            "conflict_id": row["conflict_id"], "field": row["field"],
+            "existing_value_hash": digest(json.loads(row["existing_value_json"])),
+            "incoming_source_id": row["incoming_source_id"],
+            "incoming_value_hash": digest(json.loads(row["incoming_value_json"])),
+        } for row in rows]
+        subject_hash = digest(subject)
+        if decision_input["subject_hash"] != subject_hash:
+            raise ValueError("profile conflict decision subject is stale")
+        choices = decision_input["choices"]
+        if not isinstance(choices, list):
+            raise ValueError("profile conflict choices must be an array")
+        if action in {"choose_source", "choose_value"}:
+            if any(not isinstance(item, dict) or set(item) != {"conflict_id", "selected"} or item["selected"] not in {"existing", "incoming"} for item in choices):
+                raise ValueError("profile conflict choices require conflict_id and existing|incoming")
+            ids = [item["conflict_id"] for item in choices]
+            expected = [row["conflict_id"] for row in rows]
+            if len(ids) != len(set(ids)) or sorted(ids) != sorted(expected):
+                raise ValueError("exactly one choice per current profile conflict is required")
+        elif choices:
+            raise ValueError("retain_unresolved and stop do not accept partial choices")
+        resolution_id = "pcd_" + input_hash[:20]
+        by_id = {item["conflict_id"]: item["selected"] for item in choices}
+        decision_rows = []
+        if action in {"choose_source", "choose_value"}:
+            for row in rows:
+                selected = by_id[row["conflict_id"]]
+                value_json = row["incoming_value_json"] if selected == "incoming" else row["existing_value_json"]
+                connection.execute(
+                    "INSERT INTO profile_facts VALUES(?,?) ON CONFLICT(field) DO UPDATE SET value_json=excluded.value_json",
+                    (row["field"], value_json),
+                )
+                claim = Claim(EpistemicLabel.USER_STATEMENT, source_id=resolution_id).as_dict()
+                connection.execute(
+                    "INSERT OR IGNORE INTO profile_claims VALUES(?,?,?,?)",
+                    (row["field"], claim["claim_id"], canonical_json(claim), batch_id),
+                )
+                decision_rows.append({"conflict_id": row["conflict_id"], "field": row["field"],
+                                      "selected": selected, "selected_value_hash": digest(json.loads(value_json))})
+            connection.execute("DELETE FROM profile_conflicts WHERE batch_id=?", (batch_id,))
+        inject_fault(fault_at, "after_conflict_application")
+        status = "stopped" if action == "stop" else "conflict_resolution_required" if connection.execute("SELECT 1 FROM profile_conflicts LIMIT 1").fetchone() else "profile_ready"
+        revision = _revision(connection)
+        connection.execute(
+            "INSERT INTO profile_state VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET status=excluded.status,revision=excluded.revision",
+            (status, revision),
+        )
+        decision = {"action": action, "choices": decision_rows, "subject_hash": subject_hash}
+        connection.execute(
+            "INSERT INTO profile_conflict_resolutions VALUES(?,?,?,?,?,?,?,?,?)",
+            (resolution_id, batch_id, subject_hash, input_hash, action, canonical_json(decision), actor, reason, utc_now()),
+        )
+        inject_fault(fault_at, "after_conflict_decision")
+        return {"action": action, "batch_id": batch_id, "profile_revision": revision,
+                "replayed": False, "resolution_id": resolution_id, "status": status}
+
+
+def export_profile(connection: sqlite3.Connection, path: Path) -> dict[str, Any]:
+    payload = profile_payload(connection)
     atomic_write_profile(path,payload)
     return payload

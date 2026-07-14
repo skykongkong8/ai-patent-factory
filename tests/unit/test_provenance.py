@@ -1,6 +1,6 @@
 import unittest
 
-from patent_factory.provenance import Claim, EpistemicLabel, claim_from_dict
+from patent_factory.provenance import Claim, EpistemicLabel, claim_from_dict, strict_json_loads
 
 
 class ProvenanceTests(unittest.TestCase):
@@ -17,6 +17,11 @@ class ProvenanceTests(unittest.TestCase):
     def test_user_statement_is_distinct(self):
         claim = Claim(EpistemicLabel.USER_STATEMENT, source_id="interview-v1").as_dict()
         self.assertEqual(claim["label"], "user_statement")
+
+    def test_strict_json_rejects_exact_and_unicode_normalized_duplicate_keys(self):
+        for payload in ('{"feature-problem":1,"feature-problem":2}', '{"é":1,"e\\u0301":2}'):
+            with self.subTest(payload=payload), self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+                strict_json_loads(payload)
 
 
 if __name__ == "__main__":

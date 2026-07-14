@@ -38,7 +38,7 @@ ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.PROFILE_PENDING: frozenset({RunState.CONFLICT_RESOLUTION_REQUIRED, RunState.SENSITIVE_DISCLOSURE_REQUIRED, RunState.PROFILE_READY}),
     RunState.CONFLICT_RESOLUTION_REQUIRED: frozenset({RunState.PROFILE_PENDING, RunState.PROFILE_READY, RunState.STOPPED}),
     RunState.PROFILE_READY: frozenset({RunState.CREDENTIAL_REQUIRED, RunState.RESEARCH_READY}),
-    RunState.CREDENTIAL_REQUIRED: frozenset({RunState.PROFILE_READY, RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING, RunState.STOPPED}),
+    RunState.CREDENTIAL_REQUIRED: frozenset({RunState.PROFILE_READY, RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING, RunState.FINALISTS_READY, RunState.STOPPED}),
     RunState.RESEARCH_READY: frozenset({RunState.CREDENTIAL_REQUIRED, RunState.RESEARCH_RUNNING, RunState.DOMAIN_PIVOT_REQUIRED}),
     RunState.RESEARCH_RUNNING: frozenset({RunState.RESEARCH_COMPLETE, RunState.RESEARCH_INCOMPLETE, RunState.CREDENTIAL_REQUIRED}),
     RunState.RESEARCH_COMPLETE: frozenset({RunState.DOMAIN_PIVOT_REQUIRED, RunState.IDEATION_RUNNING}),
@@ -47,7 +47,7 @@ ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.IDEATION_RUNNING: frozenset({RunState.CANDIDATES_READY, RunState.INSUFFICIENT_EVIDENCE, RunState.DOMAIN_PIVOT_REQUIRED}),
     RunState.CANDIDATES_READY: frozenset({RunState.FINALISTS_READY, RunState.DOMAIN_PIVOT_REQUIRED, RunState.INSUFFICIENT_EVIDENCE}),
     RunState.INSUFFICIENT_EVIDENCE: frozenset({RunState.RESEARCH_RUNNING, RunState.STOPPED}),
-    RunState.FINALISTS_READY: frozenset({RunState.AUDIT_RUNNING}),
+    RunState.FINALISTS_READY: frozenset({RunState.AUDIT_RUNNING, RunState.CREDENTIAL_REQUIRED}),
     RunState.AUDIT_RUNNING: frozenset({RunState.COVERAGE_INSUFFICIENT, RunState.DECISION_REQUIRED, RunState.AUDIT_APPROVED}),
     RunState.COVERAGE_INSUFFICIENT: frozenset({RunState.RESEARCH_RUNNING, RunState.AUDIT_RUNNING, RunState.STOPPED}),
     RunState.DECISION_REQUIRED: frozenset({RunState.STOPPED, RunState.AUDIT_APPROVED, RunState.RESEARCH_RUNNING, RunState.IDEATION_RUNNING}),
@@ -84,8 +84,21 @@ AUTHORIZING_GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
     GateKind.SENSITIVE_DISCLOSURE: frozenset({"approve"}),
     GateKind.DOMAIN_PIVOT: frozenset({"approve"}),
     GateKind.COVERAGE: frozenset(),
-    GateKind.EXCESSIVE_SIMILARITY: frozenset({"retain_with_warning"}),
+    GateKind.EXCESSIVE_SIMILARITY: frozenset(),
 }
+
+
+def gate_action_target(kind: GateKind, action: str, return_state: RunState) -> RunState:
+    """Return the policy-owned target for a gate action; callers never choose it."""
+    if action == "stop":
+        return RunState.STOPPED
+    return {
+        (GateKind.COVERAGE, "expand"): RunState.RESEARCH_RUNNING,
+        (GateKind.COVERAGE, "retry"): RunState.AUDIT_RUNNING,
+        (GateKind.EXCESSIVE_SIMILARITY, "retain_with_warning"): RunState.AUDIT_APPROVED,
+        (GateKind.EXCESSIVE_SIMILARITY, "refine"): RunState.IDEATION_RUNNING,
+        (GateKind.EXCESSIVE_SIMILARITY, "replace"): RunState.RESEARCH_RUNNING,
+    }.get((kind, action), return_state)
 
 GATE_STATE_SET = frozenset(GATE_STATES.values())
 
@@ -281,7 +294,7 @@ class StateStore:
         )
         return TransitionResult(self._snapshot(run_id), record["event_id"], artifact, True), replay_export
 
-    def transition(self, run_id: str, next_state: RunState | str, *, actor: str, reason: str, evidence_hashes: Iterable[str] = (), operation: str, idempotency_key: str, artifact_kind: str | None = None, artifact_content: dict[str, Any] | None = None, artifact_schema_version: str = "1", dependencies: Iterable[str] = (), fault_at: FaultInjector = None) -> TransitionResult:
+    def transition(self, run_id: str, next_state: RunState | str, *, actor: str, reason: str, evidence_hashes: Iterable[str] = (), operation: str, idempotency_key: str, artifact_kind: str | None = None, artifact_content: dict[str, Any] | None = None, artifact_schema_version: str = "1", dependencies: Iterable[str] = (), consumed_decision_id: str | None = None, fault_at: FaultInjector = None) -> TransitionResult:
         target = RunState(next_state)
         with immediate_transaction(self.connection):
             prior_record = self.connection.execute("SELECT * FROM idempotency_records WHERE run_id=? AND operation=? AND idempotency_key=?", (run_id,operation,idempotency_key)).fetchone()
@@ -294,19 +307,37 @@ class StateStore:
                     raise StaleRevisionError("idempotent result was invalidated")
                 return TransitionResult(self._snapshot(run_id),prior_record["event_id"],artifact,True)
             prior = self._snapshot(run_id)
+            decision_hashes: set[str] = set()
+            if consumed_decision_id:
+                decision = self.connection.execute(
+                    "SELECT gd.*,ge.kind AS gate_kind FROM gate_decisions gd JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id WHERE gd.decision_id=? AND gd.run_id=?",
+                    (consumed_decision_id,run_id),
+                ).fetchone()
+                if decision is None or decision["stale"] or not decision["consumed_at"] or decision["used_at"] or decision["suspended_operation"] != operation or decision["action"] not in AUTHORIZING_GATE_ACTIONS[GateKind(decision["gate_kind"])]:
+                    raise GateMismatchError("a current consumed approval for the exact operation is required")
+                self._require_current_hash(run_id,decision["subject_revision_hash"])
+                decision_hashes.update((decision["subject_revision_hash"],decision["approval_scope_hash"]))
             self._validate_direct_transition(prior.state, target)
             artifact = None
             if artifact_kind is not None:
                 if artifact_content is None:
                     raise ValueError("artifact_content is required with artifact_kind")
                 artifact = self._add_revision(run_id,artifact_kind,artifact_content,artifact_schema_version,dependencies,fault_at)
-            hashes = set(evidence_hashes)
+            hashes = set(evidence_hashes) | decision_hashes
             if artifact:
                 hashes.add(artifact.content_hash)
             now = utc_now()
             event_id = "te_" + digest({"run_id":run_id,"actor":actor,"prior":prior.state.value,"next":target.value,"reason":reason,"hashes":sorted(hashes),"at":now})[:20]
             self.connection.execute("INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)", (event_id,run_id,actor,prior.state.value,target.value,reason,canonical_json(sorted(hashes)),artifact.revision_id if artifact else None,now))
             inject_fault(fault_at,"after_event")
+            if consumed_decision_id:
+                claimed = self.connection.execute(
+                    "UPDATE gate_decisions SET used_at=?,consumed_by_event_id=? WHERE decision_id=? AND stale=0 AND consumed_at IS NOT NULL AND used_at IS NULL AND consumed_by_event_id IS NULL",
+                    (now,event_id,consumed_decision_id),
+                )
+                if claimed.rowcount != 1:
+                    raise GateMismatchError("approval was already used")
+                inject_fault(fault_at,"after_decision_claim")
             self.connection.execute("UPDATE runs SET state=?,state_version=state_version+1,updated_at=? WHERE run_id=?", (target.value,now,run_id))
             inject_fault(fault_at,"after_state")
             self.connection.execute("INSERT INTO idempotency_records VALUES(?,?,?,?,?,?,?)", (run_id,operation,idempotency_key,event_id,artifact.revision_id if artifact else None,target.value,now))
@@ -386,6 +417,131 @@ class StateStore:
             result = TransitionResult(self._snapshot(run_id),event_id,artifact)
             return result,exported
 
+    def publish_gate_transition(
+        self,
+        run_id: str,
+        kind: GateKind | str,
+        *,
+        actor: str,
+        reason: str,
+        operation: str,
+        idempotency_key: str,
+        approval_scope: dict[str, Any],
+        artifact_kind: str,
+        artifact_content: dict[str, Any],
+        export_directory: Path,
+        artifact_schema_version: str = "1",
+        dependencies: Iterable[str] = (),
+        evidence_hashes: Iterable[str] = (),
+        export_fault_hook: Callable[[str], None] | None = None,
+        fault_at: FaultInjector = None,
+    ) -> tuple[TransitionResult, ArtifactExport, GateEnvelope]:
+        """Publish an immutable artifact and suspend its exact operation atomically."""
+
+        gate_kind = GateKind(kind)
+        target = GATE_STATES[gate_kind]
+        directory = Path(export_directory).absolute()
+        if directory not in self.export_directories:
+            raise ArtifactError("artifact_path: export directory is not configured")
+        dependency_ids = tuple(sorted(set(dependencies)))
+        artifact_hash = digest({
+            "content": artifact_content, "dependencies": dependency_ids,
+            "schema_version": artifact_schema_version,
+        })
+        revision_id = "ar_" + digest({
+            "run_id": run_id, "kind": artifact_kind, "content_hash": artifact_hash,
+            "schema_version": artifact_schema_version,
+        })[:20]
+        export_path = directory / f"{revision_id}.json"
+        with immediate_transaction(self.connection):
+            replay = self._published_replay(run_id, operation, idempotency_key)
+            if replay is not None:
+                result, exported = replay
+                row = self.connection.execute(
+                    "SELECT * FROM gate_envelopes WHERE run_id=? AND suspended_operation=? "
+                    "AND subject_revision_hash=? ORDER BY created_at DESC LIMIT 1",
+                    (run_id, operation, result.artifact.content_hash),
+                ).fetchone()
+                if row is None:
+                    raise StateError("published gate replay has no envelope")
+                gate = GateEnvelope(
+                    row["gate_id"], row["run_id"], GateKind(row["kind"]),
+                    RunState(row["suspended_state"]), row["suspended_operation"],
+                    row["subject_revision_hash"], json.loads(row["approval_scope_json"]),
+                    row["approval_scope_hash"], RunState(row["return_state"]),
+                    row["created_at"], row["status"],
+                )
+                return result, exported, gate
+            prior = self._snapshot(run_id)
+            if prior.state in GATE_STATE_SET or target not in ALLOWED_TRANSITIONS.get(prior.state, frozenset()):
+                raise GateMismatchError(f"gate {gate_kind.value} cannot suspend {prior.state.value}")
+            if self.connection.execute(
+                "SELECT 1 FROM gate_envelopes WHERE run_id=? AND status='pending'", (run_id,)
+            ).fetchone():
+                raise GateMismatchError("run already has a pending gate")
+            scope_json, scope_hash = canonical_json(approval_scope), digest(approval_scope)
+            inject_fault(fault_at, "before_export")
+            exported = export_immutable_json(export_path, artifact_content, fault_hook=export_fault_hook)
+            inject_fault(fault_at, "after_export_publish")
+            artifact = self._add_revision(
+                run_id, artifact_kind, artifact_content, artifact_schema_version,
+                dependency_ids, fault_at, activate=False,
+            )
+            now = utc_now()
+            export_id = "ex_" + digest({
+                "revision_id": artifact.revision_id, "path": exported.path,
+                "byte_hash": exported.content_hash,
+            })[:20]
+            self.connection.execute(
+                "INSERT OR IGNORE INTO artifact_exports VALUES(?,?,?,?,?,?,?)",
+                (export_id, artifact.revision_id, run_id, exported.path, exported.content_hash, exported.size, now),
+            )
+            registry = self.connection.execute(
+                "SELECT path,byte_hash,byte_size FROM artifact_exports WHERE revision_id=?",
+                (artifact.revision_id,),
+            ).fetchone()
+            if tuple(registry) != (exported.path, exported.content_hash, exported.size):
+                raise StateError("artifact export registry conflict")
+            inject_fault(fault_at, "after_export_registry")
+            self._activate_revision(run_id, artifact_kind, artifact.revision_id, fault_at)
+            gate_id = "ge_" + digest({
+                "run_id": run_id, "kind": gate_kind.value, "state": prior.state.value,
+                "operation": operation, "subject": artifact.content_hash, "scope": scope_hash,
+                "return": prior.state.value,
+            })[:20]
+            self.connection.execute(
+                "INSERT INTO gate_envelopes VALUES(?,?,?,?,?,?,?,?,?,?,?, 'pending')",
+                (gate_id, run_id, gate_kind.value, target.value, prior.state.value, operation,
+                 artifact.content_hash, scope_json, scope_hash, prior.state.value, now),
+            )
+            inject_fault(fault_at, "after_gate")
+            hashes = set(evidence_hashes) | {artifact.content_hash, exported.content_hash, scope_hash}
+            event_id = "te_" + digest({
+                "run_id": run_id, "actor": actor, "prior": prior.state.value,
+                "next": target.value, "reason": reason, "hashes": sorted(hashes), "at": now,
+            })[:20]
+            self.connection.execute(
+                "INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)",
+                (event_id, run_id, actor, prior.state.value, target.value, reason,
+                 canonical_json(sorted(hashes)), artifact.revision_id, now),
+            )
+            inject_fault(fault_at, "after_event")
+            self.connection.execute(
+                "UPDATE runs SET state=?,state_version=state_version+1,updated_at=? WHERE run_id=?",
+                (target.value, now, run_id),
+            )
+            inject_fault(fault_at, "after_state")
+            self.connection.execute(
+                "INSERT INTO idempotency_records VALUES(?,?,?,?,?,?,?)",
+                (run_id, operation, idempotency_key, event_id, artifact.revision_id, target.value, now),
+            )
+            inject_fault(fault_at, "after_idempotency")
+            gate = GateEnvelope(
+                gate_id, run_id, gate_kind, prior.state, operation, artifact.content_hash,
+                json.loads(scope_json), scope_hash, prior.state, now,
+            )
+            return TransitionResult(self._snapshot(run_id), event_id, artifact), exported, gate
+
     def suspend_gate(self, run_id: str, kind: GateKind | str, *, suspended_operation: str, subject_revision_hash: str, approval_scope: dict[str, Any], return_state: RunState | str, actor: str, reason: str, fault_at: FaultInjector = None) -> GateEnvelope:
         gate_kind = GateKind(kind)
         gate_state = GATE_STATES[gate_kind]
@@ -432,7 +588,9 @@ class StateStore:
             gate_kind = GateKind(envelope["kind"])
             if action not in GATE_ACTIONS[gate_kind]:
                 raise GateMismatchError(f"action is not allowed for {gate_kind.value}")
-            target = RunState.STOPPED if action == "stop" else RunState(envelope["return_state"])
+            if gate_kind in {GateKind.COVERAGE, GateKind.EXCESSIVE_SIMILARITY}:
+                raise GateMismatchError("coverage and excessive decisions require an atomic resolution artifact")
+            target = gate_action_target(gate_kind, action, RunState(envelope["return_state"]))
             now = utc_now()
             decision_id = "gd_" + digest({"gate_id":gate_id,"action":action,"actor":actor,"subject":subject_revision_hash,"scope":envelope["approval_scope_hash"],"at":now})[:20]
             self.connection.execute(
@@ -451,6 +609,90 @@ class StateStore:
             decision = GateDecision(decision_id,gate_id,envelope["run_id"],action,actor,subject_revision_hash,envelope["approval_scope_hash"],envelope["suspended_operation"],target,reason,now)
             result = TransitionResult(self._snapshot(envelope["run_id"]),event_id,suspended_operation=envelope["suspended_operation"])
             return decision,result
+
+    def publish_gate_resolution(
+        self, gate_id: str, *, action: str, actor: str, reason: str,
+        subject_revision_hash: str, approval_scope: dict[str, Any],
+        artifact_content: dict[str, Any], dependencies: Iterable[str],
+        export_directory: Path, idempotency_key: str,
+        artifact_kind: str = "gate_resolution",
+        artifact_schema_version: str = "decision-set-v1",
+        export_fault_hook: Callable[[str], None] | None = None,
+        fault_at: FaultInjector = None,
+    ) -> tuple[GateDecision, TransitionResult, ArtifactExport]:
+        """Publish an immutable decision and dispatch its policy branch atomically."""
+        directory = Path(export_directory).absolute()
+        if directory not in self.export_directories:
+            raise ArtifactError("artifact_path: export directory is not configured")
+        run_id = self._gate_run_id(gate_id)
+        operation = f"gate.resolve:{gate_id}"
+        with immediate_transaction(self.connection):
+            replay = self._published_replay(run_id, operation, idempotency_key)
+            if replay is not None:
+                result, exported = replay
+                row = self.connection.execute("SELECT * FROM gate_decisions WHERE gate_id=?", (gate_id,)).fetchone()
+                if row is None:
+                    raise StateError("gate resolution replay has no decision")
+                return self._decision_from_row(row), result, exported
+            envelope = self.connection.execute("SELECT * FROM gate_envelopes WHERE gate_id=?", (gate_id,)).fetchone()
+            if envelope is None or envelope["status"] != "pending":
+                raise GateMismatchError("gate is not pending")
+            if subject_revision_hash != envelope["subject_revision_hash"] or digest(approval_scope) != envelope["approval_scope_hash"]:
+                raise GateMismatchError("decision does not match current subject and scope")
+            self._require_current_hash(run_id, subject_revision_hash)
+            prior = self._snapshot(run_id)
+            if prior.state.value != envelope["gate_state"]:
+                raise GateMismatchError("run is not at the recorded gate state")
+            gate_kind = GateKind(envelope["kind"])
+            if action not in GATE_ACTIONS[gate_kind]:
+                raise GateMismatchError(f"action is not allowed for {gate_kind.value}")
+            target = gate_action_target(gate_kind, action, RunState(envelope["return_state"]))
+            if target not in ALLOWED_TRANSITIONS[prior.state]:
+                raise GateMismatchError("gate action has no legal policy transition")
+            now = utc_now()
+            decision_id = "gd_" + digest({"gate_id":gate_id,"action":action,"actor":actor,"subject":subject_revision_hash,"scope":envelope["approval_scope_hash"],"at":now})[:20]
+            content = {**artifact_content, "decision_id": decision_id, "decided_at": now}
+            dependency_ids = tuple(sorted(set(dependencies)))
+            artifact_hash = digest({"content":content,"dependencies":dependency_ids,"schema_version":artifact_schema_version})
+            revision_id = "ar_" + digest({"run_id":run_id,"kind":artifact_kind,"content_hash":artifact_hash,"schema_version":artifact_schema_version})[:20]
+            export_path = directory / f"{revision_id}.json"
+            inject_fault(fault_at,"before_export")
+            exported = export_immutable_json(export_path,content,fault_hook=export_fault_hook)
+            inject_fault(fault_at,"after_export_publish")
+            artifact = self._add_revision(run_id,artifact_kind,content,artifact_schema_version,dependency_ids,fault_at,activate=False)
+            export_id = "ex_" + digest({"revision_id":artifact.revision_id,"path":exported.path,"byte_hash":exported.content_hash})[:20]
+            self.connection.execute("INSERT OR IGNORE INTO artifact_exports VALUES(?,?,?,?,?,?,?)",(export_id,artifact.revision_id,run_id,exported.path,exported.content_hash,exported.size,now))
+            inject_fault(fault_at,"after_export_registry")
+            self.connection.execute(
+                "INSERT INTO gate_decisions (decision_id,gate_id,run_id,action,actor,subject_revision_hash,approval_scope_hash,suspended_operation,return_state,reason,created_at,stale,consumed_at,used_at,consumed_by_event_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,NULL,NULL,NULL)",
+                (decision_id,gate_id,run_id,action,actor,subject_revision_hash,envelope["approval_scope_hash"],envelope["suspended_operation"],target.value,reason,now),
+            )
+            inject_fault(fault_at,"after_decision")
+            self.connection.execute("UPDATE gate_envelopes SET status='decided' WHERE gate_id=?",(gate_id,))
+            self._activate_revision(run_id,artifact_kind,artifact.revision_id,fault_at)
+            hashes = sorted({subject_revision_hash,envelope["approval_scope_hash"],artifact.content_hash,exported.content_hash})
+            event_id = "te_" + digest({"decision_id":decision_id,"prior":prior.state.value,"next":target.value,"artifact":artifact.content_hash})[:20]
+            self.connection.execute("INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)",(event_id,run_id,actor,prior.state.value,target.value,reason,canonical_json(hashes),artifact.revision_id,now))
+            inject_fault(fault_at,"after_event")
+            if action not in AUTHORIZING_GATE_ACTIONS[gate_kind]:
+                self.connection.execute("UPDATE gate_decisions SET consumed_at=?,used_at=?,consumed_by_event_id=? WHERE decision_id=?",(now,now,event_id,decision_id))
+                inject_fault(fault_at,"after_decision_claim")
+            self.connection.execute("UPDATE runs SET state=?,state_version=state_version+1,updated_at=? WHERE run_id=?",(target.value,now,run_id))
+            inject_fault(fault_at,"after_state")
+            self.connection.execute("INSERT INTO idempotency_records VALUES(?,?,?,?,?,?,?)",(run_id,operation,idempotency_key,event_id,artifact.revision_id,target.value,now))
+            inject_fault(fault_at,"after_idempotency")
+            row = self.connection.execute("SELECT * FROM gate_decisions WHERE decision_id=?",(decision_id,)).fetchone()
+            return self._decision_from_row(row),TransitionResult(self._snapshot(run_id),event_id,artifact,suspended_operation=envelope["suspended_operation"]),exported
+
+    def _gate_run_id(self, gate_id: str) -> str:
+        row = self.connection.execute("SELECT run_id FROM gate_envelopes WHERE gate_id=?",(gate_id,)).fetchone()
+        if row is None:
+            raise GateMismatchError("gate is unavailable")
+        return row["run_id"]
+
+    @staticmethod
+    def _decision_from_row(row: sqlite3.Row) -> GateDecision:
+        return GateDecision(row["decision_id"],row["gate_id"],row["run_id"],row["action"],row["actor"],row["subject_revision_hash"],row["approval_scope_hash"],row["suspended_operation"],RunState(row["return_state"]),row["reason"],row["created_at"],bool(row["stale"]),row["consumed_at"],row["used_at"],row["consumed_by_event_id"])
 
     def consume_decision(self, decision_id: str, *, suspended_operation: str, subject_revision_hash: str, approval_scope: dict[str, Any]) -> GateDecision:
         with immediate_transaction(self.connection):

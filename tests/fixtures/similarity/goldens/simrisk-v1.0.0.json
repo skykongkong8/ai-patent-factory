@@ -1,0 +1,1929 @@
+{
+  "version": "simrisk-v1.0.0",
+  "cases": [
+    {
+      "name": "exact_duplicate",
+      "candidate": {
+        "title": "adaptive sensor controller",
+        "abstract": "calibrates sensor output",
+        "classifications": [
+          "G06F 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "adaptive sensor controller",
+            "abstract": "calibrates sensor output",
+            "classifications": [
+              "G06F 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-01",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              },
+              "feature-effects": {
+                "rationale": "reviewed golden evidence",
+                "reference_span_hashes": [
+                  "span-ref-01"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-01": {
+            "T": "100",
+            "F": "100",
+            "C": "100",
+            "D": "0",
+            "r_obs": "100",
+            "r_obs_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "r_hi": "100",
+            "r_hi_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "excessive",
+            "T_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "F_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "C_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "D_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "100",
+          "r_hi": "100",
+          "Q": "100",
+          "route": "decision_required",
+          "observed_reference_id": "ref-01",
+          "upper_bound_reference_id": "ref-01"
+        }
+      }
+    },
+    {
+      "name": "paraphrased_same_mechanism",
+      "candidate": {
+        "title": "adaptive sensor controller",
+        "abstract": "calibrates sensor output",
+        "classifications": [
+          "G06F 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "dynamic probe regulator",
+            "abstract": "adjusts transducer readings",
+            "classifications": [
+              "G06F 1/99"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-02",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              },
+              "feature-effects": {
+                "rationale": "semantic match confirmed by reviewer",
+                "reference_span_hashes": [
+                  "span-ref-02"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-02": {
+            "T": "0",
+            "F": "100",
+            "C": "80",
+            "D": "0",
+            "r_obs": "72",
+            "r_obs_exact": {
+              "numerator": 72,
+              "denominator": 1,
+              "value": 72
+            },
+            "r_hi": "72",
+            "r_hi_exact": {
+              "numerator": 72,
+              "denominator": 1,
+              "value": 72
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "high",
+            "T_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "F_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "C_exact": {
+              "numerator": 80,
+              "denominator": 1,
+              "value": 80
+            },
+            "D_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "72",
+          "r_hi": "72",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-02",
+          "upper_bound_reference_id": "ref-02"
+        }
+      }
+    },
+    {
+      "name": "title_only_overlap",
+      "candidate": {
+        "title": "same retained title",
+        "abstract": null,
+        "classifications": [],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "same retained title",
+            "abstract": null,
+            "classifications": []
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-03",
+            "inspected_fields": [
+              "title"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-inputs": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-mechanism": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-transformations": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-outputs": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-effects": {
+                "rationale": "insufficient retained evidence",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-03": {
+            "T": "25",
+            "F": "0",
+            "C": "0",
+            "D": "0",
+            "r_obs": "6.25",
+            "r_obs_exact": {
+              "numerator": 25,
+              "denominator": 4,
+              "value": 6.25
+            },
+            "r_hi": "100",
+            "r_hi_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "Q": "6.25",
+            "Q_exact": {
+              "numerator": 25,
+              "denominator": 4,
+              "value": 6.25
+            },
+            "label": "low",
+            "T_exact": {
+              "numerator": 25,
+              "denominator": 1,
+              "value": 25
+            },
+            "F_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "C_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "D_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "6.25",
+          "r_hi": "100",
+          "Q": "6.25",
+          "route": "coverage_insufficient",
+          "observed_reference_id": "ref-03",
+          "upper_bound_reference_id": "ref-03"
+        }
+      }
+    },
+    {
+      "name": "same_problem_different_mechanism",
+      "candidate": {
+        "title": "aaaa",
+        "abstract": "bbbb",
+        "classifications": [
+          "G06F 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "xxxx",
+            "abstract": "yyyy",
+            "classifications": [
+              "G06F 9/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-04",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "same problem confirmed",
+                "reference_span_hashes": [
+                  "span-ref-04"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "not available in retained fields",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-mechanism": {
+                "rationale": "different mechanism confirmed",
+                "reference_span_hashes": [
+                  "span-ref-04"
+                ],
+                "status": "different"
+              },
+              "feature-transformations": {
+                "rationale": "not available in retained fields",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-outputs": {
+                "rationale": "not available in retained fields",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              },
+              "feature-effects": {
+                "rationale": "not available in retained fields",
+                "reference_span_hashes": [],
+                "status": "unavailable"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-04": {
+            "T": "0",
+            "F": "10",
+            "C": "55",
+            "D": "30",
+            "r_obs": "8.25",
+            "r_obs_exact": {
+              "numerator": 33,
+              "denominator": 4,
+              "value": 8.25
+            },
+            "r_hi": "44.25",
+            "r_hi_exact": {
+              "numerator": 177,
+              "denominator": 4,
+              "value": 44.25
+            },
+            "Q": "64",
+            "Q_exact": {
+              "numerator": 64,
+              "denominator": 1,
+              "value": 64
+            },
+            "label": "low",
+            "T_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "F_exact": {
+              "numerator": 10,
+              "denominator": 1,
+              "value": 10
+            },
+            "C_exact": {
+              "numerator": 55,
+              "denominator": 1,
+              "value": 55
+            },
+            "D_exact": {
+              "numerator": 30,
+              "denominator": 1,
+              "value": 30
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "8.25",
+          "r_hi": "44.25",
+          "Q": "64",
+          "route": "coverage_insufficient",
+          "observed_reference_id": "ref-04",
+          "upper_bound_reference_id": "ref-04"
+        }
+      }
+    },
+    {
+      "name": "generic_mechanism_different_context",
+      "candidate": {
+        "title": "aaaa",
+        "abstract": "bbbb",
+        "classifications": [
+          "A01G 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "xxxx",
+            "abstract": "yyyy",
+            "classifications": [
+              "H04L 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-05",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "different application context",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "different"
+              },
+              "feature-inputs": {
+                "rationale": "generic input role matches",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "generic mechanism matches",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "generic transformation matches",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "generic output role matches",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "matched"
+              },
+              "feature-effects": {
+                "rationale": "generic technical effect matches",
+                "reference_span_hashes": [
+                  "span-ref-05"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-05": {
+            "T": "0",
+            "F": "90",
+            "C": "0",
+            "D": "10",
+            "r_obs": "52",
+            "r_obs_exact": {
+              "numerator": 52,
+              "denominator": 1,
+              "value": 52
+            },
+            "r_hi": "52",
+            "r_hi_exact": {
+              "numerator": 52,
+              "denominator": 1,
+              "value": 52
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "moderate",
+            "T_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "F_exact": {
+              "numerator": 90,
+              "denominator": 1,
+              "value": 90
+            },
+            "C_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "D_exact": {
+              "numerator": 10,
+              "denominator": 1,
+              "value": 10
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "52",
+          "r_hi": "52",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-05",
+          "upper_bound_reference_id": "ref-05"
+        }
+      }
+    },
+    {
+      "name": "explicit_essential_difference",
+      "candidate": {
+        "title": "secure actuator controller",
+        "abstract": "authorizes commands before motion",
+        "classifications": [
+          "G05B 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "secure actuator controller",
+            "abstract": "authorizes commands before motion",
+            "classifications": [
+              "G05B 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-06",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "essential mechanism differs",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "different"
+              },
+              "feature-transformations": {
+                "rationale": "essential transformation differs",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "different"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "matched"
+              },
+              "feature-effects": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-06"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-06": {
+            "T": "100",
+            "F": "50",
+            "C": "100",
+            "D": "50",
+            "r_obs": "60",
+            "r_obs_exact": {
+              "numerator": 60,
+              "denominator": 1,
+              "value": 60
+            },
+            "r_hi": "60",
+            "r_hi_exact": {
+              "numerator": 60,
+              "denominator": 1,
+              "value": 60
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "high",
+            "T_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "F_exact": {
+              "numerator": 50,
+              "denominator": 1,
+              "value": 50
+            },
+            "C_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "D_exact": {
+              "numerator": 50,
+              "denominator": 1,
+              "value": 50
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "60",
+          "r_hi": "60",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-06",
+          "upper_bound_reference_id": "ref-06"
+        }
+      }
+    },
+    {
+      "name": "missing_abstract_ipc",
+      "candidate": {
+        "title": "same retained title",
+        "abstract": null,
+        "classifications": [],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "same retained title",
+            "abstract": null,
+            "classifications": []
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-07",
+            "inspected_fields": [
+              "title"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              },
+              "feature-effects": {
+                "rationale": "reviewed title evidence",
+                "reference_span_hashes": [
+                  "span-ref-07"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-07": {
+            "T": "25",
+            "F": "100",
+            "C": "0",
+            "D": "0",
+            "r_obs": "66.25",
+            "r_obs_exact": {
+              "numerator": 265,
+              "denominator": 4,
+              "value": 66.25
+            },
+            "r_hi": "100",
+            "r_hi_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "Q": "66.25",
+            "Q_exact": {
+              "numerator": 265,
+              "denominator": 4,
+              "value": 66.25
+            },
+            "label": "high",
+            "T_exact": {
+              "numerator": 25,
+              "denominator": 1,
+              "value": 25
+            },
+            "F_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "C_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "D_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "66.25",
+          "r_hi": "100",
+          "Q": "66.25",
+          "route": "coverage_insufficient",
+          "observed_reference_id": "ref-07",
+          "upper_bound_reference_id": "ref-07"
+        }
+      }
+    },
+    {
+      "name": "bilingual_synonyms",
+      "candidate": {
+        "title": "센서 Calibration Controller",
+        "abstract": "출력 Signal 보정",
+        "classifications": [
+          "G06F 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "센서 calibration controller",
+            "abstract": "출력 signal 보정",
+            "classifications": [
+              "G06F 9/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-08",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "context differs",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "different"
+              },
+              "feature-inputs": {
+                "rationale": "input differs",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "different"
+              },
+              "feature-mechanism": {
+                "rationale": "bilingual mechanism match",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "bilingual transformation match",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "output differs",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "different"
+              },
+              "feature-effects": {
+                "rationale": "bilingual effect match",
+                "reference_span_hashes": [
+                  "span-ref-08"
+                ],
+                "status": "matched"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-08": {
+            "T": "100",
+            "F": "70",
+            "C": "55",
+            "D": "30",
+            "r_obs": "69.25",
+            "r_obs_exact": {
+              "numerator": 277,
+              "denominator": 4,
+              "value": 69.25
+            },
+            "r_hi": "69.25",
+            "r_hi_exact": {
+              "numerator": 277,
+              "denominator": 4,
+              "value": 69.25
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "high",
+            "T_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "F_exact": {
+              "numerator": 70,
+              "denominator": 1,
+              "value": 70
+            },
+            "C_exact": {
+              "numerator": 55,
+              "denominator": 1,
+              "value": 55
+            },
+            "D_exact": {
+              "numerator": 30,
+              "denominator": 1,
+              "value": 30
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "69.25",
+          "r_hi": "69.25",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-08",
+          "upper_bound_reference_id": "ref-08"
+        }
+      }
+    },
+    {
+      "name": "threshold_boundaries",
+      "candidate": {
+        "title": "aaaa",
+        "abstract": "bbbb",
+        "classifications": [
+          "G06F 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "xxxx",
+            "abstract": "yyyy",
+            "classifications": [
+              "G06F 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-09",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "matched"
+              },
+              "feature-mechanism": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "different"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "different"
+              },
+              "feature-effects": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-09"
+                ],
+                "status": "different"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-09": {
+            "T": "0",
+            "F": "50",
+            "C": "100",
+            "D": "50",
+            "r_obs": "35",
+            "r_obs_exact": {
+              "numerator": 35,
+              "denominator": 1,
+              "value": 35
+            },
+            "r_hi": "35",
+            "r_hi_exact": {
+              "numerator": 35,
+              "denominator": 1,
+              "value": 35
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "moderate",
+            "T_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "F_exact": {
+              "numerator": 50,
+              "denominator": 1,
+              "value": 50
+            },
+            "C_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "D_exact": {
+              "numerator": 50,
+              "denominator": 1,
+              "value": 50
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "35",
+          "r_hi": "35",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-09",
+          "upper_bound_reference_id": "ref-09"
+        }
+      }
+    },
+    {
+      "name": "multiple_references",
+      "candidate": {
+        "title": "distributed actuator planner",
+        "abstract": "authorizes synchronized motion",
+        "classifications": [
+          "G05B 1/00"
+        ],
+        "features": {
+          "feature-problem": {
+            "candidate_span_hashes": [
+              "candidate-problem"
+            ],
+            "category": "problem",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-inputs": {
+            "candidate_span_hashes": [
+              "candidate-inputs"
+            ],
+            "category": "inputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-mechanism": {
+            "candidate_span_hashes": [
+              "candidate-mechanism"
+            ],
+            "category": "mechanism",
+            "essential": true,
+            "weight": "0.30"
+          },
+          "feature-transformations": {
+            "candidate_span_hashes": [
+              "candidate-transformations"
+            ],
+            "category": "transformations",
+            "essential": true,
+            "weight": "0.20"
+          },
+          "feature-outputs": {
+            "candidate_span_hashes": [
+              "candidate-outputs"
+            ],
+            "category": "outputs",
+            "essential": true,
+            "weight": "0.10"
+          },
+          "feature-effects": {
+            "candidate_span_hashes": [
+              "candidate-effects"
+            ],
+            "category": "technical_effects",
+            "essential": true,
+            "weight": "0.20"
+          }
+        }
+      },
+      "references": [
+        {
+          "record": {
+            "title": "xxxx",
+            "abstract": "yyyy",
+            "classifications": [
+              "H04L 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-10a",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              },
+              "feature-mechanism": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              },
+              "feature-transformations": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              },
+              "feature-effects": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10a"
+                ],
+                "status": "different"
+              }
+            }
+          }
+        },
+        {
+          "record": {
+            "title": "distributed actuator planner",
+            "abstract": "authorizes synchronized motion",
+            "classifications": [
+              "G05B 1/00"
+            ]
+          },
+          "reviewed_map": {
+            "evidence_id": "ref-10b",
+            "inspected_fields": [
+              "title",
+              "abstract",
+              "classifications"
+            ],
+            "decisions": {
+              "feature-problem": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "matched"
+              },
+              "feature-inputs": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "different"
+              },
+              "feature-mechanism": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "matched"
+              },
+              "feature-transformations": {
+                "rationale": "reviewed match",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "matched"
+              },
+              "feature-outputs": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "different"
+              },
+              "feature-effects": {
+                "rationale": "reviewed difference",
+                "reference_span_hashes": [
+                  "span-ref-10b"
+                ],
+                "status": "different"
+              }
+            }
+          }
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-07-13T00:00:00Z",
+        "reviewed_by": "golden-reviewer",
+        "status": "reviewed"
+      },
+      "expected": {
+        "pairs": {
+          "ref-10a": {
+            "T": "0",
+            "F": "0",
+            "C": "0",
+            "D": "100",
+            "r_obs": "0",
+            "r_obs_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "r_hi": "0",
+            "r_hi_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "low",
+            "T_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "F_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "C_exact": {
+              "numerator": 0,
+              "denominator": 1,
+              "value": 0
+            },
+            "D_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            }
+          },
+          "ref-10b": {
+            "T": "100",
+            "F": "60",
+            "C": "100",
+            "D": "40",
+            "r_obs": "68",
+            "r_obs_exact": {
+              "numerator": 68,
+              "denominator": 1,
+              "value": 68
+            },
+            "r_hi": "68",
+            "r_hi_exact": {
+              "numerator": 68,
+              "denominator": 1,
+              "value": 68
+            },
+            "Q": "100",
+            "Q_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "label": "high",
+            "T_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "F_exact": {
+              "numerator": 60,
+              "denominator": 1,
+              "value": 60
+            },
+            "C_exact": {
+              "numerator": 100,
+              "denominator": 1,
+              "value": 100
+            },
+            "D_exact": {
+              "numerator": 40,
+              "denominator": 1,
+              "value": 40
+            }
+          }
+        },
+        "summary": {
+          "r_obs": "68",
+          "r_hi": "68",
+          "Q": "100",
+          "route": "audit_approved",
+          "observed_reference_id": "ref-10b",
+          "upper_bound_reference_id": "ref-10b"
+        }
+      }
+    }
+  ]
+}
