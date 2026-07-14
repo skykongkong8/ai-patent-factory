@@ -12,20 +12,23 @@ from .adapters.base import TransportResponse
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
 from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
 from .config import load_evaluation_config, load_similarity_config
-from .database import connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts, utc_now
+from .database import (
+    connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts,
+    resolve_run_id, utc_now,
+)
 from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
 from .models import QueryEnvelope
-from .paths import contained_input, contained_output, private_root
+from .paths import contained_input, contained_output, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import PlannedQuery, run_research
 from .report import publish_report
 from .review import run_review
+from .runs import prepare_run_profile, start_run
 from .sharing import SensitiveDisclosureRequiredError, share_report
-from .state import StateError
 from .validation import validate_and_complete
 
 QUESTIONS = (
@@ -40,12 +43,79 @@ class CliError(Exception):
     pass
 
 
+class InvalidArgumentsError(CliError):
+    code = "invalid_arguments"
+
+    def __init__(self) -> None:
+        super().__init__("invalid_arguments")
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        del message
+        raise InvalidArgumentsError()
+
+
 def emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 
+def _command_name(args: argparse.Namespace | None) -> str:
+    if args is None:
+        return "unknown"
+    command = getattr(args, "command", "unknown")
+    nested = getattr(args, f"{command}_command", None)
+    return f"{command}.{nested}" if nested else command
+
+
+def _failure_code(error: BaseException) -> str:
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code:
+        return code
+    if isinstance(error, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(error, UnicodeError):
+        return "invalid_unicode"
+    if isinstance(error, CliError):
+        return "cli_error"
+    if isinstance(error, OSError):
+        return "io_error"
+    if isinstance(error, ValueError):
+        return "invalid_input"
+    return "runtime_error"
+
+
+def _redacted_error(error: BaseException) -> str:
+    message = str(error)
+    secret = environment_secret("KIPRIS_PLUS_API_KEY")
+    return message.replace(secret, "[REDACTED]") if secret and secret in message else message
+
+
+def _cli_result(
+    payload: dict[str, Any], *, args: argparse.Namespace | None,
+    started_at: str, ended_at: str, failure_code: str | None,
+) -> dict[str, Any]:
+    result = dict(payload)
+    result["schema_version"] = "cli-result-v1"
+    result["envelope_version"] = "cli-envelope-v1"
+    result.setdefault("command", _command_name(args))
+    run_id = getattr(args, "run_id", None) if args is not None else None
+    if run_id is not None:
+        result.setdefault("run_id", str(run_id))
+    result.setdefault("started_at", started_at)
+    result.setdefault("ended_at", ended_at)
+    result.setdefault("prior_state", None)
+    result.setdefault("next_state", None)
+    result.setdefault("artifact_ids", [])
+    result.setdefault("event_ids", list(result.get("transition_event_ids", [])))
+    if "adapter_status" in result:
+        result.setdefault("adapter_summary", result["adapter_status"])
+    result.setdefault("failure_code", failure_code)
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="patent_factory", description="Local Korean invention-profile workflow")
+    parser = JsonArgumentParser(prog="patent_factory", description="Local Korean invention-profile workflow")
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -79,6 +149,16 @@ def build_parser() -> argparse.ArgumentParser:
     conflict_decide.add_argument("--database", type=Path, help="authoritative profile SQLite database")
     conflict_decide.add_argument("--byte-budget", type=int, default=2_000_000)
     conflict_decide.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    run = commands.add_parser("run", help="bootstrap and inspect private workflow runs")
+    run_commands = run.add_subparsers(dest="run_command", required=True)
+    start = run_commands.add_parser("start", help="bind an authoritative profile and enter research_ready")
+    start.add_argument("--run", type=Path, required=True)
+    start.add_argument("--run-id", required=True)
+    start.add_argument("--profile", type=Path, help="current profile export")
+    start.add_argument("--profile-database", type=Path, help="authoritative profile SQLite database")
+    start.add_argument("--byte-budget", type=int, default=2_000_000)
+    start.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     research = commands.add_parser("research", help="run bounded fixture or manual research")
     research_commands = research.add_subparsers(dest="research_command", required=True)
@@ -155,7 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     validate = commands.add_parser("validate", help="deterministically validate and complete the private report")
     validate.add_argument("--run", type=Path, required=True)
-    validate.add_argument("--run-id", required=True)
+    validate.add_argument("--run-id")
     validate.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     share = commands.add_parser("share", help="guard and publish an external report share")
     share.add_argument("--run", type=Path, required=True)
@@ -164,6 +244,9 @@ def build_parser() -> argparse.ArgumentParser:
     share.add_argument("--decision-id")
     share.add_argument("--byte-budget", type=int, default=2_000_000)
     share.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    deletion = commands.add_parser("delete-run", help="delete one contained private run without following links")
+    deletion.add_argument("--run", type=Path, required=True)
+    deletion.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     return parser
 
 
@@ -261,6 +344,43 @@ def _profile_conflict(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         profile_path = contained_output(args.profile or args.workspace_root / "profile.json", workspace_root, "profile output")
         export_profile(connection, profile_path)
         return ({"command": "profile.conflict-decide", **result}, 0 if result["status"] == "profile_ready" else 3)
+
+
+def _run_start(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    profile_path = contained_input(
+        args.profile or args.workspace_root / "profile.json", workspace_root, "run profile export",
+    )
+    profile_database_path = contained_input(
+        args.profile_database or args.workspace_root / "profile.sqlite3",
+        workspace_root, "run profile database",
+    )
+    profile = _json_object(profile_path, args.byte_budget, "run profile export")
+    database_candidate = (Path.cwd() / args.run / "factory.sqlite3").resolve(strict=False)
+    if database_candidate == profile_database_path:
+        raise CliError("run database must be distinct from the authoritative profile database")
+    with connect_database(profile_database_path) as profile_connection:
+        prepared_profile = prepare_run_profile(profile_connection, profile)
+        run_root = private_contained_directory(args.run, workspace_root, "run root", create=True)
+        database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "run database")
+        with connect_database(database_path) as connection:
+            result = start_run(
+                connection, profile_connection=profile_connection, run_root=run_root,
+                run_id=args.run_id, profile=profile, prepared_profile=prepared_profile,
+            )
+    return result.as_dict(), 0
+
+
+def _delete_run_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root")
+    run_root = contained_input(args.run, workspace_root, "delete run", directory=True)
+    report = delete_run(run_root, workspace_root)
+    payload = {
+        "command": "delete-run", "failures": list(report.failures),
+        "removed": list(report.removed), "root": report.root,
+        "status": "deleted" if report.complete else "partial_failure",
+    }
+    return payload, 0 if report.complete else 11
 
 
 def _bounded_bytes(path: Path, byte_budget: int, label: str) -> bytes:
@@ -469,7 +589,8 @@ def _report_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     database_path = contained_output(args.run / "factory.sqlite3", workspace_root, f"{args.command} database")
     with connect_database(database_path) as connection:
         if args.command == "validate":
-            return validate_and_complete(connection, run_root=run_root, run_id=normalize(args.run_id)).as_dict(), 0
+            run_id = resolve_run_id(connection, args.run_id)
+            return validate_and_complete(connection, run_root=run_root, run_id=run_id).as_dict(), 0
         input_path = contained_input(args.input, workspace_root, f"{args.command} input")
         value = _json_object(input_path, args.byte_budget, f"{args.command} input")
         if args.command == "draft":
@@ -497,12 +618,19 @@ def _report_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
+    started_at = utc_now()
+    args: argparse.Namespace | None = None
     try:
         args = parser.parse_args(argv)
         if args.command == "init":
-            emit(_initialize(args.documents, args.workspace))
+            emit(_cli_result(
+                _initialize(args.documents, args.workspace), args=args,
+                started_at=started_at, ended_at=utc_now(), failure_code=None,
+            ))
             return 0
-        if args.command == "research":
+        if args.command == "run":
+            payload, code = _run_start(args)
+        elif args.command == "research":
             payload, code = _research(args)
         elif args.command == "ideate":
             payload, code = _ideate(args)
@@ -514,12 +642,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload, code = _gate(args)
         elif args.command in {"draft", "review", "validate", "share"}:
             payload, code = _report_command(args)
+        elif args.command == "delete-run":
+            payload, code = _delete_run_command(args)
         elif args.command == "profile" and args.profile_command in {"conflict-inspect", "conflict-decide"}:
             payload, code = _profile_conflict(args)
         else:
             payload, code = _profile(args)
-        emit(payload)
+        emit(_cli_result(
+            payload, args=args, started_at=started_at, ended_at=utc_now(), failure_code=None,
+        ))
         return code
-    except (CliError, OSError, StateError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
-        emit({"error": str(exc), "status": "error"})
+    except (CliError, OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        emit(_cli_result(
+            {"error": _redacted_error(exc), "status": "error"}, args=args,
+            started_at=started_at, ended_at=utc_now(), failure_code=_failure_code(exc),
+        ))
         return 2

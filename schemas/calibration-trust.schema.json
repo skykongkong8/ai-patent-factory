@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/calibration-trust-v1.0.0.json",
+  "title": "Pinned independent calibration trust",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approved_manifest_hash", "schema_version"],
+  "properties": {
+    "approved_manifest_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "schema_version": {"const": "calibration-trust-v1.0.0"}
+  }
+}

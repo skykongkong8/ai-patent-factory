@@ -1,12 +1,33 @@
 from __future__ import annotations
 
-import os
 import stat
 from pathlib import Path
 
 
 class PathPolicyError(ValueError):
     """A private path violated the repository containment policy."""
+
+
+def _enforce_mode(path: Path, expected: int, label: str, *, directory: bool) -> None:
+    try:
+        before = path.lstat().st_mode
+    except OSError as exc:
+        raise PathPolicyError(f"{label} rejected: owner-only permissions could not be verified") from exc
+    expected_kind = stat.S_ISDIR(before) if directory else stat.S_ISREG(before)
+    if stat.S_ISLNK(before) or not expected_kind:
+        kind = "directory" if directory else "regular file"
+        raise PathPolicyError(f"{label} rejected: private {kind} required")
+    try:
+        path.chmod(expected, follow_symlinks=False)
+        after = path.lstat().st_mode
+    except (NotImplementedError, OSError, TypeError) as exc:
+        raise PathPolicyError(f"{label} rejected: owner-only permissions could not be enforced") from exc
+    if stat.S_IMODE(after) != expected:
+        raise PathPolicyError(f"{label} rejected: owner-only permissions could not be verified")
+
+
+def enforce_private_directory(path: Path, label: str) -> None:
+    _enforce_mode(Path(path), 0o700, label, directory=True)
 
 
 def _relative(path: Path, label: str) -> Path:
@@ -46,17 +67,44 @@ def private_root(path: Path, label: str, *, create: bool = False) -> Path:
                     raise PathPolicyError(f"{label} rejected: directory required")
             else:
                 current.mkdir(mode=0o700)
-            try:
-                current.chmod(0o700)
-            except OSError:
-                pass
+            enforce_private_directory(current, label)
     if not absolute.exists() or not stat.S_ISDIR(absolute.stat(follow_symlinks=False).st_mode):
         raise PathPolicyError(f"{label} rejected: directory required")
-    try:
-        absolute.chmod(0o700)
-    except OSError:
-        pass
+    enforce_private_directory(absolute, label)
     return absolute.resolve(strict=True)
+
+
+def private_contained_directory(
+    path: Path, root: Path, label: str, *, create: bool = False,
+) -> Path:
+    """Resolve or create one owner-only directory beneath a trusted private root."""
+
+    path = _relative(path, label)
+    _check_existing_chain(path, label)
+    trusted_root = Path(root).resolve(strict=True)
+    candidate = (Path.cwd() / path).resolve(strict=False)
+    try:
+        relative = candidate.relative_to(trusted_root)
+    except ValueError as exc:
+        raise PathPolicyError(f"{label} rejected: path outside configured root") from exc
+    if not relative.parts:
+        raise PathPolicyError(f"{label} rejected: private root itself is not a run directory")
+    current = trusted_root
+    for part in relative.parts:
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            if not create:
+                raise PathPolicyError(f"{label} rejected: directory required") from None
+            current.mkdir(mode=0o700)
+        else:
+            if stat.S_ISLNK(mode):
+                raise PathPolicyError(f"{label} rejected: symbolic link: {current}")
+            if not stat.S_ISDIR(mode):
+                raise PathPolicyError(f"{label} rejected: directory required")
+        enforce_private_directory(current, label)
+    return current.resolve(strict=True)
 
 
 def contained_input(path: Path, root: Path, label: str, *, directory: bool = False) -> Path:
@@ -117,7 +165,4 @@ def contained_output(path: Path, root: Path, label: str) -> Path:
 
 
 def owner_only_file(path: Path) -> None:
-    try:
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR, follow_symlinks=False)
-    except OSError:
-        pass
+    _enforce_mode(Path(path), stat.S_IRUSR | stat.S_IWUSR, "private file", directory=False)

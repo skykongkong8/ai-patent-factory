@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/calibration-manifest-v1.json",
+  "title": "Independent SimRisk calibration manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["calibration_kind", "producer_id", "records", "reviewers", "schema_version", "scorer_config_hash", "scorer_version"],
+  "properties": {
+    "calibration_kind": {"const": "independent_redacted"},
+    "producer_id": {"type": "string", "minLength": 1},
+    "schema_version": {"const": "calibration-manifest-v1"},
+    "scorer_config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "scorer_version": {"const": "simrisk-v1.0.0"},
+    "reviewers": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["affiliation", "independent", "reviewed_at", "reviewer_id", "role"],
+        "properties": {
+          "affiliation": {"type": "string", "minLength": 1},
+          "independent": {"const": true},
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-([0-2]\\d|3[0-1])T([0-1]\\d|2[0-3]):[0-5]\\d:[0-5]\\dZ$"
+          },
+          "reviewer_id": {"type": "string", "minLength": 1},
+          "role": {"enum": ["domain_expert", "patent_attorney"]}
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_id", "corpus_hash", "disagreement", "input_hash", "labels", "threshold_sensitivity_hash"],
+        "properties": {
+          "case_id": {"type": "string", "minLength": 1},
+          "corpus_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "input_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "threshold_sensitivity_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "labels": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["rationale_hash", "reviewer_id", "risk_label"],
+              "properties": {
+                "rationale_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "reviewer_id": {"type": "string", "minLength": 1},
+                "risk_label": {"enum": ["low", "moderate", "high", "excessive"]}
+              }
+            }
+          },
+          "disagreement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["present", "resolution_hash"],
+            "properties": {
+              "present": {"type": "boolean"},
+              "resolution_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -203,6 +203,36 @@ class StateStore:
             inject_fault(fault_at, "after_event")
             return self._snapshot(run_id)
 
+    def ensure_run(
+        self, run_id: str, *, actor: str = "system", reason: str = "run created",
+        fault_at: FaultInjector = None,
+    ) -> TransitionResult:
+        """Create one directory-scoped run or replay its original creation exactly."""
+
+        now = utc_now()
+        with immediate_transaction(self.connection):
+            rows = tuple(self.connection.execute("SELECT run_id FROM runs ORDER BY run_id"))
+            existing_ids = {row["run_id"] for row in rows}
+            if existing_ids and run_id not in existing_ids:
+                raise StateError("run database is already bound to a different run")
+            if run_id in existing_ids:
+                event = self.connection.execute(
+                    "SELECT event_id FROM transition_events WHERE run_id=? AND prior_state='new' "
+                    "AND next_state='new' ORDER BY created_at,event_id LIMIT 1", (run_id,),
+                ).fetchone()
+                if event is None:
+                    raise StateError("run creation event is missing")
+                return TransitionResult(self._snapshot(run_id), event["event_id"], replayed=True)
+            self.connection.execute("INSERT INTO runs VALUES(?, 'new', 0, ?, ?)", (run_id, now, now))
+            inject_fault(fault_at, "after_state")
+            event_id = "te_" + digest({"run_id":run_id,"actor":actor,"state":"new","reason":reason,"at":now})[:20]
+            self.connection.execute(
+                "INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)",
+                (event_id,run_id,actor,"new","new",reason,"[]",None,now),
+            )
+            inject_fault(fault_at, "after_event")
+            return TransitionResult(self._snapshot(run_id), event_id)
+
     def _require_current_hash(self, run_id: str, content_hash: str) -> sqlite3.Row:
         row = self.connection.execute(
             "SELECT ar.* FROM artifact_revisions ar JOIN current_artifacts ca ON ca.revision_id=ar.revision_id WHERE ar.run_id=? AND ar.content_hash=? AND ar.stale=0",

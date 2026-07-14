@@ -179,6 +179,14 @@ class RunBusyError(RuntimeError):
         super().__init__("run_busy: retry the operation")
 
 
+class RunIdResolutionError(ValueError):
+    """A run identifier could not be resolved against authoritative state."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
 class InjectedFailure(RuntimeError):
     pass
 
@@ -393,6 +401,30 @@ def profile_payload(connection: sqlite3.Connection) -> dict[str, Any]:
     conflicts = [{"conflict_id":row["conflict_id"],"existing_value_hash":digest(json.loads(row["existing_value_json"])),"field":row["field"],"incoming_value_hash":digest(json.loads(row["incoming_value_json"])),"incoming_source_id":row["incoming_source_id"]} for row in connection.execute("SELECT conflict_id,field,existing_value_json,incoming_value_json,incoming_source_id FROM profile_conflicts ORDER BY field,conflict_id")]
     state = connection.execute("SELECT status,revision FROM profile_state WHERE singleton=1").fetchone()
     return {"conflicts":conflicts,"facts":facts,"profile_revision":state["revision"] if state else _revision(connection),"profile_version":PROFILE_VERSION,"state":state["status"] if state else "profile_pending"}
+
+
+def resolve_run_id(connection: sqlite3.Connection, requested: str | None = None) -> str:
+    """Resolve an explicit or unambiguous authoritative run identifier."""
+
+    run_ids = tuple(row[0] for row in connection.execute("SELECT run_id FROM runs ORDER BY run_id"))
+    if requested is not None:
+        value = normalize(requested)
+        if not isinstance(value, str) or not value or value not in run_ids:
+            raise RunIdResolutionError(
+                "run_id_mismatch",
+                "requested run is not present in the authoritative database",
+            )
+        return value
+    if not run_ids:
+        raise RunIdResolutionError(
+            "run_id_missing", "authoritative database contains no run",
+        )
+    if len(run_ids) != 1:
+        raise RunIdResolutionError(
+            "run_id_ambiguous",
+            "--run-id is required when the database contains multiple runs",
+        )
+    return run_ids[0]
 
 
 def profile_conflict_snapshot(connection: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
