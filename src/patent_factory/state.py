@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import stat
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from .artifacts import ArtifactError, ArtifactExport, export_immutable_json, recover_artifact_exports
+from .artifacts import (
+    ArtifactError,
+    ArtifactExport,
+    canonical_json_bytes,
+    export_immutable,
+    export_immutable_json,
+    recover_artifact_exports,
+)
 from .database import FaultInjector, consistent_snapshot, immediate_transaction, inject_fault, utc_now
 from .models import (
     ArtifactRevision,
@@ -33,6 +41,38 @@ class GateMismatchError(StateError):
     code = "gate_mismatch"
 
 
+def workspace_export_directories(
+    connection: sqlite3.Connection, run_root: Path, own_directories: Iterable[Path] = (),
+) -> tuple[Path, ...]:
+    """Return every registered export parent contained by one symlink-free workspace."""
+    root = Path(run_root).absolute()
+    workspace = root.parent
+    if not workspace.is_dir() or stat.S_ISLNK(workspace.lstat().st_mode):
+        raise StateError("artifact workspace directory is unsafe")
+    directories = {Path(item).absolute() for item in own_directories}
+    directories.update(
+        Path(row["path"]).absolute().parent
+        for row in connection.execute("SELECT DISTINCT path FROM artifact_exports")
+    )
+    for directory in directories:
+        try:
+            relative = directory.relative_to(workspace)
+        except ValueError as exc:
+            raise StateError("artifact registry path is outside the workspace directory") from exc
+        current = workspace
+        for part in relative.parts:
+            current = current / part
+            try:
+                mode = current.lstat().st_mode
+            except FileNotFoundError:
+                raise StateError("artifact registry directory is missing") from None
+            if stat.S_ISLNK(mode):
+                raise StateError("artifact registry directory has a symbolic-link ancestor")
+        if not directory.is_dir():
+            raise StateError("artifact registry directory is unsafe")
+    return tuple(sorted(directories))
+
+
 ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.NEW: frozenset({RunState.PROFILE_PENDING}),
     RunState.PROFILE_PENDING: frozenset({RunState.CONFLICT_RESOLUTION_REQUIRED, RunState.SENSITIVE_DISCLOSURE_REQUIRED, RunState.PROFILE_READY}),
@@ -53,11 +93,12 @@ ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.DECISION_REQUIRED: frozenset({RunState.STOPPED, RunState.AUDIT_APPROVED, RunState.RESEARCH_RUNNING, RunState.IDEATION_RUNNING}),
     RunState.AUDIT_APPROVED: frozenset({RunState.DRAFT_READY}),
     RunState.DRAFT_READY: frozenset({RunState.SENSITIVE_DISCLOSURE_REQUIRED, RunState.REVIEW_REQUIRED}),
-    RunState.SENSITIVE_DISCLOSURE_REQUIRED: frozenset({RunState.DRAFT_READY, RunState.REVIEWED, RunState.VALIDATED, RunState.STOPPED}),
+    RunState.SENSITIVE_DISCLOSURE_REQUIRED: frozenset({RunState.DRAFT_READY, RunState.REVIEWED, RunState.REVISION_REQUIRED, RunState.VALIDATED, RunState.COMPLETE, RunState.STOPPED}),
     RunState.REVIEW_REQUIRED: frozenset({RunState.REVISION_REQUIRED, RunState.REVIEWED}),
     RunState.REVISION_REQUIRED: frozenset({RunState.DRAFT_READY, RunState.REVIEW_REQUIRED}),
     RunState.REVIEWED: frozenset({RunState.SENSITIVE_DISCLOSURE_REQUIRED, RunState.VALIDATED, RunState.REVISION_REQUIRED}),
     RunState.VALIDATED: frozenset({RunState.SENSITIVE_DISCLOSURE_REQUIRED, RunState.COMPLETE, RunState.REVISION_REQUIRED}),
+    RunState.COMPLETE: frozenset({RunState.SENSITIVE_DISCLOSURE_REQUIRED}),
 }
 
 GATE_STATES = {
@@ -92,6 +133,8 @@ def gate_action_target(kind: GateKind, action: str, return_state: RunState) -> R
     """Return the policy-owned target for a gate action; callers never choose it."""
     if action == "stop":
         return RunState.STOPPED
+    if kind is GateKind.SENSITIVE_DISCLOSURE and action == "redact":
+        return RunState.REVISION_REQUIRED if return_state in {RunState.REVIEWED, RunState.VALIDATED, RunState.COMPLETE} else RunState.DRAFT_READY
     return {
         (GateKind.COVERAGE, "expand"): RunState.RESEARCH_RUNNING,
         (GateKind.COVERAGE, "retry"): RunState.AUDIT_RUNNING,
@@ -214,6 +257,94 @@ class StateStore:
         ):
             raise StateError(f"illegal transition: {prior.value} -> {target.value}")
 
+    def _require_completion_invariants(self, run_id: str) -> None:
+        rows = {
+            row["kind"]: row
+            for row in self.connection.execute(
+                "SELECT ar.* FROM artifact_revisions ar "
+                "JOIN current_artifacts ca ON ca.revision_id=ar.revision_id "
+                "WHERE ar.run_id=? AND ar.stale=0 AND ca.kind IN ('report','review','validation')",
+                (run_id,),
+            )
+        }
+        if set(rows) != {"report", "review", "validation"}:
+            raise StateError("completion requires current report, review, and validation artifacts")
+        if (
+            rows["report"]["schema_version"] != "report-v1"
+            or rows["review"]["schema_version"] != "review-v1"
+            or rows["validation"]["schema_version"] != "validation-v1"
+        ):
+            raise StateError("completion artifacts have unsupported schema versions")
+        review = json.loads(rows["review"]["content_json"])
+        validation = json.loads(rows["validation"]["content_json"])
+        report = json.loads(rows["report"]["content_json"])
+        parsed = {"report": report, "review": review, "validation": validation}
+        for kind, row in rows.items():
+            dependencies = sorted(
+                item[0] for item in self.connection.execute(
+                    "SELECT upstream_revision_id FROM artifact_dependencies "
+                    "WHERE run_id=? AND downstream_revision_id=?",
+                    (run_id, row["revision_id"]),
+                )
+            )
+            expected_hash = digest({
+                "content": parsed[kind], "dependencies": dependencies,
+                "schema_version": row["schema_version"],
+            })
+            if expected_hash != row["content_hash"]:
+                raise StateError(f"completion {kind} artifact content hash mismatch")
+        # Local imports avoid a module cycle while keeping COMPLETE a semantic
+        # kernel boundary rather than trusting caller-authored status strings.
+        from .report import validate_report_artifact
+        from .review import validate_review_artifact
+        from .validation import build_validation_manifest, validate_validation_artifact
+
+        validate_report_artifact(report)
+        validate_review_artifact(review, report=report)
+        validate_validation_artifact(validation)
+        recomputed = build_validation_manifest(
+            self.connection, run_id=run_id, report_row=rows["report"], report=report,
+            review_row=rows["review"], review=review,
+        )
+        if validation != recomputed:
+            raise StateError("completion validation artifact does not reproduce current deterministic checks")
+        if (
+            review.get("report_hash") != rows["report"]["content_hash"]
+            or review.get("disposition") != "approved"
+            or review.get("report_bindings") != report.get("bindings")
+            or validation.get("report_hash") != rows["report"]["content_hash"]
+            or validation.get("review_hash") != rows["review"]["content_hash"]
+            or validation.get("status") != "passed"
+            or validation.get("artifact_hashes", {}).get("report") != rows["report"]["content_hash"]
+            or validation.get("artifact_hashes", {}).get("review") != rows["review"]["content_hash"]
+        ):
+            raise StateError("completion artifacts do not bind an approved current report")
+        for upstream, downstream in (
+            (rows["report"]["revision_id"], rows["review"]["revision_id"]),
+            (rows["report"]["revision_id"], rows["validation"]["revision_id"]),
+            (rows["review"]["revision_id"], rows["validation"]["revision_id"]),
+        ):
+            edge = self.connection.execute(
+                "SELECT 1 FROM artifact_dependencies WHERE run_id=? AND upstream_revision_id=? AND downstream_revision_id=?",
+                (run_id, upstream, downstream),
+            ).fetchone()
+            if edge is None:
+                raise StateError("completion artifacts are missing required dependency edges")
+        for kind, expected_hash in report.get("bindings", {}).items():
+            if kind == "excessive_gate_resolution":
+                row = self.connection.execute(
+                    "SELECT 1 FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND content_hash=? AND stale=0",
+                    (run_id, expected_hash),
+                ).fetchone()
+            else:
+                row = self.connection.execute(
+                    "SELECT 1 FROM artifact_revisions ar JOIN current_artifacts ca ON ca.revision_id=ar.revision_id "
+                    "WHERE ar.run_id=? AND ca.kind=? AND ar.content_hash=? AND ar.stale=0",
+                    (run_id, kind, expected_hash),
+                ).fetchone()
+            if row is None:
+                raise StateError("completion report has a stale artifact binding")
+
     def _activate_revision(self, run_id: str, kind: str, revision_id: str, fault_at: FaultInjector) -> None:
         prior = self.connection.execute("SELECT revision_id FROM current_artifacts WHERE run_id=? AND kind=?", (run_id,kind)).fetchone()
         pending_gate = self.connection.execute(
@@ -317,7 +448,13 @@ class StateStore:
                     raise GateMismatchError("a current consumed approval for the exact operation is required")
                 self._require_current_hash(run_id,decision["subject_revision_hash"])
                 decision_hashes.update((decision["subject_revision_hash"],decision["approval_scope_hash"]))
-            self._validate_direct_transition(prior.state, target)
+            if prior.state is RunState.COMPLETE and target is RunState.COMPLETE:
+                if consumed_decision_id is None:
+                    raise GateMismatchError("complete self-transition requires an exact external-share approval")
+            else:
+                self._validate_direct_transition(prior.state, target)
+            if target is RunState.COMPLETE:
+                self._require_completion_invariants(run_id)
             artifact = None
             if artifact_kind is not None:
                 if artifact_content is None:
@@ -344,11 +481,15 @@ class StateStore:
             inject_fault(fault_at,"after_idempotency")
             return TransitionResult(self._snapshot(run_id),event_id,artifact)
 
-    def publish_transition(self, run_id: str, next_state: RunState | str, *, actor: str, reason: str, operation: str, idempotency_key: str, artifact_kind: str, artifact_content: dict[str, Any], export_directory: Path, artifact_schema_version: str = "1", dependencies: Iterable[str] = (), evidence_hashes: Iterable[str] = (), consumed_decision_id: str | None = None, export_fault_hook: Callable[[str], None] | None = None, fault_at: FaultInjector = None) -> tuple[TransitionResult, ArtifactExport]:
+    def publish_transition(self, run_id: str, next_state: RunState | str, *, actor: str, reason: str, operation: str, idempotency_key: str, artifact_kind: str, artifact_content: dict[str, Any], export_directory: Path, artifact_schema_version: str = "1", dependencies: Iterable[str] = (), evidence_hashes: Iterable[str] = (), consumed_decision_id: str | None = None, export_payload: bytes | None = None, export_suffix: str = ".json", supersede_prior: bool = False, export_fault_hook: Callable[[str], None] | None = None, fault_at: FaultInjector = None) -> tuple[TransitionResult, ArtifactExport]:
         target = RunState(next_state)
         directory = Path(export_directory).absolute()
         if directory not in self.export_directories:
             raise ArtifactError("artifact_path: export directory is not configured")
+        if export_suffix not in {".json", ".md"}:
+            raise ArtifactError("artifact_path: .json or .md export suffix required")
+        if export_payload is not None and export_suffix == ".json":
+            raise ArtifactError("artifact_path: custom bytes require a non-JSON export suffix")
         dependency_ids = tuple(sorted(set(dependencies)))
         artifact_hash = digest({
             "content": artifact_content,
@@ -356,7 +497,7 @@ class StateStore:
             "schema_version": artifact_schema_version,
         })
         revision_id = "ar_" + digest({"run_id":run_id,"kind":artifact_kind,"content_hash":artifact_hash,"schema_version":artifact_schema_version})[:20]
-        export_path = directory / f"{revision_id}.json"
+        export_path = directory / f"{revision_id}{export_suffix}"
         with immediate_transaction(self.connection):
             replay = self._published_replay(run_id, operation, idempotency_key)
             if replay is not None:
@@ -382,9 +523,16 @@ class StateStore:
                     raise GateMismatchError("a current consumed approval for the exact operation is required")
                 self._require_current_hash(run_id,decision["subject_revision_hash"])
                 decision_hashes.update((decision["subject_revision_hash"],decision["approval_scope_hash"]))
-            self._validate_direct_transition(prior.state, target)
+            if prior.state is RunState.COMPLETE and target is RunState.COMPLETE:
+                if consumed_decision_id is None:
+                    raise GateMismatchError("complete self-transition requires an exact external-share approval")
+            else:
+                self._validate_direct_transition(prior.state, target)
+            if target is RunState.COMPLETE:
+                self._require_completion_invariants(run_id)
             inject_fault(fault_at,"before_export")
-            exported = export_immutable_json(export_path,artifact_content,fault_hook=export_fault_hook)
+            payload = export_payload if export_payload is not None else canonical_json_bytes(artifact_content)
+            exported = export_immutable(export_path,payload,fault_hook=export_fault_hook)
             inject_fault(fault_at,"after_export_publish")
             inject_fault(fault_at,"before_database")
             artifact = self._add_revision(run_id,artifact_kind,artifact_content,artifact_schema_version,dependency_ids,fault_at,activate=False)
@@ -395,7 +543,15 @@ class StateStore:
             if tuple(registry) != (exported.path,exported.content_hash,exported.size):
                 raise StateError("artifact export registry conflict")
             inject_fault(fault_at,"after_export_registry")
+            replaced = self.connection.execute(
+                "SELECT revision_id FROM current_artifacts WHERE run_id=? AND kind=?",
+                (run_id, artifact_kind),
+            ).fetchone()
             self._activate_revision(run_id,artifact_kind,artifact.revision_id,fault_at)
+            if supersede_prior and replaced is not None and replaced[0] != artifact.revision_id:
+                self.connection.execute(
+                    "UPDATE artifact_revisions SET stale=1 WHERE revision_id=?", (replaced[0],),
+                )
             hashes = set(evidence_hashes) | decision_hashes | {artifact.content_hash,exported.content_hash}
             event_id = "te_" + digest({"run_id":run_id,"actor":actor,"prior":prior.state.value,"next":target.value,"reason":reason,"hashes":sorted(hashes),"at":now})[:20]
             self.connection.execute("INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)",(event_id,run_id,actor,prior.state.value,target.value,reason,canonical_json(sorted(hashes)),artifact.revision_id,now))

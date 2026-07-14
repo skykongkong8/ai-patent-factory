@@ -13,7 +13,7 @@ from .database import FaultInjector, profile_payload
 from .models import ArtifactRevision, GateEnvelope, GateKind, RunState
 from .provenance import Claim, EpistemicLabel, canonical_json, claim_from_dict, digest, normalize
 from .privacy import assert_canaries_absent, environment_secret
-from .state import StateError, StateStore
+from .state import StateError, StateStore, workspace_export_directories
 
 
 CANDIDATE_SCHEMA_VERSION = "candidate-v1"
@@ -364,15 +364,9 @@ def _state_with_exports(
 ) -> tuple[StateStore, Path]:
     root = Path(run_root).absolute()
     ideation_exports = _private_exports(root, "ideation-exports", create=create_ideation)
-    directories = {ideation_exports} if ideation_exports.exists() else set()
-    for row in connection.execute("SELECT DISTINCT path FROM artifact_exports"):
-        directory = Path(row["path"]).absolute().parent
-        try:
-            directory.relative_to(root)
-        except ValueError as exc:
-            raise StateError("artifact registry path is outside the run directory") from exc
-        directories.add(directory)
-    return StateStore(connection, export_directories=tuple(sorted(directories))), ideation_exports
+    own = (ideation_exports,) if ideation_exports.exists() else ()
+    directories = workspace_export_directories(connection, root, own)
+    return StateStore(connection, export_directories=directories), ideation_exports
 
 
 def _current_artifact(connection: sqlite3.Connection, run_id: str, kind: str) -> ArtifactRevision:

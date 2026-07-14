@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report.schema.json",
+  "title": "Korean report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "appendix_ids", "bindings", "citations", "draft_spec", "draft_spec_hash", "drafter", "language", "markdown",
+    "policy_hash", "redactions", "report_date", "revision", "run_id", "sections",
+    "sensitive_disclosures", "template_hash", "version"
+  ],
+  "properties": {
+    "appendix_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceId"}},
+    "bindings": {"type": "object", "minProperties": 8, "additionalProperties": {"$ref": "#/$defs/hash"}},
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["content_hash", "evidence_id", "identifier", "limitations", "observation_date", "source_type", "title", "url"],
+        "properties": {
+          "content_hash": {"$ref": "#/$defs/hash"},
+          "evidence_id": {"$ref": "#/$defs/evidenceId"},
+          "identifier": {"type": "string", "minLength": 1},
+          "limitations": {"type": "array", "items": {"type": "string"}},
+          "observation_date": {"type": "string", "minLength": 1},
+          "source_type": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "url": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "draft_spec": {
+      "type": "object", "additionalProperties": false,
+      "required": ["handoff_questions", "profile_fields", "recommended_investigations"],
+      "properties": {
+        "handoff_questions": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+        "profile_fields": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+        "recommended_investigations": {"$ref": "#/$defs/nonEmptyUniqueStrings"}
+      }
+    },
+    "draft_spec_hash": {"$ref": "#/$defs/hash"},
+    "drafter": {"$ref": "#/$defs/identity"},
+    "language": {"const": "ko"},
+    "markdown": {"type": "string", "minLength": 1},
+    "policy_hash": {"$ref": "#/$defs/hash"},
+    "redactions": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["decision_id", "field", "prior_report_hash", "reason", "replacement", "text_hash"],
+        "properties": {
+          "decision_id": {"type": "string", "minLength": 1},
+          "field": {"type": "string", "minLength": 1},
+          "prior_report_hash": {"$ref": "#/$defs/hash"},
+          "reason": {"type": "string", "minLength": 1},
+          "replacement": {"const": "[삭제됨: 민감 정보]"},
+          "text_hash": {"$ref": "#/$defs/hash"}
+        }
+      }
+    },
+    "report_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "revision": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["reason", "report_hash", "review_hash"],
+          "properties": {
+            "reason": {"type": "string", "minLength": 1},
+            "report_hash": {"$ref": "#/$defs/hash"},
+            "review_hash": {"$ref": "#/$defs/hash"}
+          }
+        }
+      ]
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "sections": {
+      "type": "array", "minItems": 11, "maxItems": 11,
+      "prefixItems": [
+        {"$ref": "#/$defs/section1"}, {"$ref": "#/$defs/section2"},
+        {"$ref": "#/$defs/section3"}, {"$ref": "#/$defs/section4"},
+        {"$ref": "#/$defs/section5"}, {"$ref": "#/$defs/section6"},
+        {"$ref": "#/$defs/section7"}, {"$ref": "#/$defs/section8"},
+        {"$ref": "#/$defs/section9"}, {"$ref": "#/$defs/section10"},
+        {"$ref": "#/$defs/section11"}
+      ],
+      "items": false
+    },
+    "sensitive_disclosures": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["field", "reason", "text", "text_hash"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "text": {"type": "string", "minLength": 1},
+          "text_hash": {"$ref": "#/$defs/hash"}
+        }
+      }
+    },
+    "template_hash": {"$ref": "#/$defs/hash"},
+    "version": {"const": "report-v1"}
+  },
+  "$defs": {
+    "evidenceId": {"type": "string", "pattern": "^ev_[0-9a-f]{16}$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "pass_id", "type"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "pass_id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["agent", "human"]}
+      }
+    },
+    "nonEmptyUniqueStrings": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "section1": {"$ref": "#/$defs/section", "properties": {"number": {"const": 1}, "heading": {"const": "문서 목적·범위 및 면책"}}},
+    "section2": {"$ref": "#/$defs/section", "properties": {"number": {"const": 2}, "heading": {"const": "사용자·발명자 기술 배경 및 도메인 맥락"}}},
+    "section3": {"$ref": "#/$defs/section", "properties": {"number": {"const": 3}, "heading": {"const": "문제 및 기회 영역"}}},
+    "section4": {"$ref": "#/$defs/section", "properties": {"number": {"const": 4}, "heading": {"const": "조사 범위 및 방법"}}},
+    "section5": {"$ref": "#/$defs/section", "properties": {"number": {"const": 5}, "heading": {"const": "핵심 선행기술 환경"}}},
+    "section6": {"$ref": "#/$defs/section", "properties": {"number": {"const": 6}, "heading": {"const": "최종 후보"}}},
+    "section7": {"$ref": "#/$defs/section", "properties": {"number": {"const": 7}, "heading": {"const": "후보 비교 매트릭스"}}},
+    "section8": {"$ref": "#/$defs/section", "properties": {"number": {"const": 8}, "heading": {"const": "최종 KIPRIS 유사도 위험 감사"}}},
+    "section9": {"$ref": "#/$defs/section", "properties": {"number": {"const": 9}, "heading": {"const": "유사도 체크포인트 사용자 결정"}}},
+    "section10": {"$ref": "#/$defs/section", "properties": {"number": {"const": 10}, "heading": {"const": "변리사 인계 질문 및 후속 조사"}}},
+    "section11": {"$ref": "#/$defs/section", "properties": {"number": {"const": 11}, "heading": {"const": "출처·근거 부록"}}},
+    "section": {
+      "type": "object", "additionalProperties": false,
+      "required": ["body", "heading", "number"],
+      "properties": {"body": {"type": "string", "minLength": 1}, "heading": {"type": "string"}, "number": {"type": "integer"}}
+    }
+  }
+}

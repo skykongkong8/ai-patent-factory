@@ -154,8 +154,10 @@ def recover_artifact_exports(
                 raise ArtifactError("artifact_recovery: registered export missing") from None
             if len(payload) != expected_size or hashlib.sha256(payload).hexdigest() != expected_hash:
                 raise ArtifactError("artifact_recovery: registered export mismatch")
-        for published in sorted(directory.glob("ar_*.json"), key=lambda item: item.name):
+        for published in sorted(directory.glob("ar_*"), key=lambda item: item.name):
             _ensure_safe_target(published)
+            if published.suffix not in {".json", ".md"}:
+                raise ArtifactError("artifact_recovery: unsupported published artifact suffix")
             if published.absolute() not in normalized:
                 published.unlink()
                 removed.append(published.name)

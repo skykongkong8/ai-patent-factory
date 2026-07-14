@@ -1,0 +1,37 @@
+{
+  "version": "report-policy-v1.0.0",
+  "language": "ko",
+  "section_headings": [
+    "문서 목적·범위 및 면책",
+    "사용자·발명자 기술 배경 및 도메인 맥락",
+    "문제 및 기회 영역",
+    "조사 범위 및 방법",
+    "핵심 선행기술 환경",
+    "최종 후보",
+    "후보 비교 매트릭스",
+    "최종 KIPRIS 유사도 위험 감사",
+    "유사도 체크포인트 사용자 결정",
+    "변리사 인계 질문 및 후속 조사",
+    "출처·근거 부록"
+  ],
+  "report_disclaimer": "이 도구의 결과는 발명 정리 보조 자료이며 법률 자문이 아닙니다. 특허성, 신규성, 유효성 또는 비침해/FTO에 관한 법적 결론을 제공하지 않으며, 필요한 판단은 자격 있는 변리사·변호사와 확인해야 합니다.",
+  "similarity_disclaimer": "모든 유사도 수치는 검색된 코퍼스 범위 내의 잠정적 연구 보조 지표이며, 법적 신규성·진보성·특허성·비침해/FTO 판단이 아닙니다.",
+  "required_review_checks": [
+    "citation_integrity",
+    "decision_gate_coverage",
+    "factual_grounding",
+    "internal_consistency",
+    "legal_language",
+    "schema_completeness",
+    "source_coverage"
+  ],
+  "prohibited_unqualified_phrases": [
+    "특허 가능하다",
+    "신규성이 있다",
+    "진보성이 있다",
+    "비침해이다",
+    "FTO가 확보되었다",
+    "freedom to operate",
+    "patentable"
+  ]
+}

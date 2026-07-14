@@ -86,6 +86,10 @@ class TransactionalStateKernelTests(unittest.TestCase):
                         with self.assertRaisesRegex(GateMismatchError, "mandatory gate state"):
                             store.transition(run_id,target,actor="tester",reason="edge",operation="edge",idempotency_key=target.value)
                         continue
+                    if target is RunState.COMPLETE:
+                        with self.assertRaisesRegex(StateError, "completion requires current report"):
+                            store.transition(run_id,target,actor="tester",reason="edge",operation="edge",idempotency_key=target.value)
+                        continue
                     result = store.transition(run_id,target,actor="tester",reason="edge",operation="edge",idempotency_key=target.value,evidence_hashes=("hash-b","hash-a"))
                     self.assertEqual(result.snapshot.state,target)
                     event = connection.execute("SELECT * FROM transition_events WHERE event_id=?", (result.event_id,)).fetchone()

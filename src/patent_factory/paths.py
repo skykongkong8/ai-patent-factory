@@ -76,6 +76,30 @@ def contained_input(path: Path, root: Path, label: str, *, directory: bool = Fal
     return resolved
 
 
+def contained_directory(path: Path, root: Path, label: str) -> Path:
+    """Resolve an existing directory relative to an already trusted absolute root."""
+    path = _relative(path, label)
+    current = Path(root).resolve(strict=True)
+    for part in path.parts:
+        if part in ("", "."):
+            continue
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            raise PathPolicyError(f"{label} rejected: directory required") from None
+        if stat.S_ISLNK(mode):
+            raise PathPolicyError(f"{label} rejected: symbolic link: {current}")
+    resolved = current.resolve(strict=True)
+    try:
+        resolved.relative_to(Path(root).resolve(strict=True))
+    except ValueError as exc:
+        raise PathPolicyError(f"{label} rejected: path outside configured root") from exc
+    if not stat.S_ISDIR(current.stat(follow_symlinks=False).st_mode):
+        raise PathPolicyError(f"{label} rejected: directory required")
+    return resolved
+
+
 def contained_output(path: Path, root: Path, label: str) -> Path:
     path = _relative(path, label)
     _check_existing_chain(path, label)

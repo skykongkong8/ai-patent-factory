@@ -23,7 +23,7 @@ from .similarity import (
     validate_feature_map,
     validate_pair_score,
 )
-from .state import StateError, StateStore
+from .state import StateError, StateStore, workspace_export_directories
 
 
 AdapterFactory = Callable[[Mapping[str, Any], int, str], SearchAdapter]
@@ -45,8 +45,8 @@ def validate_audit_artifact(value: Mapping[str, Any], config: SimilarityConfig) 
     }
     if not isinstance(value, Mapping) or set(value) != required or value["version"] != "audit-batch-v1":
         raise ValueError("audit_artifact: exact audit-batch-v1 fields required")
-    if not isinstance(value["results"], list):
-        raise ValueError("audit_artifact.results: array required")
+    if not isinstance(value["results"], list) or len(value["results"]) < 3:
+        raise ValueError("audit_artifact.results: at least three finalist results required")
     result_fields = {
         "candidate_id", "closest_reference_id", "corpus_hash", "counterargument", "coverage",
         "finalist_id", "outcome", "pair_scores", "r_hi", "r_obs", "upper_bound_reference_id",
@@ -136,15 +136,8 @@ def _exports(run_root: Path) -> Path:
 
 def _publishing_state(connection: sqlite3.Connection, run_root: Path) -> tuple[StateStore, Path]:
     root, audit_exports = Path(run_root).absolute(), _exports(run_root)
-    directories = {audit_exports}
-    for row in connection.execute("SELECT DISTINCT path FROM artifact_exports"):
-        directory = Path(row["path"]).absolute().parent
-        try:
-            directory.relative_to(root)
-        except ValueError as exc:
-            raise StateError("artifact registry path is outside the run directory") from exc
-        directories.add(directory)
-    return StateStore(connection, export_directories=tuple(sorted(directories))), audit_exports
+    directories = workspace_export_directories(connection, root, (audit_exports,))
+    return StateStore(connection, export_directories=directories), audit_exports
 
 
 def _query_input(value: Mapping[str, Any], finalists: Mapping[str, Mapping[str, Any]], finalist_hash: str) -> list[dict[str, Any]]:

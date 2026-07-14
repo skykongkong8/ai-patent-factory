@@ -22,7 +22,11 @@ from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview
 from .privacy import assert_canaries_absent, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import PlannedQuery, run_research
+from .report import publish_report
+from .review import run_review
+from .sharing import SensitiveDisclosureRequiredError, share_report
 from .state import StateError
+from .validation import validate_and_complete
 
 QUESTIONS = (
     ("name", "이름 또는 식별명을 입력하세요"),
@@ -139,6 +143,27 @@ def build_parser() -> argparse.ArgumentParser:
     gate_commands.choices["decide"].add_argument("--input", type=Path, required=True)
     gate_commands.choices["decide"].add_argument("--byte-budget", type=int, default=2_000_000)
 
+    for name, help_text in (
+        ("draft", "render the private Korean Markdown report"),
+        ("review", "persist an independent hash-bound report review"),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--run", type=Path, required=True)
+        command.add_argument("--run-id", required=True)
+        command.add_argument("--input", type=Path, required=True)
+        command.add_argument("--byte-budget", type=int, default=2_000_000)
+        command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    validate = commands.add_parser("validate", help="deterministically validate and complete the private report")
+    validate.add_argument("--run", type=Path, required=True)
+    validate.add_argument("--run-id", required=True)
+    validate.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    share = commands.add_parser("share", help="guard and publish an external report share")
+    share.add_argument("--run", type=Path, required=True)
+    share.add_argument("--run-id", required=True)
+    share.add_argument("--input", type=Path, required=True)
+    share.add_argument("--decision-id")
+    share.add_argument("--byte-budget", type=int, default=2_000_000)
+    share.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     return parser
 
 
@@ -438,6 +463,38 @@ def _gate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         ).as_dict(), 0
 
 
+def _report_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, f"{args.command} run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, f"{args.command} database")
+    with connect_database(database_path) as connection:
+        if args.command == "validate":
+            return validate_and_complete(connection, run_root=run_root, run_id=normalize(args.run_id)).as_dict(), 0
+        input_path = contained_input(args.input, workspace_root, f"{args.command} input")
+        value = _json_object(input_path, args.byte_budget, f"{args.command} input")
+        if args.command == "draft":
+            return publish_report(
+                connection, run_root=run_root, run_id=normalize(args.run_id), report_input=value,
+            ).as_dict(), 0
+        if args.command == "review":
+            result = run_review(
+                connection, run_root=run_root, run_id=normalize(args.run_id), review_input=value,
+            )
+            return result.as_dict(), 10 if result.next_state == "revision_required" else 0
+        try:
+            result = share_report(
+                connection, run_root=run_root, run_id=normalize(args.run_id),
+                share_input=value, decision_id=args.decision_id,
+            )
+        except SensitiveDisclosureRequiredError as exc:
+            return ({
+                "actions": ["approve", "redact", "stop"], "command": "share",
+                "gate_id": exc.gate.gate_id, "next_state": "sensitive_disclosure_required",
+                "run_id": normalize(args.run_id), "status": "sensitive_disclosure_required",
+            }, 9)
+        return result.as_dict(), 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -455,6 +512,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload, code = _audit(args)
         elif args.command == "gate":
             payload, code = _gate(args)
+        elif args.command in {"draft", "review", "validate", "share"}:
+            payload, code = _report_command(args)
         elif args.command == "profile" and args.profile_command in {"conflict-inspect", "conflict-decide"}:
             payload, code = _profile_conflict(args)
         else:

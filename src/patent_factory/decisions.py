@@ -12,7 +12,10 @@ from .database import FaultInjector
 from .models import ArtifactRevision, GateKind, RunState
 from .privacy import assert_canaries_absent, environment_secret
 from .provenance import digest, normalize
-from .state import GATE_ACTIONS, GateMismatchError, StateError, StateStore, gate_action_target
+from .state import (
+    GATE_ACTIONS, GateMismatchError, StateError, StateStore, gate_action_target,
+    workspace_export_directories,
+)
 
 
 @dataclass(frozen=True)
@@ -24,10 +27,14 @@ class DecisionRun:
     action: str
     next_state: str
     replayed: bool
+    report_revision_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
+        artifact_ids = [self.artifact_revision_id]
+        if self.report_revision_id:
+            artifact_ids.append(self.report_revision_id)
         return {
-            "action": self.action, "artifact_ids": [self.artifact_revision_id],
+            "action": self.action, "artifact_ids": artifact_ids,
             "command": "gate.decide", "decision_id": self.decision_id,
             "gate_id": self.gate_id, "next_state": self.next_state,
             "replayed": self.replayed, "run_id": self.run_id,
@@ -57,15 +64,8 @@ def _exports(connection: sqlite3.Connection, run_root: Path) -> tuple[StateStore
         os.chmod(directory, 0o700, follow_symlinks=False)
     except OSError:
         pass
-    directories = {directory}
-    for row in connection.execute("SELECT DISTINCT path FROM artifact_exports"):
-        registered = Path(row["path"]).absolute().parent
-        try:
-            registered.relative_to(root)
-        except ValueError as exc:
-            raise StateError("artifact registry path is outside the run directory") from exc
-        directories.add(registered)
-    return StateStore(connection, export_directories=tuple(sorted(directories))), directory
+    directories = workspace_export_directories(connection, root, (directory,))
+    return StateStore(connection, export_directories=directories), directory
 
 
 def inspect_gate(connection: sqlite3.Connection, run_id: str, gate_id: str) -> dict[str, Any]:
@@ -90,6 +90,79 @@ def _text(value: Any, path: str) -> str:
     if not isinstance(item, str) or not item:
         raise ValueError(f"{path}: non-empty string required")
     return item
+
+
+def _durable_resolution_replay(
+    connection: sqlite3.Connection, *, run_id: str, gate_id: str,
+    envelope: sqlite3.Row, decision_input: Mapping[str, Any],
+) -> DecisionRun | None:
+    operation = f"gate.resolve:{gate_id}"
+    row = connection.execute(
+        "SELECT ir.state_after,ir.artifact_revision_id,ar.kind,ar.content_json,"
+        "gd.decision_id,gd.action,gd.actor,gd.reason,gd.subject_revision_hash,gd.approval_scope_hash "
+        "FROM idempotency_records ir "
+        "JOIN artifact_revisions ar ON ar.revision_id=ir.artifact_revision_id "
+        "JOIN gate_decisions gd ON gd.gate_id=? AND gd.run_id=ir.run_id "
+        "WHERE ir.run_id=? AND ir.operation=? AND ir.idempotency_key=?",
+        (gate_id, run_id, operation, digest(decision_input)),
+    ).fetchone()
+    if row is None:
+        return None
+    expected_kind = (
+        "sensitive_gate_resolution"
+        if GateKind(envelope["kind"]) is GateKind.SENSITIVE_DISCLOSURE
+        else "gate_resolution"
+    )
+    resolution = json.loads(row["content_json"])
+    if (
+        row["kind"] != expected_kind
+        or resolution.get("decision_id") != row["decision_id"]
+        or resolution.get("gate_id") != gate_id
+        or resolution.get("action") != row["action"]
+        or resolution.get("actor") != row["actor"]
+        or resolution.get("reason") != row["reason"]
+        or resolution.get("subject_revision_hash") != row["subject_revision_hash"]
+        or resolution.get("approval_scope_hash") != row["approval_scope_hash"]
+        or row["action"] != decision_input["action"]
+        or row["actor"] != decision_input["actor"]
+        or row["reason"] != decision_input["reason"]
+        or row["subject_revision_hash"] != envelope["subject_revision_hash"]
+        or row["approval_scope_hash"] != envelope["approval_scope_hash"]
+    ):
+        raise StateError("gate resolution replay record is malformed")
+    report_revision_id = None
+    next_state = row["state_after"]
+    if GateKind(envelope["kind"]) is GateKind.SENSITIVE_DISCLOSURE and row["action"] == "redact":
+        redaction_rows = connection.execute(
+            "SELECT ir.state_after,ir.artifact_revision_id,ar.kind,ar.content_json "
+            "FROM idempotency_records ir "
+            "JOIN artifact_revisions ar ON ar.revision_id=ir.artifact_revision_id "
+            "WHERE ir.run_id=? AND ir.operation=?",
+            (run_id, f"report.redact:{row['decision_id']}"),
+        ).fetchall()
+        if len(redaction_rows) != 1:
+            raise StateError("redaction replay record is missing or ambiguous")
+        redaction = redaction_rows[0]
+        report = json.loads(redaction["content_json"])
+        histories = report.get("redactions", [])
+        if (
+            redaction["kind"] != "report"
+            or not isinstance(histories, list)
+            or not histories
+            or any(
+                not isinstance(item, Mapping)
+                or item.get("decision_id") != row["decision_id"]
+                or item.get("prior_report_hash") != envelope["subject_revision_hash"]
+                for item in histories
+            )
+        ):
+            raise StateError("redaction replay record is malformed")
+        report_revision_id = redaction["artifact_revision_id"]
+        next_state = redaction["state_after"]
+    return DecisionRun(
+        run_id, gate_id, row["decision_id"], row["artifact_revision_id"],
+        row["action"], next_state, True, report_revision_id,
+    )
 
 
 def _resolution(
@@ -215,6 +288,12 @@ def resolve_gate(
         raise GateMismatchError("gate is unavailable")
     if decision_input["subject_revision_hash"] != envelope["subject_revision_hash"] or decision_input["approval_scope"] != json.loads(envelope["approval_scope_json"]):
         raise GateMismatchError("decision does not match current subject and scope")
+    replay = _durable_resolution_replay(
+        connection, run_id=run_id, gate_id=gate_id,
+        envelope=envelope, decision_input=decision_input,
+    )
+    if replay is not None:
+        return replay
     action, payload, dependencies = _resolution(connection, run_id, envelope, decision_input)
     store, exports = _exports(connection, run_root)
     decision, result, _export = store.publish_gate_resolution(
@@ -222,8 +301,23 @@ def resolve_gate(
         subject_revision_hash=envelope["subject_revision_hash"],
         approval_scope=json.loads(envelope["approval_scope_json"]), artifact_content=payload,
         dependencies=dependencies, export_directory=exports,
-        idempotency_key=digest(decision_input), artifact_kind="gate_resolution", fault_at=fault_at,
+        idempotency_key=digest(decision_input),
+        artifact_kind="sensitive_gate_resolution" if GateKind(envelope["kind"]) is GateKind.SENSITIVE_DISCLOSURE else "gate_resolution",
+        fault_at=fault_at,
     )
     assert result.artifact is not None
+    report_revision_id = None
+    next_state = result.snapshot.state.value
+    replayed = result.replayed
+    if GateKind(envelope["kind"]) is GateKind.SENSITIVE_DISCLOSURE and action == "redact":
+        from .report import apply_sensitive_redaction
+
+        redacted = apply_sensitive_redaction(
+            connection, run_root=run_root, run_id=run_id,
+            decision_id=decision.decision_id, reason=payload["reason"], fault_at=fault_at,
+        )
+        report_revision_id = redacted.artifact.revision_id
+        next_state = redacted.next_state
+        replayed = replayed or redacted.replayed
     return DecisionRun(run_id, gate_id, decision.decision_id, result.artifact.revision_id,
-                       action, result.snapshot.state.value, result.replayed)
+                       action, next_state, replayed, report_revision_id)

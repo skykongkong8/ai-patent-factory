@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review.schema.json",
+  "title": "Independent report review v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "checks", "decision_gate_verification", "disposition", "evidence_corrections", "findings",
+    "policy_hash", "prohibited_language_findings", "report_bindings", "report_hash", "reviewer",
+    "run_id", "version"
+  ],
+  "properties": {
+    "checks": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "prefixItems": [
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "citation_integrity"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "decision_gate_coverage"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "factual_grounding"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "internal_consistency"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "legal_language"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "schema_completeness"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "source_coverage"}}}
+      ],
+      "items": false
+    },
+    "decision_gate_verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["audit_hash", "covered_finalist_ids", "status"],
+      "properties": {
+        "audit_hash": {"$ref": "#/$defs/hash"},
+        "covered_finalist_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "status": {"enum": ["pass", "fail"]}
+      }
+    },
+    "disposition": {"enum": ["approved", "revise"]},
+    "evidence_corrections": {"type": "array", "items": {"$ref": "#/$defs/evidenceCorrection"}},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "policy_hash": {"$ref": "#/$defs/hash"},
+    "prohibited_language_findings": {"type": "array", "items": {"$ref": "#/$defs/prohibitedLanguageFinding"}},
+    "report_bindings": {"type": "object", "minProperties": 8, "additionalProperties": {"$ref": "#/$defs/hash"}},
+    "report_hash": {"$ref": "#/$defs/hash"},
+    "reviewer": {"$ref": "#/$defs/identity"},
+    "run_id": {"type": "string", "minLength": 1},
+    "version": {"const": "review-v1"}
+  },
+  "$defs": {
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["details", "name", "status"],
+      "properties": {
+        "details": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "fail"]}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "evidenceCorrection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidence_id", "field", "reason", "replacement"],
+      "properties": {
+        "evidence_id": {"type": "string", "pattern": "^ev_[0-9a-f]{16}$"},
+        "field": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "replacement": {"type": "string", "minLength": 1}
+      }
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check", "code", "message", "path", "severity"],
+      "properties": {
+        "check": {"enum": ["citation_integrity", "decision_gate_coverage", "factual_grounding", "internal_consistency", "legal_language", "schema_completeness", "source_coverage"]},
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["advisory", "blocking"]}
+      }
+    },
+    "prohibitedLanguageFinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["phrase", "section"],
+      "properties": {
+        "phrase": {"type": "string", "minLength": 1},
+        "section": {"type": "string", "minLength": 1}
+      }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "pass_id", "type"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "pass_id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["agent", "human"]}
+      }
+    }
+  }
+}

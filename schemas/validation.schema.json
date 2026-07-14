@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "validation.schema.json",
+  "title": "Deterministic report validation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_hashes", "checks", "policy_hash", "report_hash", "review_hash", "run_id",
+    "schema_versions", "scoring_version", "status", "validator_version", "version", "workflow_version"
+  ],
+  "properties": {
+    "artifact_hashes": {"type": "object", "minProperties": 10, "additionalProperties": {"$ref": "#/$defs/hash"}},
+    "checks": {
+      "type": "array", "minItems": 9, "maxItems": 9,
+      "prefixItems": [
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "artifact_bindings"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "citation_integrity"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "decision_coverage"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "identifier_shape"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "korean_narrative"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "legal_language"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "report_structure"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "review_binding"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "semantic_reconstruction"}}}
+      ],
+      "items": false
+    },
+    "policy_hash": {"$ref": "#/$defs/hash"},
+    "report_hash": {"$ref": "#/$defs/hash"},
+    "review_hash": {"$ref": "#/$defs/hash"},
+    "run_id": {"type": "string", "minLength": 1},
+    "schema_versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["report", "review", "validation"],
+      "properties": {
+        "report": {"const": "report-v1"},
+        "review": {"const": "review-v1"},
+        "validation": {"const": "validation-v1"}
+      }
+    },
+    "scoring_version": {"type": "string", "minLength": 1},
+    "status": {"enum": ["passed", "failed"]},
+    "validator_version": {"const": "report-validator-v1.0.0"},
+    "version": {"const": "validation-v1"},
+    "workflow_version": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["details", "name", "status"],
+      "properties": {
+        "details": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "fail"]}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
