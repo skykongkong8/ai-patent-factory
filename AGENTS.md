@@ -6,7 +6,7 @@
 
 - 먼저 `README.md`, `SETUP.md`, `CLAUDE.md`를 읽는다.
 - `python3 -m patent_factory --version`과 `python3 -m patent_factory --help`로 설치된 계약을 확인한다.
-- 명령 결과는 stdout의 JSON 한 개로 판단한다. 모든 결과는 `schema_version: cli-result-v1`과 `envelope_version: cli-envelope-v1`을 가진다.
+- `help/version` probe만 의도적으로 plain text다. 그 밖의 모든 명령 결과와 누락되거나 잘못된 인자는 stdout의 JSON 한 개이며 `schema_version: cli-result-v1`과 `envelope_version: cli-envelope-v1`을 가진다.
 - SQLite나 `workspace/`의 불변 내보내기를 직접 읽어 상태를 추측하거나 수정하지 않는다.
 - SQL, 임의 스크립트, 파일 복사/이동으로 상태·게이트·보고서·검토·검증·공유 영수증을 만들지 않는다.
 - 모든 입력은 configured documents root, 모든 실행/입력 계약은 configured workspace root 아래의 상대 비-symlink 경로를 사용한다.

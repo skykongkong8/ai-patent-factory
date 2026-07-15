@@ -27,6 +27,21 @@ E2E_EVIDENCE = release_verify.E2E_EVIDENCE
 from tests.integration.test_g007_report_review_validation import G007Fixture
 
 
+class _MandatorySampleTests(unittest.TestCase):
+    """Loadable-by-name fixtures for the machine-readable required-test runner.
+
+    Only a passing and a skipped method exist so ordinary suite discovery stays
+    green; the skipped method proves the runner flags mandatory skips.
+    """
+
+    def test_sample_passes(self):
+        self.assertTrue(True)
+
+    @unittest.skip("mandatory-skip regression fixture")
+    def test_sample_skips(self):
+        raise AssertionError("must never execute")
+
+
 def run_script(name: str, *args: object) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(ROOT / "src")
@@ -430,15 +445,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
             self.assertGreaterEqual(tracked_leak["tracked_file_count"], 1)
             self.assertNotIn(canary, json.dumps([tracked_leak, records]))
 
-    def test_required_e2e_ids_execute_as_explicit_nonplaintext_gate(self):
+    def test_required_e2e_ids_execute_as_machine_readable_gate(self):
         case = G007Fixture(methodName="runTest")
         case.setUp()
         try:
             case.complete()
-            calls = []
+            required_ids = release_verify.required_test_ids()
 
             def fake_run(argv, *, acceptable=None):
-                calls.append(list(argv))
                 returncode = 1 if "check_credentials.py" in argv else 0
                 completed = subprocess.CompletedProcess(argv, returncode, "", "")
                 accepted = acceptable or {0}
@@ -451,8 +465,17 @@ class ReleaseEvidenceTests(unittest.TestCase):
                     "stdout_hash": release_verify.sha256_bytes(b""),
                 }, completed
 
+            synthetic_required = {
+                "count": len(required_ids), "errors": 0, "expected_failures": 0,
+                "failures": 0, "ids": list(required_ids), "load_errors": 0,
+                "output_hash": release_verify.sha256_bytes(b""), "reason": None,
+                "skipped": False, "skipped_count": 0, "status": "passed",
+                "tests_run": len(required_ids), "unexpected_successes": 0,
+            }
             output = io.StringIO()
             with patch.object(release_verify, "run_command", side_effect=fake_run), patch.object(
+                release_verify, "run_required_tests", return_value=synthetic_required,
+            ) as run_required, patch.object(
                 release_verify, "privacy_scan",
                 return_value=({"canaries_absent": True, "status": "passed"}, []),
             ), patch.object(
@@ -462,17 +485,138 @@ class ReleaseEvidenceTests(unittest.TestCase):
                     "--run", str(case.run_root.relative_to(ROOT)), "--run-id", "run",
                     "--workspace-root", str(case.workspace.relative_to(ROOT)),
                 ])
+            run_required.assert_called_once_with(required_ids)
             manifest = json.loads(output.getvalue())
-            required_ids = release_verify.required_test_ids()
-            self.assertIn([sys.executable, "-m", "unittest", *required_ids], calls)
             self.assertEqual(manifest["required_tests"]["ids"], list(required_ids))
             self.assertEqual(manifest["required_tests"]["count"], len(required_ids))
+            self.assertEqual(manifest["required_tests"]["tests_run"], len(required_ids))
             self.assertEqual(manifest["required_tests"]["status"], "passed")
             self.assertFalse(manifest["required_tests"]["skipped"])
             self.assertNotIn("argv", manifest["required_tests"])
             self.assertEqual(code, 3)
         finally:
             case.tearDown()
+
+    def test_required_runner_reports_real_pass_and_flags_mandatory_skip(self):
+        base = "tests.e2e.test_release_evidence._MandatorySampleTests"
+        passed = release_verify.run_required_tests((f"{base}.test_sample_passes",))
+        self.assertEqual(passed["status"], "passed")
+        self.assertEqual(passed["tests_run"], 1)
+        self.assertEqual(passed["count"], 1)
+        self.assertFalse(passed["skipped"])
+        self.assertEqual(passed["skipped_count"], 0)
+
+        skipped = release_verify.run_required_tests((f"{base}.test_sample_skips",))
+        self.assertEqual(skipped["status"], "failed")
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["skipped_count"], 1)
+
+    def test_required_runner_flags_load_failure_as_count_mismatch(self):
+        missing = release_verify.run_required_tests((
+            "tests.e2e.test_release_evidence._MandatorySampleTests.test_sample_passes",
+            "tests.e2e.test_release_evidence.NoSuchClass.no_such_test",
+        ))
+        self.assertEqual(missing["status"], "failed")
+        self.assertEqual(missing["count"], 2)
+        self.assertNotEqual(missing["tests_run"] - missing["errors"], missing["count"])
+
+    def test_required_summary_rejects_skips_failures_errors_and_count_mismatch(self):
+        class _Result:
+            def __init__(self, *, run, skipped=0, failures=0, errors=0, unexpected=0, expected=0):
+                self.testsRun = run
+                self.skipped = [("t", "s")] * skipped
+                self.failures = [("t", "f")] * failures
+                self.errors = [("t", "e")] * errors
+                self.unexpectedSuccesses = ["t"] * unexpected
+                self.expectedFailures = [("t", "x")] * expected
+
+        ids = ("a", "b")
+        self.assertEqual(
+            release_verify._required_result_summary(_Result(run=2), ids, 0)["status"], "passed",
+        )
+        for name, result, load_errors in (
+            ("count_low", _Result(run=1), 0),
+            ("count_high", _Result(run=3), 0),
+            ("skip", _Result(run=2, skipped=1), 0),
+            ("failure", _Result(run=2, failures=1), 0),
+            ("error", _Result(run=2, errors=1), 0),
+            ("unexpected", _Result(run=2, unexpected=1), 0),
+            ("expected_failure", _Result(run=2, expected=1), 0),
+            ("load_error", _Result(run=2), 1),
+        ):
+            with self.subTest(case=name):
+                summary = release_verify._required_result_summary(result, ids, load_errors)
+                self.assertEqual(summary["status"], "failed")
+
+    def test_privacy_scan_reaches_non_private_tracked_paths(self):
+        canary = "G008-NONPRIVATE-TRACKED-CANARY"
+        calls: list[list[str]] = []
+        with tempfile.TemporaryDirectory(dir=ROOT) as ordinary_directory:
+            planted = Path(ordinary_directory) / "module.py"
+            planted.write_text(f"SECRET = '{canary}'\n", encoding="utf-8")
+            planted_relative = str(planted.relative_to(ROOT))
+
+            def fake_git(argv, *, acceptable=None):
+                calls.append(list(argv))
+                if argv[:3] == ["git", "ls-files", "-z"] and "--" not in argv:
+                    stdout = planted_relative + "\0"
+                else:
+                    stdout = ""
+                completed = subprocess.CompletedProcess(argv, 0, stdout, "")
+                return {
+                    "exit_code": 0, "status": "passed",
+                    "stderr_hash": release_verify.sha256_bytes(b""),
+                    "stdout_hash": release_verify.sha256_bytes(stdout.encode("utf-8")),
+                }, completed
+
+            with tempfile.TemporaryDirectory(dir=ROOT / "workspace") as run_directory:
+                run_root = Path(run_directory)
+                with patch.object(release_verify, "run_command", side_effect=fake_git):
+                    result, records = release_verify.privacy_scan(run_root, (canary,), captured=())
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["canaries_absent"])
+        self.assertGreaterEqual(result["tracked_file_count"], 1)
+        self.assertIn(["git", "ls-files", "-z"], calls)
+        self.assertNotIn(canary, json.dumps([result, records]))
+
+    def test_release_manifest_publish_fsyncs_parent_directory(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / "workspace") as directory:
+            workspace = Path(directory)
+            output = workspace / "release" / "manifest.json"
+            with patch.object(release_verify, "_fsync_directory") as fsync_directory:
+                release_verify.write_manifest(
+                    output.relative_to(ROOT), {"release_status": "review_blocked"}, workspace,
+                )
+            self.assertTrue(output.is_file())
+            self.assertTrue(fsync_directory.called)
+            fsynced = [Path(call.args[0]).resolve() for call in fsync_directory.call_args_list]
+            self.assertIn(output.parent.resolve(), fsynced)
+
+    def test_directory_fsync_tolerates_unsupported_platforms(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / "workspace") as directory:
+            with patch.object(release_verify.os, "fsync", side_effect=OSError("unsupported")):
+                release_verify._fsync_directory(Path(directory))
+
+
+def load_tests(loader, standard_tests, pattern):
+    """Keep the by-name-only mandatory-runner fixtures out of ordinary discovery.
+
+    ``run_required_tests`` loads ``_MandatorySampleTests`` methods explicitly by
+    dotted id, so excluding them here keeps the discovered suite free of a
+    permanent skip without hiding the fixtures from the regressions that use them.
+    """
+
+    kept = unittest.TestSuite()
+
+    def collect(suite):
+        for item in suite:
+            if isinstance(item, unittest.TestSuite):
+                collect(item)
+            elif not isinstance(item, _MandatorySampleTests):
+                kept.addTest(item)
+
+    collect(standard_tests)
+    return kept
 
 
 if __name__ == "__main__":

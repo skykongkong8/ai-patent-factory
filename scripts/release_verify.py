@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import platform
 import sqlite3
 import subprocess
 import sys
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -99,6 +102,66 @@ def run_command(argv: list[str], *, acceptable: set[int] | None = None) -> tuple
         "stdout_hash": sha256_bytes(result.stdout.encode("utf-8")),
     }
     return record, result
+
+
+def _required_result_summary(
+    result: unittest.TestResult, ids: Sequence[str], load_errors: int,
+) -> dict[str, Any]:
+    """Derive mandatory-test accounting from a real result, never from constants."""
+
+    tests_run = result.testsRun
+    skipped = len(result.skipped)
+    failures = len(result.failures)
+    errors = len(result.errors)
+    unexpected = len(result.unexpectedSuccesses)
+    expected_failures = len(result.expectedFailures)
+    clean = (
+        load_errors == 0
+        and tests_run == len(ids)
+        and skipped == 0
+        and failures == 0
+        and errors == 0
+        and unexpected == 0
+        and expected_failures == 0
+    )
+    return {
+        "count": len(ids),
+        "errors": errors,
+        "expected_failures": expected_failures,
+        "failures": failures,
+        "ids": list(ids),
+        "load_errors": load_errors,
+        "reason": None,
+        "skipped": skipped != 0,
+        "skipped_count": skipped,
+        "status": "passed" if clean else "failed",
+        "tests_run": tests_run,
+        "unexpected_successes": unexpected,
+    }
+
+
+def run_required_tests(ids: Sequence[str]) -> dict[str, Any]:
+    """Run mandatory E2E ids in-process and record a machine-readable result.
+
+    Every mandatory id must run exactly once and pass; any skip, failure, error,
+    unexpected success, or load failure fails the gate. Captured test output is
+    hashed, never echoed, so a leaked secret cannot reach the manifest.
+    """
+
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    load_errors = 0
+    for test_id in ids:
+        try:
+            suite.addTests(loader.loadTestsFromName(test_id))
+        except Exception:
+            load_errors += 1
+    buffer = io.StringIO()
+    with redirect_stdout(buffer), redirect_stderr(buffer):
+        result = unittest.TextTestRunner(stream=buffer, verbosity=0).run(suite)
+    summary = _required_result_summary(result, ids, load_errors)
+    summary["output_hash"] = sha256_bytes(buffer.getvalue().encode("utf-8"))
+    return summary
 
 
 def release_status(
@@ -199,6 +262,13 @@ def privacy_scan(
     tracked_paths = [item for item in tracked.stdout.split("\0") if item]
     allowed = {"documents/README.md", "workspace/README.md"}
     unsafe_tracked = sorted(path for path in tracked_paths if path not in allowed)
+    # The restricted query above governs only the private-path tracking policy.
+    # Content scanning must cover every tracked file so a canary committed under
+    # src/, scripts/, config/, schemas/, or any ordinary path cannot slip through.
+    content_record, content = run_command(["git", "ls-files", "-z"])
+    commands.append(content_record)
+    privacy_results.append(content)
+    scan_paths = [item for item in content.stdout.split("\0") if item]
     roots_ignored = True
     for probe in (
         ".env", "documents/private-probe", "workspace/private-probe", "reports/private-probe",
@@ -225,7 +295,7 @@ def privacy_scan(
             command_streams_scanned += 1
             canary_found = canary_found or found
             unscannable += int(oversized)
-    for tracked_path in tracked_paths:
+    for tracked_path in scan_paths:
         try:
             path = contained_input(Path(tracked_path), ROOT, "tracked privacy file")
         except (OSError, ValueError):
@@ -264,6 +334,26 @@ def privacy_scan(
     }, commands
 
 
+def _fsync_directory(path: Path) -> None:
+    """Fsync a directory so a published entry survives a crash.
+
+    Platforms and filesystems that do not support directory fsync fail softly;
+    the release output is still linked, we only forgo the extra durability barrier.
+    """
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
+
+
 def write_manifest(path: Path, manifest: dict[str, Any], workspace_root: Path) -> None:
     root = Path(workspace_root).resolve(strict=True)
     parent = (Path.cwd() / path).parent.resolve(strict=False)
@@ -292,9 +382,11 @@ def write_manifest(path: Path, manifest: dict[str, Any], workspace_root: Path) -
                 return
             raise FileExistsError("release output already exists with different content") from None
         owner_only_file(destination)
+        _fsync_directory(destination.parent)
     finally:
         if temporary.exists():
             temporary.unlink()
+            _fsync_directory(destination.parent)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -330,17 +422,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         commands.append(record)
         captured.append(result)
         tests = {**record, "reason": None}
-        required_record, required_result = run_command([
-            sys.executable, "-m", "unittest", *required_ids,
-        ])
-        captured.append(required_result)
-        required_tests = {
-            key: value for key, value in required_record.items() if key != "argv"
-        }
-        required_tests.update({
-            "count": len(required_ids), "ids": list(required_ids),
-            "reason": None, "skipped": False,
-        })
+        required_tests = run_required_tests(required_ids)
     record, result = run_command([sys.executable, "-m", "compileall", "-q", "src", "scripts", "tests"])
     commands.append(record)
     captured.append(result)

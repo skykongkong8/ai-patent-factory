@@ -13,6 +13,13 @@ class CliResultContractDocumentationTests(unittest.TestCase):
                 self.assertIn("cli-result-v1", content)
                 self.assertIn("cli-envelope-v1", content)
 
+    def test_help_version_plaintext_exception_is_documented_in_both_surfaces(self):
+        for relative in ("AGENTS.md", ".codex/README.md"):
+            content = (ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(surface=relative):
+                self.assertIn("help/version", content)
+                self.assertIn("plain text", content)
+
     def test_cleanup_mapping_uses_the_exact_safe_cli_contract(self):
         content = (ROOT / ".codex/README.md").read_text(encoding="utf-8")
         self.assertIn(
