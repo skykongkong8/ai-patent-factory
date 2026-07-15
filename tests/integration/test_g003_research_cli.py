@@ -73,6 +73,40 @@ class ResearchCliTests(unittest.TestCase):
             "--workspace-root", self.relative(self.workspace),
         )
 
+    def test_run_start_bootstrap_then_fixture_completes(self):
+        # Regression: `run start` registers a bootstrap export, so research must scope
+        # its state store to every workspace export (not only research-exports) or the
+        # finish transition rejects the run's own bootstrap artifact.
+        responses = self.documents / "interview.json"
+        responses.write_text(
+            json.dumps(
+                {"expertise": "분산", "name": "홍", "project_summary": "요약", "technical_domain": "산업"},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        profiled = run_cli(
+            "profile", "interview", "--responses", self.relative(responses),
+            "--documents-root", self.relative(self.documents),
+            "--workspace-root", self.relative(self.workspace),
+        )
+        self.assertEqual(profiled.returncode, 0, profiled.stdout + profiled.stderr)
+        run_root = self.workspace / "bootstrapped-run"
+        started = run_cli(
+            "run", "start", "--run", self.relative(run_root), "--run-id", "bootstrapped-run",
+            "--workspace-root", self.relative(self.workspace),
+        )
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
+        self.assertEqual(json.loads(started.stdout)["next_state"], "research_ready")
+        self.assertTrue((run_root / "bootstrap-exports").is_dir())
+        fixture = self.documents / "kipris.xml"
+        fixture.write_bytes((ROOT / "tests/fixtures/kipris/word-search-v1.xml").read_bytes())
+        result = run_cli("research", "fixture", self.relative(fixture), *self.common(run_root, "bootstrapped-run"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual((output["prior_state"], output["next_state"]), ("research_ready", "research_complete"))
+        self.assertTrue((run_root / "research-exports").is_dir())
+
     def test_fixture_success_is_private_redacted_deterministic_and_idempotent(self):
         run_root = self.workspace / "fixture-run"
         prepare_run(run_root, "fixture-run")

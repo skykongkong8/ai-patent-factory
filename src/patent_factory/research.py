@@ -13,7 +13,7 @@ from .database import FaultInjector, immediate_transaction, inject_fault, utc_no
 from .models import AdapterResult, GateEnvelope, GateKind, QueryEnvelope, RunState
 from .provenance import canonical_json, digest, evidence_revision_id, normalize
 from .privacy import assert_canaries_absent, environment_secret
-from .state import StateStore
+from .state import StateStore, workspace_export_directories
 
 
 @dataclass(frozen=True)
@@ -421,7 +421,8 @@ def run_research(
     if envelope.run_id != normalize(run_id):
         raise ValueError("research run_id does not match the query envelope")
     root, exports = _private_export_directory(run_root, create=False)
-    state = StateStore(connection, export_directories=(exports,) if exports.exists() else ())
+    own = (exports,) if exports.exists() else ()
+    state = StateStore(connection, export_directories=workspace_export_directories(connection, root, own))
     prior = state.snapshot(run_id)
     if prior.state is RunState.CREDENTIAL_REQUIRED:
         raise RuntimeError("credential_required: a current decision must resume the suspended request")
@@ -547,7 +548,7 @@ def run_research(
         else RunState.RESEARCH_INCOMPLETE
     )
     _root, exports = _private_export_directory(root, create=True)
-    state = StateStore(connection, export_directories=(exports,))
+    state = StateStore(connection, export_directories=workspace_export_directories(connection, root, (exports,)))
     final_operation = credential_operation if credential_decision_id else "research.finish"
     finished, exported = state.publish_transition(
         run_id,
