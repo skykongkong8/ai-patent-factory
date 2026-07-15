@@ -88,13 +88,13 @@ class AgentSurfaceConformanceTests(unittest.TestCase):
         ):
             self.assertIn(state, corpus)
         self.assertIn("R_hi < 75", corpus)
-        self.assertIn("사용자", corpus)
+        self.assertIn("user", corpus)
 
     def test_hosted_egress_is_never_authorized_by_a_wrapper(self):
         corpus = "\n".join(read(path) for path in (ROOT / "AGENTS.md", ROOT / ".codex/README.md", *COMMANDS.values(), *SKILLS.values()))
-        for required in ("호스팅", "외부 전송", "정확한", "승인", "egress manifest", "승인하지"):
+        for required in ("hosted", "external transfer", "exact", "approval", "egress manifest", "authorize"):
             self.assertIn(required, corpus)
-        self.assertIn("승인을 생성하지", read(ROOT / ".codex/README.md"))
+        self.assertIn("creates such an approval", read(ROOT / ".codex/README.md"))
 
     def test_codex_documents_gate_share_cleanup_and_ux_limits(self):
         content = read(ROOT / ".codex/README.md")
@@ -105,14 +105,14 @@ class AgentSurfaceConformanceTests(unittest.TestCase):
             "external-report-share-v1",
             "delete-run",
             "SQLite",
-            "UX 차이",
+            "UX differences",
             "best-effort",
         ):
             self.assertIn(required, content)
         self.assertIn("python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace", content)
         self.assertIn("cli-envelope-v1", content)
-        self.assertIn("직접 삭제", content)
-        self.assertIn("직접 수정", content)
+        self.assertIn("directly delete", content)
+        self.assertIn("directly modify", content)
 
 
 if __name__ == "__main__":

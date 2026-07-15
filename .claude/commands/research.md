@@ -1,23 +1,46 @@
-# /research
+---
+description: Start a run and gather bounded fixture or manual research evidence.
+---
 
-`SETUP.md`, `CLAUDE.md`, `AGENTS.md`와 `.claude/skills/research/SKILL.md`를 따른다. 원문을 읽거나 요약하지 말고 사용자가 지정한 경로를 로컬 JSON CLI에 전달한다.
+# /research — gather bounded evidence (step 2)
 
-권위 profile을 새 private run에 결합해 `research_ready`로 시작한다. 기본 profile 경로를 쓸 때 `--profile`과 `--profile-database`는 생략할 수 있다.
+Bind your profile into a fresh run and collect bounded evidence. Follow `SETUP.md`,
+`CLAUDE.md`, `AGENTS.md`, and `.claude/skills/research/SKILL.md`. Do not read or
+summarize the source yourself — pass the user's paths to the local CLI.
+
+## Where you provide input
+
+Local source files live under `documents/` (e.g. `documents/kipris.xml` for a fixture,
+or `documents/manual-results.json` for a manual import). See `documents/README.md`.
+
+## Steps
+
+0. Start the run once — it binds your profile and enters `research_ready`. Omit
+   `--profile`/`--profile-database` to use the defaults.
 
 ```bash
 python3 -m patent_factory run start --run RUN --run-id RUN_ID --profile PROFILE --profile-database PROFILE_DATABASE
 ```
 
-Fixture 계약:
+1. Run one bounded operation the user chose.
 
 ```bash
+# Fixture — offline acceptance path
 python3 -m patent_factory research fixture SOURCE --run RUN --run-id RUN_ID --query QUERY
-```
 
-사용자 제공 수동 결과 계약:
-
-```bash
+# Manual — user-supplied, HTTPS-derived; requires an explicit host
 python3 -m patent_factory research manual SOURCE --run RUN --run-id RUN_ID --query QUERY --allow-host HOST
 ```
 
-stdout JSON의 `status`, `next_state`, adapter failure/coverage를 그대로 보고한다. `credential_required`, `research_incomplete`, 다른 `*_required`, `stopped`, `error`이면 중단한다. 실패를 evidence로 바꾸거나 unrestricted host를 추가하지 않는다. 호스팅 Claude 컨텍스트로 비공개 profile/source를 가져오는 것은 별도 외부 전송이며, 정확한 범위 승인과 egress manifest 없이는 금지된다.
+2. Report the stdout JSON `status`, `next_state`, and any adapter failure / coverage
+   limitation verbatim. A source failure is an adapter event, not evidence.
+3. Confirm the run reached `research_complete` and suggest the next step — **`/ideate`**
+   to propose candidates.
+
+## Stop conditions (do not bypass)
+
+- Stop on `credential_required`, `research_incomplete`, any other `*_required`,
+  `stopped`, or `error`. Do not turn a failure into evidence, and do not add an
+  unrestricted `--allow-host`.
+- Importing a private profile/source into hosted Claude context is a separate external
+  transfer, forbidden without exact scope approval and an egress manifest.

@@ -1,9 +1,35 @@
-# /shortlist
+---
+description: Persist three finalists (three axes each) or explicit insufficient evidence.
+---
 
-`.claude/skills/ideation/SKILL.md`를 따르고 검토된 `shortlist-input-v1`만 CLI에 전달한다.
+# /shortlist — pick finalists (step 4)
+
+Select three defensible finalists from the candidates. Follow
+`.claude/skills/ideation/SKILL.md` and pass only a reviewed `shortlist-input-v1`.
+
+## Where you provide input
+
+Author `workspace/requests/shortlist-input-v1.json` (template in `workspace/README.md`).
+Each finalist needs the three independent axes — `differentiation`,
+`technical_feasibility`, `utility_significance` — with score, rationale, confidence,
+supporting and contrary evidence references, coverage assessment, and gaps.
+
+## Steps
+
+0. Help the user assemble `shortlist-input-v1` from the candidate output.
+1. Run the CLI verb.
 
 ```bash
 python3 -m patent_factory shortlist --run RUN --run-id RUN_ID --input SHORTLIST_INPUT
 ```
 
-각 finalist의 세 독립 축, rationale, confidence, supporting/contrary evidence, gaps가 있어야 한다. stdout JSON이 `insufficient_evidence`이면 약한 후보를 만들지 말고 중단한다. `*_required`, `stopped`, `error`도 자동 진행하지 않는다. SQLite, candidate/finalist export 또는 상태 포인터를 직접 수정하지 않는다.
+2. Report the stdout JSON `status`/`next_state` verbatim.
+3. On success, suggest the next step — **`/audit`** to score similarity risk per
+   finalist.
+
+## Stop conditions (do not bypass)
+
+- If `status` is `insufficient_evidence`, stop — do not manufacture weak finalists;
+  preserve the insufficiency instead.
+- `*_required`, `stopped`, and `error` are not permission to auto-proceed.
+- Never directly edit SQLite, the candidate/finalist exports, or a state pointer.

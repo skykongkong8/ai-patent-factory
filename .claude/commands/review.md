@@ -1,18 +1,45 @@
-# /review
+---
+description: Independent reviewer pass, deterministic validate, and guarded external share.
+---
 
-`.claude/skills/patent-review/SKILL.md`를 따른 별도 reviewer pass에서 실행한다. 작성자와 다른 identity/pass를 가진 `review-input-v1`만 전달한다.
+# /review — independent review, validate & share (step 7)
+
+Run an independent reviewer pass, then deterministic validation, then (optionally) a
+guarded external share. Follow `.claude/skills/patent-review/SKILL.md`. The reviewer's
+identity and pass must differ from the drafter's.
+
+## Where you provide input
+
+- `workspace/requests/review-input-v1.json` — reviewer identity ≠ drafter; `report_hash`
+  from the `/draft` output; all seven checks present.
+- `workspace/requests/external-report-share-v1.json` — only if sharing externally.
+
+Templates are in `workspace/README.md`.
+
+## Steps
+
+0. In a separate reviewer pass, help assemble `review-input-v1` against the exact report
+   hash.
+1. Review, then validate only after the review reports `reviewed`.
 
 ```bash
 python3 -m patent_factory review --run RUN --run-id RUN_ID --input REVIEW_INPUT
 python3 -m patent_factory validate --run RUN --run-id RUN_ID
 ```
 
-`review` JSON이 `revision_required`이면 `validate`하지 않고 중단한다. `reviewed`일 때만 deterministic `validate`를 실행한다. `validate`의 `complete`만 완료로 보고하며, `*_required`, `stopped`, `error`를 우회하지 않는다.
-
-외부 공유는 별도 `external-report-share-v1` 요청으로만 시도한다.
+2. Report `status`/`next_state` verbatim; only `validate`'s `complete` counts as done.
+3. If the user wants to share externally, run it as a separate, guarded operation.
 
 ```bash
 python3 -m patent_factory share --run RUN --run-id RUN_ID --input SHARE_INPUT
 ```
 
-`sensitive_disclosure_required`이면 `gate_id`, `subject_revision_hash`, exact scope를 보존하고 중단한다. 에이전트가 approve/redact/stop을 선택하거나 approval을 만들지 않는다. 사용자가 현재 `gate-decision-input-v1`로 결정한 뒤 코어가 반환한 정확한 `decision_id`가 있을 때만 동일 share 입력에 `--decision-id`를 추가해 재개한다. 파일 복사는 공유가 아니다.
+## Stop conditions (do not bypass)
+
+- If the review is `revision_required`, do not `validate` — stop and return to
+  **`/draft`**. Do not bypass any `*_required`, `stopped`, or `error`.
+- On `sensitive_disclosure_required`, preserve `gate_id`, `subject_revision_hash`, and
+  the exact scope, and stop. Do not choose approve/redact/stop or create an approval.
+- Resume `share` only after the user decides with a current `gate-decision-input-v1`
+  and the core-issued `decision_id`, by adding `--decision-id` to the same share input.
+  Copying a file is not sharing.

@@ -1,20 +1,30 @@
 # Codex portable JSON CLI mapping
 
-Codex는 Claude slash command를 실행하지 않는다. 대신 같은 `python3 -m patent_factory` JSON CLI를 직접 호출한다. Python 코어가 유일한 상태·게이트·내보내기 권위이므로 Codex가 SQLite, JSON/JSONL/Markdown export, 상태 포인터를 직접 수정하지 않는다.
+Codex does not run Claude slash commands. Instead it calls the same
+`python3 -m patent_factory` JSON CLI directly. The Python core is the sole authority for
+state, gates, and exports, so Codex must not directly modify the SQLite databases, the
+JSON/JSONL/Markdown exports, or the state pointers.
 
-## 공통 규칙
+## Common rules
 
 ```bash
 python3 -m patent_factory --version
 python3 -m patent_factory --help
 ```
 
-- stdout의 정렬된 JSON 한 개를 읽는다. 모든 결과는 `schema_version: cli-result-v1`과 `envelope_version: cli-envelope-v1`을 가진다.
-- `help/version` probe만 의도적으로 plain text다. 그 밖의 누락되거나 잘못된 인자는 `invalid_arguments` JSON 결과다.
-- 일부 안전한 중단 상태는 nonzero exit를 사용하므로 exit code만으로 JSON을 버리지 않는다.
-- `*_required`, `coverage_insufficient`, `decision_required`, `insufficient_evidence`, `revision_required`, `stopped`, `error`이면 중단하고 gate/state/hash를 보고한다.
-- `gate inspect`는 읽기 전용이다. `gate decide`에는 사용자가 현재 subject hash와 scope에 대해 작성한 `gate-decision-input-v1`이 필요하다. Codex는 action/reason/approval/decision ID를 만들지 않는다.
-- 입력은 documents root, 실행과 versioned request는 workspace root 아래의 상대 비-symlink 경로만 사용한다.
+- Read the single sorted JSON object on stdout. Every result carries
+  `schema_version: cli-result-v1` and `envelope_version: cli-envelope-v1`.
+- Only the `help/version` probes are intentionally plain text. Otherwise a missing or
+  invalid argument is an `invalid_arguments` JSON result.
+- Some safe stop states use a non-zero exit, so do not discard the JSON based on exit
+  code alone.
+- On `*_required`, `coverage_insufficient`, `decision_required`, `insufficient_evidence`,
+  `revision_required`, `stopped`, or `error`, stop and report the gate/state/hash.
+- `gate inspect` is read-only. `gate decide` needs a `gate-decision-input-v1` the user
+  authored for the current subject hash and scope. Codex does not create the
+  action/reason/approval/decision ID.
+- Inputs use relative, non-symlink paths under the documents root; runs and versioned
+  requests use ones under the workspace root.
 
 ## Setup, profile, run bootstrap
 
@@ -25,9 +35,13 @@ python3 -m patent_factory profile document documents/input.md
 python3 -m patent_factory profile interview --responses documents/responses.json
 ```
 
-세 profile 경로 중 하나만 선택한다. `conflict_resolution_required`이면 batch를 보존하고 사용자 결정을 기다린다. SQLite와 `profile.json`을 직접 수정하지 않는다.
+Choose exactly one of the three profile paths. On `conflict_resolution_required`,
+preserve the batch and wait for the user's decision. Do not directly modify SQLite or
+`profile.json`.
 
-새 private workflow run은 권위 profile을 결합해 `research_ready`로 시작한다. 기본 profile 경로를 쓸 때 profile 옵션은 생략할 수 있다.
+A new private workflow run binds the authoritative profile and starts at
+`research_ready`. When using the default profile paths, the profile options may be
+omitted.
 
 ```bash
 python3 -m patent_factory run start --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3
@@ -40,16 +54,20 @@ python3 -m patent_factory research fixture documents/kipris.xml --run workspace/
 python3 -m patent_factory research manual documents/results.json --run workspace/runs/RUN --run-id RUN --query QUERY --allow-host HOST
 ```
 
-실패는 adapter event/coverage limitation이며 evidence가 아니다. credential/paid-service gate가 pending이면 네트워크 요청은 허용되지 않는다. 호스트나 budget을 임의로 넓히지 않는다.
+A failure is an adapter event / coverage limitation, not evidence. If a credential or
+paid-service gate is pending, no network request is permitted. Do not arbitrarily broaden
+hosts or budgets.
 
-## Ideation과 shortlist
+## Ideation and shortlist
 
 ```bash
 python3 -m patent_factory ideate --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3 --input workspace/requests/candidate-input-v1.json
 python3 -m patent_factory shortlist --run workspace/runs/RUN --run-id RUN --input workspace/requests/shortlist-input-v1.json
 ```
 
-입력 계약은 `candidate-input-v1`, `shortlist-input-v1`이다. `domain_pivot_required`는 자동 승인하지 않는다. 세 개의 방어 가능한 finalist가 없으면 `insufficient_evidence`를 유지한다.
+The input contracts are `candidate-input-v1` and `shortlist-input-v1`. Do not
+auto-approve `domain_pivot_required`. If three defensible finalists are unavailable,
+preserve `insufficient_evidence`.
 
 ## Finalist audit
 
@@ -58,16 +76,19 @@ python3 -m patent_factory audit retrieve --run workspace/runs/RUN --run-id RUN -
 python3 -m patent_factory audit score --run workspace/runs/RUN --run-id RUN --feature-input workspace/requests/feature-map-set-input-v1.json
 ```
 
-각 finalist의 별도 KIPRIS query group을 사용한다. `simrisk-v1.0.0` 계산은 코어에 맡긴다. `coverage_insufficient` 또는 `decision_required`이면 draft로 진행하지 않는다. `R_hi < 75` 자동 승인 여부도 코어만 결정한다.
+Use a separate KIPRIS query group per finalist. Leave the `simrisk-v1.0.0` computation to
+the core. On `coverage_insufficient` or `decision_required`, do not proceed to draft.
+Whether `R_hi < 75` auto-approves is decided only by the core.
 
-## Exact gate inspection/decision
+## Exact gate inspection / decision
 
 ```bash
 python3 -m patent_factory gate inspect --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID
 python3 -m patent_factory gate decide --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID --input workspace/requests/gate-decision-input-v1.json
 ```
 
-결정 후에는 코어가 반환한 정확한 `decision_id`와 원래의 동일 입력으로만 suspended operation을 재개한다. changed content/hash/scope에는 새 게이트가 필요하다.
+After a decision, resume the suspended operation only with the exact `decision_id` the
+core returned and the same original input. Changed content/hash/scope needs a new gate.
 
 ## Draft, independent review, validation
 
@@ -77,7 +98,9 @@ python3 -m patent_factory review --run workspace/runs/RUN --run-id RUN --input w
 python3 -m patent_factory validate --run workspace/runs/RUN --run-id RUN
 ```
 
-reviewer identity/pass는 drafter와 달라야 한다. `revision_required`이면 validate하지 않는다. `reviewed` 후 deterministic validate의 `complete`만 완료다. Codex는 draft/review/validation export를 직접 고치지 않는다.
+The reviewer identity/pass must differ from the drafter. On `revision_required`, do not
+validate. Only the `complete` of the deterministic validate after `reviewed` counts as
+done. Codex does not directly edit the draft/review/validation exports.
 
 ## Guarded external share
 
@@ -85,23 +108,35 @@ reviewer identity/pass는 drafter와 달라야 한다. `revision_required`이면
 python3 -m patent_factory share --run workspace/runs/RUN --run-id RUN --input workspace/requests/external-report-share-v1.json
 ```
 
-`sensitive_disclosure_required`이면 중단한다. 사용자가 exact recipient, purpose, destination, report hash, sensitive fields를 승인한 현재 결정이 있을 때만 동일 명령에 코어가 반환한 `--decision-id DECISION_ID`를 추가한다. 직접 파일을 복사하는 것은 share gate 우회다.
+On `sensitive_disclosure_required`, stop. Only when the user has a current decision
+approving the exact recipient, purpose, destination, report hash, and sensitive fields,
+add the core-returned `--decision-id DECISION_ID` to the same command. Directly copying a
+file bypasses the share gate.
 
-## Privacy와 hosted egress
+## Privacy and hosted egress
 
-로컬 CLI 실행과 모델 컨텍스트 전송은 별개다. Claude Code, Codex 및 다른 호스팅 모델은 외부 처리자이므로 raw documents, source spans, profile/proprietary facts, reports, secrets를 컨텍스트에 읽지 않는다. 정확한 recipient/model class, purpose, approved data classes, scope와 content hash에 대한 현재 승인, 필드 최소화, canary 검사, egress manifest가 모두 있어야 한다. 이 문서나 Codex session은 그러한 승인을 생성하지 않는다. Secret은 어떤 경우에도 egress/persistence하지 않는다.
+Local CLI execution and model-context transfer are separate. Claude Code, Codex, and
+other hosted models are external processors, so do not read raw documents, source spans,
+profile/proprietary facts, reports, or secrets into context. You must have the exact
+recipient/model class, purpose, approved data classes, a current approval for the scope
+and content hash, field minimization, canary checks, and an egress manifest. Neither this
+document nor a Codex session creates such an approval. Secrets are never egressed or
+persisted under any circumstances.
 
-## Cleanup과 release checks
+## Cleanup and release checks
 
-실행 삭제도 Python 코어의 safe `delete-run` JSON CLI만 사용한다.
+Run deletion also uses only the Python core's safe `delete-run` JSON CLI.
 
 ```bash
 python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace
 ```
 
-이 명령은 `run-id`를 받지 않으며 `cli-result-v1`/`cli-envelope-v1`과 deletion report를 반환한다. partial failure/status를 그대로 보고한다. SQLite, exports, logs 또는 sibling run을 `rm`이나 symlink-following 도구로 직접 삭제하지 않는다.
+This command takes no `run-id` and returns `cli-result-v1`/`cli-envelope-v1` and a
+deletion report. Report partial failure/status as-is. Do not directly delete SQLite,
+exports, logs, or a sibling run with `rm` or a symlink-following tool.
 
-코드 cleanup은 동작 고정 테스트 후 별도 작은 diff로 수행하고, 다음 오프라인 확인을 다시 실행한다.
+Do code cleanup as a separate small diff after behavior-fixing tests, and re-run the
+offline checks below.
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py'
@@ -109,8 +144,13 @@ python3 -m compileall -q src tests
 python3 -m patent_factory --help
 ```
 
-## Claude Code와의 UX 차이
+## UX differences from Claude Code
 
-- Claude Code: `.claude/commands/*` slash command와 `.claude/skills/*`가 정규 UX다.
-- Codex: 이 문서의 명령을 직접 호출하는 best-effort portable smoke surface다. slash command 자동 인자 수집이나 skill discovery parity를 가정하지 않는다.
-- 두 표면 모두 같은 CLI/parser, versioned JSON inputs, SQLite state kernel, gate policy와 validators를 사용한다. Codex 고유 UX 실패는 제한으로 기록할 수 있지만 core bypass나 privacy/egress 완화 사유가 되지 않는다.
+- Claude Code: the `.claude/commands/*` slash commands and `.claude/skills/*` are the
+  canonical UX.
+- Codex: a best-effort portable smoke surface that calls this document's commands
+  directly. Do not assume slash-command auto argument collection or skill-discovery
+  parity.
+- Both surfaces use the same CLI/parser, versioned JSON inputs, SQLite state kernel, gate
+  policy, and validators. A Codex-specific UX failure may be recorded as a limitation but
+  is not grounds for a core bypass or a relaxation of privacy/egress rules.

@@ -1,9 +1,38 @@
-# /ideate
+---
+description: Validate and persist three or more evidence-bound candidate proposals.
+---
 
-`.claude/skills/ideation/SKILL.md`를 따른다. `candidate-input-v1` JSON은 최소 세 후보의 근거·반대 근거·공백·여섯 epistemic label을 보존하는 versioned CLI 입력이다. 승인 없이 비공개 원문을 모델 컨텍스트에 로드하지 않는다.
+# /ideate — propose candidates (step 3)
+
+Turn research evidence into ≥3 evidence-bound candidate proposals. Follow
+`.claude/skills/ideation/SKILL.md`. Do not load private source into model context
+without a current exact egress approval.
+
+## Where you provide input
+
+Author `workspace/requests/candidate-input-v1.json` (template and field notes in
+`workspace/README.md`). Each candidate traces to profile facts and research evidence and
+preserves all six epistemic labels; `agent_inference` needs a `rationale` and must not
+read as fact. IDs and hashes are copied from earlier outputs, never invented.
+
+## Steps
+
+0. Help the user assemble `candidate-input-v1` from the research results — do not fake
+   bindings.
+1. Run the CLI verb.
 
 ```bash
 python3 -m patent_factory ideate --run RUN --run-id RUN_ID --profile PROFILE --profile-database PROFILE_DATABASE --input CANDIDATE_INPUT
 ```
 
-stdout JSON이 `domain_pivot_required`, `insufficient_evidence`, 다른 `*_required`, `stopped`, `error`이면 중단한다. `gate_id`를 보존하되 에이전트가 pivot을 승인하거나 `decision_id`를 만들지 않는다. 사용자가 정확한 현재 주제의 결정을 완료한 뒤에만 동일 입력과 코어가 반환한 `--decision-id`로 재개한다. 후보 JSON이나 내보내기를 복사해 상태 전이를 흉내 내지 않는다.
+2. Report the stdout JSON `status`/`next_state` verbatim.
+3. On success, suggest the next step — **`/shortlist`** to pick three finalists.
+
+## Stop conditions (do not bypass)
+
+- Stop on `domain_pivot_required`, `insufficient_evidence`, any other `*_required`,
+  `stopped`, or `error`. Preserve `gate_id`, but do not approve a pivot or create a
+  `decision_id`.
+- Resume only after the user completes a decision for the exact current topic, using
+  the same input and the core-issued `--decision-id`.
+- Do not copy candidate JSON or an export to imitate a state transition.
