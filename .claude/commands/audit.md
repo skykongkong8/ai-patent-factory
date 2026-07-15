@@ -1,12 +1,41 @@
-# /audit
+---
+description: Retrieve finalist-specific KIPRIS corpora and score simrisk-v1.0.0 risk.
+---
 
-`.claude/skills/research/SKILL.md`와 `AGENTS.md`를 따른다. 각 finalist를 위한 `audit-query-input-v1` 및 fixture용 `audit-fixture-manifest-v1`을 코어에 전달한다.
+# /audit — score similarity risk (step 5)
+
+Retrieve a per-finalist KIPRIS corpus and score similarity risk. Follow
+`.claude/skills/research/SKILL.md` and `AGENTS.md`.
+
+## Where you provide input
+
+- `workspace/requests/audit-query-input-v1.json` — one query group per finalist.
+- `documents/requests/audit-fixture-manifest-v1.json` — the fixture manifest, under the
+  documents root.
+- `workspace/requests/feature-map-set-input-v1.json` — reviewed feature maps, for
+  scoring.
+
+Templates are in `workspace/README.md`.
+
+## Steps
+
+0. Help the user assemble the query input and, after retrieval, the reviewed
+   feature-map set.
+1. Retrieve, then score.
 
 ```bash
 python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID --query-input AUDIT_QUERY_INPUT --fixture-manifest FIXTURE_MANIFEST
 python3 -m patent_factory audit score --run RUN --run-id RUN_ID --feature-input FEATURE_MAP_SET_INPUT
 ```
 
-`FEATURE_MAP_SET_INPUT`은 검토된 `feature-map-set-input-v1`이다. scorer는 `simrisk-v1.0.0`이며 래퍼가 점수, corpus, feature map 또는 label을 다시 계산하지 않는다.
+2. Report the stdout JSON `status`/`next_state` and coverage verbatim. The scorer is
+   `simrisk-v1.0.0`; do not recompute scores, corpus, feature maps, or labels.
+3. On success, suggest the next step — **`/draft`** to render the report.
 
-stdout JSON이 `credential_required`, `coverage_insufficient`, `decision_required`, 다른 `*_required`, `stopped`, `error`이면 즉시 중단한다. 자동 승인은 충분한 coverage와 `R_hi < 75`일 때 코어만 판단한다. excessive 결과의 retain/refine/replace/research/stop 선택을 에이전트가 대신하지 않으며, 불완전한 coverage를 0으로 채우지 않는다.
+## Stop conditions (do not bypass)
+
+- Stop immediately on `credential_required`, `coverage_insufficient`,
+  `decision_required`, any other `*_required`, `stopped`, or `error`.
+- Auto-approval happens only in the core, when coverage is sufficient and `R_hi < 75`.
+  Do not make the retain/refine/replace/research/stop decision for the user, and do not
+  zero-fill incomplete coverage.

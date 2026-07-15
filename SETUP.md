@@ -1,36 +1,106 @@
-# 설정
+# Setup & CLI reference
 
-CPython 3.11 이상만 필요하며 제3자 런타임 패키지는 없습니다. `python3 -m patent_factory --help`로 확인하고 `python3 -m patent_factory init`으로 소유자 전용 `documents/`, `workspace/`를 준비합니다.
+Slash commands (see [README.md](README.md)) are the recommended way to drive this
+project. This document is the **escape hatch**: the full `python3 -m patent_factory`
+CLI, for scripting, non-slash runtimes, or debugging. Every slash command runs one
+of these verbs for you.
 
-## 세 가지 프로필 경로
+## Install
+
+Requires **CPython 3.11+** and no third-party runtime packages. Verify the
+installed contract and create the two owner-only roots:
 
 ```bash
-# UTF-8 .md/.txt/.json 파일을 이름순으로 수집
+python3 -m patent_factory --version
+python3 -m patent_factory --help
+python3 -m patent_factory init
+```
+
+`init` creates `documents/` (private input) and `workspace/` (generated state and
+exports). Override locations with `init --documents DIR --workspace DIR` if needed.
+
+### How to read CLI output
+
+- Every command prints **one sorted JSON object** on stdout, carrying
+  `schema_version: cli-result-v1` and `envelope_version: cli-envelope-v1`. Only
+  `--help` / `--version` are plain text; missing or invalid arguments are still a
+  JSON `invalid_arguments` result.
+- Some safe stop states exit non-zero, so **do not discard the JSON based on exit
+  code alone** — read `status` / `next_state` first.
+- Path rules everywhere: inputs and `--responses` files live under the documents
+  root; databases, exports, and versioned request files live under the workspace
+  root. Absolute paths, `..`, symlinks (root, intermediate, or target),
+  non-regular files, and documents larger than 2,000,000 bytes are rejected.
+
+## Profile — three input paths
+
+Choose exactly one path. All three write the authoritative
+`workspace/profile.sqlite3` and regenerate the deterministic `workspace/profile.json`
+export.
+
+```bash
+# 1. Ingest a whole folder (UTF-8 .md/.txt/.json, in name order)
 python3 -m patent_factory profile folder documents
 
-# 문서 하나만 수집
+# 2. Ingest a single document
 python3 -m patent_factory profile document documents/background.md
 
-# 실제 대화형 질문(터미널 필요)
+# 3. Interview — interactive in a terminal…
 python3 -m patent_factory profile interview
 
-# 재현 가능한 scripted interview (응답 파일도 documents/ 아래에 둠)
+#    …or reproducible from a scripted response file (kept under documents/)
 cp examples/redacted/interview.json documents/interview.json
 python3 -m patent_factory profile interview --responses documents/interview.json
 ```
 
-텍스트 문서는 `field: value`, JSON은 일반 객체 또는 `facts` 배열 형식입니다. stdout은 정렬 키의 JSON 하나입니다. 기본 권위 저장소는 `workspace/profile.sqlite3`이고 `workspace/profile.json`은 커밋된 DB에서 만든 결정적 내보내기입니다. 문서 항목은 `source_fact`, 인터뷰 답변은 `user_statement`입니다. 동일 입력의 재실행은 배치·claim·충돌을 중복 생성하지 않습니다. 기존 값과 충돌하는 항목이 한 배치에 하나라도 있으면 그 트랜잭션은 충돌 배치와 충돌 레코드 및 상태만 기록하고, canonical fact나 호환 가능한 추가 항목은 하나도 적용하지 않은 채 종료 코드 3을 반환합니다.
+Input formats: text documents use `field: value` lines; JSON is a plain object or
+a `{"facts": [...]}` array. Document-derived items are `source_fact`; interview
+answers are `user_statement`. Re-running the same input does **not** duplicate
+batches, claims, or conflicts.
 
-기본 루트는 `documents/`와 `workspace/`이며 각각 `--documents-root`, `--workspace-root`로 저장소 안의 상대 경로를 지정할 수 있습니다. 입력과 `--responses` 파일은 documents root 아래, `--database`와 `--profile`은 workspace root 아래여야 합니다. 절대 경로, `..`, 루트/중간/대상 symlink, 비정규 파일, 읽기 전 2,000,000바이트를 넘는 문서는 거부합니다.
+Common options: `--documents-root`, `--workspace-root` (repository-relative roots),
+`--profile` (default `WORKSPACE_ROOT/profile.json`), `--database` (default
+`WORKSPACE_ROOT/profile.sqlite3`).
 
-KIPRIS Plus 자격 증명의 정확한 이름은 `KIPRIS_PLUS_API_KEY`입니다. 값은 환경에만 두고 프로필/로그/문서에 복사하지 마십시오. 다음 명령은 네트워크 요청 없이 `missing`, `present`, `simulated_invalid`, `fixture_usable` 중 하나만 출력합니다.
+### Conflicts
+
+If any single item in a batch conflicts with an existing value, the whole
+transaction records only the conflict batch, conflict records, and state, applies
+**no** canonical or compatible facts, and exits with code 3
+(`conflict_resolution_required`). Resolve it explicitly — never bypass it:
+
+```bash
+python3 -m patent_factory profile conflict-inspect --batch-id BATCH_ID
+python3 -m patent_factory profile conflict-decide  --batch-id BATCH_ID --input DECISION_JSON
+```
+
+## Credentials (KIPRIS Plus)
+
+The KIPRIS Plus credential is named exactly `KIPRIS_PLUS_API_KEY`. Keep it in the
+environment only — never copy it into a profile, log, or document. The check makes
+no network request and prints exactly one of `missing`, `present`,
+`simulated_invalid`, or `fixture_usable`:
 
 ```bash
 python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY
 python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY --fixture-usable
 ```
 
-연구 CLI는 미리 `research_ready` 상태로 준비된 실행 디렉터리의 `factory.sqlite3`만 권위 저장소로 사용합니다. fixture와 수동 import 모두 입력 파일을 `documents/` 아래에서만 읽고 실행 디렉터리를 `workspace/` 아래로 제한합니다. 예시는 다음과 같습니다.
+## Research
+
+Research operates only on a run directory already bootstrapped to `research_ready`.
+`run start` binds an authoritative profile into a fresh run (omit `--profile` /
+`--profile-database` to use the defaults):
+
+```bash
+python3 -m patent_factory run start \
+  --run workspace/runs/example --run-id example \
+  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
+```
+
+Then run one bounded operation. `fixture` is the offline acceptance path; `manual`
+imports user-supplied, HTTPS-derived results and requires an explicit
+`--allow-host`:
 
 ```bash
 python3 -m patent_factory research fixture documents/kipris.xml \
@@ -40,4 +110,80 @@ python3 -m patent_factory research manual documents/manual-results.json \
   --run workspace/runs/example --run-id example --query 센서 --allow-host example.com
 ```
 
-CLI는 상태 커널을 우회하지 않고 `research_ready -> research_running -> research_complete|research_incomplete`만 수행합니다. 결과와 실패는 실행별 SQLite에 기록되고, 결정적 bundle manifest는 실행 디렉터리의 소유자 전용 `research-exports/`에 상태 전이와 함께 등록된 불변 파일로 내보냅니다. 현재/레거시 API의 구분, 오류, 한도, 이용조건, 미확인 사항은 [KIPRIS contract spike](docs/kipris-contract-spike.md)에 있습니다. 호스팅 Claude/Codex에 비공개 원문을 제공하는 것은 별도의 외부 전송이므로 명시적 범위 승인 전에는 로컬 CLI만 사용합니다.
+Research performs only `research_ready → research_running →
+research_complete | research_incomplete`. Results and failures are written to the
+per-run SQLite, and a deterministic bundle manifest is exported as an immutable file
+under the run's owner-only `research-exports/`. A source failure is an adapter event,
+never evidence. Current/legacy API distinctions, errors, limits, and open questions
+are in [docs/kipris-contract-spike.md](docs/kipris-contract-spike.md).
+
+## Full pipeline verbs
+
+Each stage below takes a versioned `*-input-v1.json` you author under
+`workspace/requests/` (templates and field notes in
+[`workspace/README.md`](workspace/README.md); JSON Schemas in `schemas/`). The core
+validates the input, binds hashes to prior stages, and records state — it never
+trusts a hand-copied export.
+
+```bash
+# Candidates and finalists
+python3 -m patent_factory ideate    --run RUN --run-id RUN_ID \
+  --profile workspace/profile.json --profile-database workspace/profile.sqlite3 \
+  --input workspace/requests/candidate-input-v1.json
+python3 -m patent_factory shortlist --run RUN --run-id RUN_ID \
+  --input workspace/requests/shortlist-input-v1.json
+
+# Finalist similarity audit (per-finalist KIPRIS groups; scorer simrisk-v1.0.0)
+python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
+  --query-input workspace/requests/audit-query-input-v1.json \
+  --fixture-manifest documents/requests/audit-fixture-manifest-v1.json
+python3 -m patent_factory audit score    --run RUN --run-id RUN_ID \
+  --feature-input workspace/requests/feature-map-set-input-v1.json
+
+# One exact gate (read-only inspect; decide needs a user-authored decision input)
+python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_ID
+python3 -m patent_factory gate decide  --run RUN --run-id RUN_ID --gate-id GATE_ID \
+  --input workspace/requests/gate-decision-input-v1.json
+
+# Report → independent review → deterministic validate
+python3 -m patent_factory draft    --run RUN --run-id RUN_ID \
+  --input workspace/requests/report-input-v1.json
+python3 -m patent_factory review   --run RUN --run-id RUN_ID \
+  --input workspace/requests/review-input-v1.json
+python3 -m patent_factory validate --run RUN --run-id RUN_ID
+
+# Guarded external share (add --decision-id only after the core issues one)
+python3 -m patent_factory share --run RUN --run-id RUN_ID \
+  --input workspace/requests/external-report-share-v1.json
+
+# Safe run deletion (takes no --run-id; preserves partial-failure status)
+python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace
+```
+
+Gate rule for every stage: `*_required`, `coverage_insufficient`,
+`decision_required`, `insufficient_evidence`, `revision_required`, `stopped`, and
+`error` are hard stops. Preserve `gate_id`, `subject_revision_hash`, `actions`, and
+`next_state`; resume only with the core-issued `decision_id` and the same input.
+
+## Privacy & hosted egress
+
+Running the local CLI by path does **not** authorize reading your private text into
+a hosted model context. Claude Code, Codex, and other hosted models are external
+processors: without a current exact approval (recipient/model class, purpose,
+approved data classes, content hash, and a minimized egress manifest), keep private
+documents, source spans, profile facts, reports, and secrets out of context. Secrets
+are never egressed or persisted. Providing private text to a hosted model, or the
+`share` verb, is a separate external transfer — use the local CLI only until scope is
+approved.
+
+## Release checks
+
+Before a release, run at least the offline checks and state any failure or omission:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m compileall -q src tests
+python3 -m patent_factory --help
+```
+
+The agent behavior contract is in [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md).

@@ -27,7 +27,7 @@ class CliResultContractDocumentationTests(unittest.TestCase):
             content,
         )
         self.assertIn("run-id", content)
-        self.assertIn("직접 삭제하지 않는다", content)
+        self.assertIn("directly delete", content)
 
     def test_audit_fixture_and_plaintext_help_exemption_match_cli_boundaries(self):
         content = (ROOT / ".codex/README.md").read_text(encoding="utf-8")

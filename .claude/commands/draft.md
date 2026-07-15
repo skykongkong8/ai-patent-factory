@@ -1,9 +1,35 @@
-# /draft
+---
+description: Render the private Korean 11-section report with citation and decision bindings.
+---
 
-`CLAUDE.md`, `AGENTS.md`, `.claude/skills/ideation/SKILL.md`를 따른다. 현재 승인된 artifact hash에 묶인 `report-input-v1` JSON만 전달한다.
+# /draft — render the report (step 6)
+
+Render the private Korean 11-section report. Follow `CLAUDE.md`, `AGENTS.md`, and
+`.claude/skills/ideation/SKILL.md`. Pass only a `report-input-v1` bound to the current
+approved artifact hash.
+
+## Where you provide input
+
+Author `workspace/requests/report-input-v1.json` (template in `workspace/README.md`).
+The core renders the eleven Korean sections and the citation/decision bindings — this
+wrapper never writes or edits `draft.md` or the report export.
+
+## Steps
+
+0. Help the user assemble `report-input-v1` (drafter identity, `report_date`, profile
+   fields, handoff questions).
+1. Run the CLI verb.
 
 ```bash
 python3 -m patent_factory draft --run RUN --run-id RUN_ID --input REPORT_INPUT
 ```
 
-코어가 한국어 11개 섹션과 citation/decision bindings를 렌더링한다. 래퍼가 `draft.md`나 report export를 직접 쓰거나 수정하지 않는다. unresolved evidence, stale audit/decision, `coverage_insufficient`, `decision_required`, 다른 `*_required`, `stopped`, `error`이면 중단한다. 특허성·신규성·유효성·비침해/FTO 결론을 추가하지 않는다.
+2. Report the stdout JSON `status`/`next_state` verbatim and note the report hash for
+   review.
+3. On success, suggest the next step — **`/review`** for the independent reviewer pass.
+
+## Stop conditions (do not bypass)
+
+- Stop on unresolved evidence, stale audit/decision, `coverage_insufficient`,
+  `decision_required`, any other `*_required`, `stopped`, or `error`.
+- Do not add patentability, novelty, validity, or non-infringement/FTO conclusions.
