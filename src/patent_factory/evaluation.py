@@ -19,7 +19,7 @@ from .ideation import (
 )
 from .models import ArtifactRevision, RunState
 from .provenance import digest, normalize
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .state import StateError, StateStore
 
 
@@ -292,9 +292,9 @@ def run_shortlist(
 ) -> ShortlistRun:
     """Publish finalists, or an immutable explicit insufficiency result, without scoring/network side effects."""
 
-    credential_canary = environment_secret("KIPRIS_PLUS_API_KEY")
+    canaries = credential_canaries()
     assert_canaries_absent(
-        shortlist_input, (credential_canary,) if credential_canary else (),
+        shortlist_input, canaries,
         boundary="shortlist_input",
     )
     state, _exports = _state_with_exports(connection, run_root, create_ideation=False)

@@ -91,6 +91,22 @@ def environment_secret(name: str, environ: Mapping[str, str] | None = None) -> s
     return (os.environ if environ is None else environ).get(name)
 
 
+# Every credential the local pipeline may hold. Leak-canary boundaries scrub all
+# of them, so protection does not depend on which single adapter happens to run.
+KNOWN_CREDENTIAL_NAMES: tuple[str, ...] = ("KIPRIS_PLUS_API_KEY", "SERPAPI_API_KEY")
+
+
+def credential_canaries(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """Return the present secret values for every known credential, for canary checks."""
+
+    values: list[str] = []
+    for name in KNOWN_CREDENTIAL_NAMES:
+        secret = environment_secret(name, environ)
+        if secret:
+            values.append(secret)
+    return tuple(values)
+
+
 def secret_status(name: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     present = bool(environment_secret(name, environ))
     return {"name": name, "present": present, "status": "configured" if present else "missing"}

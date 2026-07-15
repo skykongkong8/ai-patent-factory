@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from . import __version__
 from .audit import run_audit_retrieval, run_audit_scoring
 from .adapters.base import TransportResponse
+from .adapters.google_patents import SERPAPI_HOST, GooglePatentsAdapter, serpapi_account
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
 from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
 from .config import load_evaluation_config, load_similarity_config
@@ -22,9 +24,9 @@ from .ideation import DomainPivotRequiredError, run_ideation
 from .models import QueryEnvelope
 from .paths import contained_input, contained_output, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
-from .privacy import assert_canaries_absent, delete_run, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
-from .research import PlannedQuery, run_research
+from .research import CredentialRequiredError, PlannedQuery, run_research
 from .report import publish_report
 from .review import run_review
 from .runs import prepare_run_profile, start_run
@@ -87,8 +89,10 @@ def _failure_code(error: BaseException) -> str:
 
 def _redacted_error(error: BaseException) -> str:
     message = str(error)
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    return message.replace(secret, "[REDACTED]") if secret and secret in message else message
+    for secret in credential_canaries():
+        if secret in message:
+            message = message.replace(secret, "[REDACTED]")
+    return message
 
 
 def _cli_result(
@@ -176,6 +180,28 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     manual = research_commands.choices["manual"]
     manual.add_argument("--allow-host", action="append", required=True)
+    serpapi = research_commands.add_parser(
+        "serpapi", help="run one LIVE Google Patents search via SerpApi (opt-in network egress)",
+    )
+    serpapi.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+    serpapi.add_argument("--run-id", required=True)
+    serpapi.add_argument("--query", required=True)
+    serpapi.add_argument("--country", default="", help="comma-separated country codes, e.g. KR")
+    serpapi.add_argument("--num", type=int, help="results per page (10-100)")
+    serpapi.add_argument("--page", type=int, default=1)
+    serpapi.add_argument("--result-budget", type=int, default=10)
+    serpapi.add_argument("--byte-budget", type=int, default=1_000_000)
+    serpapi.add_argument(
+        "--min-quota", type=int, default=1,
+        help="stop and emit a manual-import template at or below this many searches left",
+    )
+    serpapi.add_argument("--decision-id", help="credential gate decision id")
+    serpapi.add_argument("--idempotency-key")
+    serpapi.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic runs")
+    serpapi.add_argument("--documents-root", type=Path, default=Path("documents"))
+    serpapi.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    serpapi.add_argument("--fixture-response", type=Path, help=argparse.SUPPRESS)
+    serpapi.add_argument("--fixture-account", type=Path, help=argparse.SUPPRESS)
 
     ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
     ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
@@ -338,8 +364,8 @@ def _profile_conflict(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         decision_input = _json_object(input_path, args.byte_budget, "profile conflict decision")
         if decision_input.get("batch_id") != batch_id:
             raise CliError("profile conflict batch id does not match --batch-id")
-        secret = environment_secret("KIPRIS_PLUS_API_KEY")
-        assert_canaries_absent(decision_input, (secret,) if secret else (), boundary="profile_conflict_decision")
+        canaries = credential_canaries()
+        assert_canaries_absent(decision_input, canaries, boundary="profile_conflict_decision")
         result = resolve_profile_conflicts(connection, decision_input)
         profile_path = contained_output(args.profile or args.workspace_root / "profile.json", workspace_root, "profile output")
         export_profile(connection, profile_path)
@@ -395,6 +421,8 @@ def _bounded_bytes(path: Path, byte_budget: int, label: str) -> bytes:
 
 
 def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if args.research_command == "serpapi":
+        return _research_serpapi(args)
     started_at = utc_now()
     documents_root = private_root(args.documents_root, "documents root")
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
@@ -456,6 +484,141 @@ def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         )
     payload = result.as_dict()
     payload.update({"started_at": started_at, "ended_at": utc_now()})
+    return payload, 0 if payload["status"] == "complete" else 4
+
+
+def _json_fixture_transport(body: bytes) -> Callable[[str, float, int], TransportResponse]:
+    """Deterministic offline transport for tests: replay a fixture body, ignore the URL."""
+
+    def transport(url: str, timeout: float, byte_budget: int) -> TransportResponse:
+        del url, timeout, byte_budget
+        return TransportResponse(200, {"Content-Type": "application/json"}, body)
+
+    return transport
+
+
+def _serpapi_quota_exhausted(
+    args: argparse.Namespace, workspace_root: Path, account: dict[str, Any], started_at: str,
+) -> tuple[dict[str, Any], int]:
+    (workspace_root / "requests").mkdir(mode=0o700, exist_ok=True)
+    template_path = contained_output(
+        args.workspace_root / "requests" / "manual-web-template.json",
+        workspace_root, "manual web template",
+    )
+    template = {"records": [{
+        "canonical_url": "https://patents.google.com/patent/REPLACE_WITH_PUBLICATION/en",
+        "identifier": "REPLACE_WITH_PUBLICATION",
+        "title": "REPLACE_WITH_TITLE",
+        "content_hash": "0" * 64,
+        "language": "en",
+        "provenance": "google_patents_manual",
+        "excerpt_hashes": [],
+        "interpretations": [],
+        "limitations": ["User-supplied metadata; not a patentability conclusion."],
+    }]}
+    template_path.write_text(json.dumps(template, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        os.chmod(template_path, 0o600, follow_symlinks=False)
+    except OSError:
+        pass
+    return ({
+        "command": "research.serpapi",
+        "status": "quota_exhausted",
+        "run_id": normalize(args.run_id),
+        "searches_left": account.get("total_searches_left"),
+        "plan_renewal_date": account.get("plan_renewal_date"),
+        "fallback_template": template_path.relative_to(workspace_root).as_posix(),
+        "message": (
+            "SerpApi monthly search quota exhausted; no search was spent. "
+            "Fill the template with Google Patents records, then run: "
+            "research manual <file> --allow-host patents.google.com"
+        ),
+        "started_at": started_at,
+        "ended_at": utc_now(),
+    }, 12)
+
+
+def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    documents_root = private_root(args.documents_root, "documents root")
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "research run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
+    api_key = environment_secret("SERPAPI_API_KEY")
+
+    response_transport = None
+    account_transport = None
+    if args.fixture_response is not None:
+        response_body = _bounded_bytes(
+            contained_input(args.fixture_response, documents_root, "serpapi response fixture"),
+            args.byte_budget, "serpapi response fixture",
+        )
+        response_transport = _json_fixture_transport(response_body)
+    if args.fixture_account is not None:
+        account_body = _bounded_bytes(
+            contained_input(args.fixture_account, documents_root, "serpapi account fixture"),
+            args.byte_budget, "serpapi account fixture",
+        )
+        account_transport = _json_fixture_transport(account_body)
+
+    # Free quota preflight: account.json does not consume a search.
+    quota_note = None
+    if api_key:
+        try:
+            account = serpapi_account(api_key, transport=account_transport)
+        except (ValueError, OSError) as error:
+            account = None
+            quota_note = f"quota preflight unavailable: {_redacted_error(error)}"
+        if account is not None:
+            searches_left = account.get("total_searches_left")
+            if searches_left is not None and searches_left <= args.min_quota:
+                return _serpapi_quota_exhausted(args, workspace_root, account, started_at)
+
+    adapter = GooglePatentsAdapter(api_key, transport=response_transport)
+    projection: dict[str, Any] = {"word": normalize(args.query)}
+    if args.num is not None:
+        projection["num"] = args.num
+    if normalize(args.country):
+        projection["country"] = normalize(args.country)
+    envelope = QueryEnvelope(
+        run_id=normalize(args.run_id), adapter="google_patents", adapter_version="serpapi-v1",
+        capability="word_search", allowed_scheme="https", allowed_host=SERPAPI_HOST,
+        deadline_seconds=15, page=args.page, page_cap=5, result_budget=args.result_budget,
+        byte_budget=args.byte_budget, retry_budget=0, retry_ownership="research_runner",
+        query_projection=projection,
+    )
+    planned = PlannedQuery(envelope, args.query, args.query, "origin", 0)
+    envelope.validate()
+    idempotency_key = args.idempotency_key or "serpapi-" + digest({
+        "request_fingerprint": envelope.request_fingerprint, "source_mode": "serpapi",
+    })[:20]
+    try:
+        with connect_database(database_path) as connection:
+            result = run_research(
+                connection, run_root=run_root, run_id=envelope.run_id, adapter=adapter,
+                query=planned, idempotency_key=idempotency_key, retrieved_at=args.retrieved_at,
+                credential_decision_id=args.decision_id,
+            )
+    except CredentialRequiredError as error:
+        return ({
+            "command": "research.serpapi",
+            "status": "credential_required",
+            "gate_id": error.gate.gate_id,
+            "next_state": "credential_required",
+            "run_id": normalize(args.run_id),
+            "message": "Configure SERPAPI_API_KEY and approve the credential gate to proceed.",
+            "started_at": started_at,
+            "ended_at": utc_now(),
+        }, 13)
+    payload = result.as_dict()
+    payload.update({"started_at": started_at, "ended_at": utc_now()})
+    if quota_note:
+        payload["quota_note"] = quota_note
+    # Reactive quota: a SerpApi quota error normalizes to a rate_limit adapter failure.
+    if payload.get("adapter_status", {}).get("failure_kind") == "rate_limit":
+        return _serpapi_quota_exhausted(
+            args, workspace_root, {"total_searches_left": 0, "plan_renewal_date": None}, started_at,
+        )
     return payload, 0 if payload["status"] == "complete" else 4
 
 

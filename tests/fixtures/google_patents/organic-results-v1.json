@@ -1,0 +1,28 @@
+{
+  "search_metadata": {"id": "redacted", "status": "Success"},
+  "search_parameters": {"engine": "google_patents", "q": "redacted"},
+  "search_information": {"total_results": 2},
+  "organic_results": [
+    {
+      "position": 1,
+      "rank": 0,
+      "patent_id": "patent/KR102000001B1/en",
+      "publication_number": "KR102000001B1",
+      "title": "Redacted sensor fixture title",
+      "snippet": "Redacted abstract snippet for offline contract testing.",
+      "assignee": "Redacted Assignee Co.",
+      "filing_date": "2023-01-02",
+      "priority_date": "2023-01-01",
+      "language": "en"
+    },
+    {
+      "position": 2,
+      "rank": 1,
+      "patent_id": "patent/KR1020240000002A/ko",
+      "title": "두 번째 공개 센서 예시",
+      "snippet": "두 번째 요약 스니펫.",
+      "assignee": ["First Assignee", "Second Assignee"],
+      "filing_date": "2024-03-04"
+    }
+  ]
+}

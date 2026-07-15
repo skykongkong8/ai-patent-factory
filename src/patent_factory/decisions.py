@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from .database import FaultInjector
 from .models import ArtifactRevision, GateKind, RunState
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .provenance import digest, normalize
 from .state import (
     GATE_ACTIONS, GateMismatchError, StateError, StateStore, gate_action_target,
@@ -277,8 +277,8 @@ def resolve_gate(
     connection: sqlite3.Connection, *, run_root: Path, run_id: str,
     decision_input: Mapping[str, Any], fault_at: FaultInjector = None,
 ) -> DecisionRun:
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(decision_input, (secret,) if secret else (), boundary="decision_input")
+    canaries = credential_canaries()
+    assert_canaries_absent(decision_input, canaries, boundary="decision_input")
     required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
     if not isinstance(decision_input, Mapping) or set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
         raise ValueError("decision: exact gate-decision-input-v1 fields required")

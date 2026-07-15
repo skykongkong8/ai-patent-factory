@@ -45,6 +45,12 @@ command.
   current approval for the exact recipient/purpose/data class/content hash/scope and
   a minimized egress manifest, run only the local CLI and stop. This document and the
   wrapper do not authorize any external transfer.
+- `research serpapi` is the only opt-in networked command. It egresses only the
+  search keyword and the `SERPAPI_API_KEY` value to `serpapi.com` (including a free
+  quota preflight); the key is never persisted or logged and is canary-scrubbed. All
+  other commands are offline, and none send `documents/`, `workspace/`, or profile
+  data. On quota exhaustion it stops with `quota_exhausted` and a manual-import
+  template instead of fabricating evidence.
 - `share` requires an `external-report-share-v1` request and a current, exact
   sensitive-disclosure decision. Do not copy the report to bypass the gate.
 - Similarity is a research aid within the retrieved corpus. Do not write conclusions

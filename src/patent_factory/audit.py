@@ -12,7 +12,7 @@ from .adapters.base import SearchAdapter
 from .config import SimilarityConfig
 from .corpus import build_retained_corpus
 from .models import GateKind, QueryEnvelope, RunState
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .provenance import digest, normalize
 from .research import CredentialRequiredError, PlannedQuery, ResearchStore
 from .similarity import (
@@ -177,8 +177,8 @@ def run_audit_retrieval(
     query_input: Mapping[str, Any], config: SimilarityConfig, adapter_factory: AdapterFactory,
     credential_decision_id: str | None = None,
 ) -> AuditRetrieval:
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(query_input, (secret,) if secret else (), boundary="audit_query_input")
+    canaries = credential_canaries()
+    assert_canaries_absent(query_input, canaries, boundary="audit_query_input")
     finalist_row, finalist_set = _artifact(connection, run_id, "finalist_set")
     finalists = {item["finalist_id"]: item for item in finalist_set["finalists"]}
     groups = _query_input(query_input, finalists, finalist_row["content_hash"])
@@ -382,8 +382,8 @@ def run_audit_scoring(
     connection: sqlite3.Connection, *, run_root: Path, run_id: str,
     feature_input: Mapping[str, Any], config: SimilarityConfig,
 ) -> AuditRun:
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(feature_input, (secret,) if secret else (), boundary="feature_map_input")
+    canaries = credential_canaries()
+    assert_canaries_absent(feature_input, canaries, boundary="feature_map_input")
     state = StateStore(connection)
     snapshot = state.snapshot(run_id)
     replay_states = {RunState.AUDIT_APPROVED, RunState.COVERAGE_INSUFFICIENT, RunState.DECISION_REQUIRED}

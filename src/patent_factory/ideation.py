@@ -12,7 +12,7 @@ from .config import EvaluationConfig
 from .database import FaultInjector, profile_payload
 from .models import ArtifactRevision, GateEnvelope, GateKind, RunState
 from .provenance import Claim, EpistemicLabel, canonical_json, claim_from_dict, digest, normalize
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .state import StateError, StateStore, workspace_export_directories
 
 
@@ -446,14 +446,14 @@ def run_ideation(
 ) -> IdeationRun:
     """Validate and publish one deterministic candidate-set revision without model or network access."""
 
-    credential_canary = environment_secret("KIPRIS_PLUS_API_KEY")
+    canaries = credential_canaries()
     assert_canaries_absent(
-        candidate_input, (credential_canary,) if credential_canary else (),
+        candidate_input, canaries,
         boundary="candidate_input",
     )
     authoritative_profile = profile_payload(profile_connection)
     assert_canaries_absent(
-        authoritative_profile, (credential_canary,) if credential_canary else (),
+        authoritative_profile, canaries,
         boundary="profile_context",
     )
     if canonical_json(profile) != canonical_json(authoritative_profile):
@@ -479,7 +479,7 @@ def run_ideation(
     })
     assert_canaries_absent(
         {"evaluation_config": config_payload, "profile_context": profile_context_payload},
-        (credential_canary,) if credential_canary else (),
+        canaries,
         boundary="ideation_context",
     )
     existing_profile_context = connection.execute(
