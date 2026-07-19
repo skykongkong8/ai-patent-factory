@@ -35,7 +35,18 @@ python3 -m patent_factory research manual SOURCE --run RUN --run-id RUN_ID --que
 python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY
 python3 -m patent_factory research kipris --run RUN --run-id RUN_ID --query QUERY \
   --korean-synonym KO_TERM --english-synonym EN_TERM
+
+# Web evidence — agent searches out-of-band, then normalizes + imports offline
+python3 -m patent_factory research normalize-web documents/web-rows.json \
+  --out documents/normalized.json --allow-host HOST --source-type arxiv
+python3 -m patent_factory research manual documents/normalized.json \
+  --run RUN --run-id RUN_ID --query QUERY --allow-host HOST
 ```
+
+For web evidence, follow the deep-research procedure in
+`.claude/skills/research/SKILL.md`: KO+EN keyword combinations per source
+(Google Patents, Naver, arXiv, Papers with Code, GitHub), public metadata only,
+one bounded import per source.
 
 For the live path, run the credential check first and report its status. If the
 CLI returns `status: credential_required` (exit 5), preserve `gate_id` and
