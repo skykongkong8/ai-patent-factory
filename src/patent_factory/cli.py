@@ -33,6 +33,10 @@ from .research import (
 from .report import publish_report
 from .review import run_review
 from .runs import prepare_run_profile, start_run
+from .scaffold import (
+    count_todos, evidence_binding_table, scaffold_audit_query_input,
+    scaffold_candidate_input, scaffold_report_input, scaffold_shortlist_input,
+)
 from .sharing import SensitiveDisclosureRequiredError, share_report
 from .validation import validate_and_complete
 
@@ -253,6 +257,27 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--feature-input", type=Path, required=True)
     score.add_argument("--byte-budget", type=int, default=2_000_000)
     score.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    scaffold_command = commands.add_parser(
+        "scaffold", help="emit a hash-bound draft request input for agent completion",
+    )
+    scaffold_commands = scaffold_command.add_subparsers(dest="scaffold_command", required=True)
+    for name in ("candidate", "shortlist", "audit-query", "report"):
+        command = scaffold_commands.add_parser(name, help=f"draft a {name} request input")
+        command.add_argument("--out", type=Path, required=True, help="draft JSON written under the workspace root")
+        command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    for name in ("candidate", "shortlist", "audit-query"):
+        command = scaffold_commands.choices[name]
+        command.add_argument("--run", type=Path, required=True)
+        command.add_argument("--run-id", required=True)
+    scaffold_commands.choices["candidate"].add_argument(
+        "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
+    )
+    scaffold_commands.choices["candidate"].add_argument("--count", type=int, default=3)
+    scaffold_commands.choices["report"].add_argument(
+        "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
+    )
+    scaffold_commands.choices["report"].add_argument("--language", choices=("en", "ko"), default="en")
 
     gate = commands.add_parser("gate", help="inspect or decide one exact current gate")
     gate_commands = gate.add_subparsers(dest="gate_command", required=True)
@@ -511,8 +536,7 @@ def _research_normalize_web(
     secret = environment_secret("KIPRIS_PLUS_API_KEY")
     assert_canaries_absent(payload, (secret,) if secret else (), boundary="web_rows")
     records = normalize_web_rows(payload["rows"], allowed_hosts, args.source_type)
-    out_path = contained_output(args.out, documents_root, "manual import output")
-    out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out_path = _prepare_contained_output(args.out, documents_root, "manual import output")
     out_path.write_text(
         json.dumps({"records": records}, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -661,6 +685,75 @@ def _shortlist(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return payload, 5 if payload["status"] == "insufficient_evidence" else 0
 
 
+def _prepare_contained_output(path: Path, root: Path, label: str) -> Path:
+    """Create missing parent directories inside the root, then contain-check."""
+
+    absolute_parent = (Path.cwd() / Path(path)).parent
+    try:
+        absolute_parent.resolve(strict=False).relative_to(root)
+    except ValueError as exc:
+        raise CliError(f"{label} must stay under its private root") from exc
+    pending: list[Path] = []
+    probe = absolute_parent
+    while not probe.exists():
+        pending.append(probe)
+        probe = probe.parent
+    for directory in reversed(pending):
+        directory.mkdir(mode=0o700)
+    return contained_output(path, root, label)
+
+
+def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    out_path = _prepare_contained_output(args.out, workspace_root, "scaffold output")
+    command = args.scaffold_command
+    extras: dict[str, Any] = {}
+    if command in {"candidate", "shortlist", "audit-query"}:
+        contained_input(args.run, workspace_root, "scaffold run", directory=True)
+        database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "scaffold run database")
+        run_id = normalize(args.run_id)
+    if command == "candidate":
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_database(database_path) as connection, connect_database(profile_database) as profile_connection:
+            draft = scaffold_candidate_input(
+                connection, profile_connection, run_id=run_id, count=args.count,
+            )
+            extras["evidence"] = evidence_binding_table(connection, run_id)
+    elif command == "shortlist":
+        with connect_database(database_path) as connection:
+            draft = scaffold_shortlist_input(connection, run_id=run_id, config=load_evaluation_config())
+    elif command == "audit-query":
+        with connect_database(database_path) as connection:
+            draft = scaffold_audit_query_input(connection, run_id=run_id)
+        extras["finalist_set_hash"] = draft["finalist_set_hash"]
+    else:
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_database(profile_database) as profile_connection:
+            draft = scaffold_report_input(profile_connection, language=args.language)
+    out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    out_path.chmod(0o600)
+    return ({
+        "command": "scaffold",
+        "draft": command,
+        "ended_at": utc_now(),
+        "output_path": str(args.out),
+        "started_at": started_at,
+        "status": "scaffolded",
+        "todo_count": count_todos(draft),
+        **extras,
+    }, 0)
+
+
 def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     started_at = utc_now()
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
@@ -798,6 +891,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload, code = _ideate(args)
         elif args.command == "shortlist":
             payload, code = _shortlist(args)
+        elif args.command == "scaffold":
+            payload, code = _scaffold(args)
         elif args.command == "audit":
             payload, code = _audit(args)
         elif args.command == "gate":

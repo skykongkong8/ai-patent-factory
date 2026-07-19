@@ -16,7 +16,13 @@ supporting and contrary evidence references, coverage assessment, and gaps.
 
 ## Steps
 
-0. Help the user assemble `shortlist-input-v1` from the candidate output.
+0. Start from `scaffold shortlist` (candidate IDs, axes, rubric versions, and
+   supporting-evidence bindings pre-filled; you author scores and rationale):
+
+```bash
+python3 -m patent_factory scaffold shortlist --run RUN --run-id RUN_ID \
+  --out workspace/requests/shortlist-input-v1.json
+```
 1. Run the CLI verb.
 
 ```bash

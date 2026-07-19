@@ -18,9 +18,14 @@ this wrapper never writes or edits `draft.md` or the report export.
 
 ## Steps
 
-0. Ask which report language the user wants (default English), then help assemble
-   `report-input-v2` (language, drafter identity, `report_date`, profile fields,
-   handoff questions).
+0. Ask which report language the user wants (default English), then start from
+   `scaffold report` (renderable profile fields pre-filled; you author the
+   drafter identity, date, and questions):
+
+```bash
+python3 -m patent_factory scaffold report --language en \
+  --out workspace/requests/report-input-v2.json
+```
 1. Run the CLI verb.
 
 ```bash
