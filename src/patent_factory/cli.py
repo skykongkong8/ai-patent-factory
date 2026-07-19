@@ -24,7 +24,10 @@ from .paths import contained_input, contained_output, private_contained_director
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
 from .privacy import assert_canaries_absent, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
-from .research import PlannedQuery, run_research
+from .research import (
+    CredentialRequiredError, PlannedQuery, ResearchBudget, plan_keyword_queries,
+    run_research, run_research_batch,
+)
 from .report import publish_report
 from .review import run_review
 from .runs import prepare_run_profile, start_run
@@ -176,6 +179,31 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     manual = research_commands.choices["manual"]
     manual.add_argument("--allow-host", action="append", required=True)
+    kipris_live = research_commands.add_parser(
+        "kipris", help="run credentialed live KIPRIS keyword research (KIPRIS_PLUS_API_KEY)",
+    )
+    kipris_live.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+    kipris_live.add_argument("--run-id", required=True)
+    kipris_live.add_argument("--query", required=True, help="origin query term")
+    for expansion in (
+        "korean-synonym", "english-synonym", "discovered-term",
+        "classification", "applicant", "inventor",
+    ):
+        kipris_live.add_argument(
+            f"--{expansion}", action="append", default=None,
+            help=f"repeatable {expansion.replace('-', ' ')} expansion term",
+        )
+    kipris_live.add_argument("--max-depth", type=int, default=1)
+    kipris_live.add_argument("--max-calls", type=int, default=12)
+    kipris_live.add_argument("--result-budget", type=int, default=30)
+    kipris_live.add_argument("--byte-budget", type=int, default=1_000_000)
+    kipris_live.add_argument("--page-cap", type=int, default=5)
+    kipris_live.add_argument("--retry-budget", type=int, default=0)
+    kipris_live.add_argument("--decision-id", help="current credential approval for this exact batch")
+    kipris_live.add_argument("--idempotency-key")
+    kipris_live.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic tests")
+    kipris_live.add_argument("--documents-root", type=Path, default=Path("documents"))
+    kipris_live.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
     ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
@@ -196,11 +224,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     audit = commands.add_parser("audit", help="retrieve and score finalist-specific KIPRIS corpora")
     audit_commands = audit.add_subparsers(dest="audit_command", required=True)
-    retrieve = audit_commands.add_parser("retrieve", help="run deterministic fixture KIPRIS audit queries")
+    retrieve = audit_commands.add_parser("retrieve", help="run fixture or credentialed live KIPRIS audit queries")
     retrieve.add_argument("--run", type=Path, required=True)
     retrieve.add_argument("--run-id", required=True)
     retrieve.add_argument("--query-input", type=Path, required=True)
-    retrieve.add_argument("--fixture-manifest", type=Path, required=True)
+    retrieve.add_argument("--fixture-manifest", type=Path, help="deterministic fixture manifest (omit with --live)")
+    retrieve.add_argument("--live", action="store_true", help="use the credentialed live KIPRIS adapter instead of fixtures")
     retrieve.add_argument("--byte-budget", type=int, default=2_000_000)
     retrieve.add_argument("--decision-id", help="current credential approval for this exact audit request")
     retrieve.add_argument("--documents-root", type=Path, default=Path("documents"))
@@ -394,12 +423,74 @@ def _bounded_bytes(path: Path, byte_budget: int, label: str) -> bytes:
     return payload
 
 
+def _credential_gate_payload(
+    command: str, error: CredentialRequiredError, run_id: str,
+) -> dict[str, Any]:
+    gate = error.gate
+    return {
+        "command": command,
+        "credential_name": gate.approval_scope.get("credential_name"),
+        "gate_id": gate.gate_id,
+        "next_state": "credential_required",
+        "run_id": run_id,
+        "status": "credential_required",
+        "subject_revision_hash": gate.subject_revision_hash,
+    }
+
+
+def _research_kipris(
+    args: argparse.Namespace, *, started_at: str, run_root: Path, database_path: Path,
+) -> tuple[dict[str, Any], int]:
+    budget = ResearchBudget(
+        max_depth=args.max_depth, max_calls=args.max_calls,
+        per_adapter_results=args.result_budget, retry_budget=args.retry_budget,
+        page_cap=args.page_cap, byte_budget=args.byte_budget,
+    )
+    budget.validate()
+    planned = plan_keyword_queries(
+        run_id=normalize(args.run_id), origin_query=args.query,
+        korean_synonyms=tuple(args.korean_synonym or ()),
+        english_synonyms=tuple(args.english_synonym or ()),
+        discovered_terms=tuple(args.discovered_term or ()),
+        classifications=tuple(args.classification or ()),
+        applicants=tuple(args.applicant or ()),
+        inventors=tuple(args.inventor or ()),
+        budget=budget,
+    )
+    service_key = environment_secret("KIPRIS_PLUS_API_KEY") or ""
+    adapter = KiprisAdapter(service_key, credential_required=True)
+    idempotency_key = args.idempotency_key or "research-kipris-" + digest({
+        "fingerprints": [query.envelope.request_fingerprint for query in planned],
+    })[:20]
+    with connect_database(database_path) as connection:
+        try:
+            result = run_research_batch(
+                connection,
+                run_root=run_root,
+                run_id=normalize(args.run_id),
+                adapter=adapter,
+                queries=planned,
+                idempotency_key=idempotency_key,
+                retrieved_at=args.retrieved_at,
+                credential_decision_id=args.decision_id,
+            )
+        except CredentialRequiredError as error:
+            return _credential_gate_payload("research", error, normalize(args.run_id)), 5
+    payload = result.as_dict()
+    payload.update({"started_at": started_at, "ended_at": utc_now()})
+    return payload, 0 if payload["status"] == "complete" else 4
+
+
 def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     started_at = utc_now()
     documents_root = private_root(args.documents_root, "documents root")
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
     run_root = contained_input(args.run, workspace_root, "research run", directory=True)
     database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
+    if args.research_command == "kipris":
+        return _research_kipris(
+            args, started_at=started_at, run_root=run_root, database_path=database_path,
+        )
     source = contained_input(args.source, documents_root, "research source")
 
     if args.research_command == "fixture":
@@ -522,35 +613,52 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     run_root = contained_input(args.run, workspace_root, "audit run", directory=True)
     database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "audit database")
     if args.audit_command == "retrieve":
-        documents_root = private_root(args.documents_root, "documents root")
         query_path = contained_input(args.query_input, workspace_root, "audit query input")
-        manifest_path = contained_input(args.fixture_manifest, documents_root, "audit fixture manifest")
         query_input = _json_object(query_path, args.byte_budget, "audit query input")
-        manifest = _json_object(manifest_path, args.byte_budget, "audit fixture manifest")
-        if set(manifest) != {"responses", "schema_version"} or manifest["schema_version"] != "audit-fixture-manifest-v1" or not isinstance(manifest["responses"], list):
-            raise CliError("audit fixture manifest must be audit-fixture-manifest-v1")
-        responses = {}
-        for item in manifest["responses"]:
-            if not isinstance(item, dict) or set(item) != {"finalist_id", "page", "source", "term"}:
-                raise CliError("audit fixture response has invalid fields")
-            source = contained_input(Path(item["source"]), documents_root, "audit KIPRIS fixture")
-            responses[(item["finalist_id"], normalize(item["term"]), item["page"])] = _bounded_bytes(source, args.byte_budget, "audit KIPRIS fixture")
+        if args.live:
+            if args.fixture_manifest is not None:
+                raise CliError("audit retrieve --live does not take --fixture-manifest")
+            service_key = environment_secret("KIPRIS_PLUS_API_KEY") or ""
+            live_adapter = KiprisAdapter(service_key, credential_required=True)
 
-        def adapter_factory(query, page, finalist):
-            body = responses[(finalist, normalize(query["term"]), page)]
+            def adapter_factory(query, page, finalist):
+                del query, page, finalist
+                return live_adapter
+        else:
+            if args.fixture_manifest is None:
+                raise CliError("audit retrieve requires --fixture-manifest unless --live is set")
+            documents_root = private_root(args.documents_root, "documents root")
+            manifest_path = contained_input(args.fixture_manifest, documents_root, "audit fixture manifest")
+            manifest = _json_object(manifest_path, args.byte_budget, "audit fixture manifest")
+            if set(manifest) != {"responses", "schema_version"} or manifest["schema_version"] != "audit-fixture-manifest-v1" or not isinstance(manifest["responses"], list):
+                raise CliError("audit fixture manifest must be audit-fixture-manifest-v1")
+            responses = {}
+            for item in manifest["responses"]:
+                if not isinstance(item, dict) or set(item) != {"finalist_id", "page", "source", "term"}:
+                    raise CliError("audit fixture response has invalid fields")
+                source = contained_input(Path(item["source"]), documents_root, "audit KIPRIS fixture")
+                responses[(item["finalist_id"], normalize(item["term"]), item["page"])] = _bounded_bytes(source, args.byte_budget, "audit KIPRIS fixture")
 
-            def transport(url, timeout, byte_budget):
-                del url, timeout, byte_budget
-                return TransportResponse(200, {"Content-Type": "application/xml"}, body)
+            def adapter_factory(query, page, finalist):
+                body = responses[(finalist, normalize(query["term"]), page)]
 
-            return KiprisAdapter("fixture-only", transport=transport, credential_required=False)
+                def transport(url, timeout, byte_budget):
+                    del url, timeout, byte_budget
+                    return TransportResponse(200, {"Content-Type": "application/xml"}, body)
+
+                return KiprisAdapter("fixture-only", transport=transport, credential_required=False)
 
         with connect_database(database_path) as connection:
-            result = run_audit_retrieval(
-                connection, run_root=run_root, run_id=normalize(args.run_id),
-                query_input=query_input, config=load_similarity_config(), adapter_factory=adapter_factory,
-                credential_decision_id=args.decision_id,
-            )
+            try:
+                result = run_audit_retrieval(
+                    connection, run_root=run_root, run_id=normalize(args.run_id),
+                    query_input=query_input, config=load_similarity_config(), adapter_factory=adapter_factory,
+                    credential_decision_id=args.decision_id,
+                )
+            except CredentialRequiredError as error:
+                payload = _credential_gate_payload("audit", error, normalize(args.run_id))
+                payload.update({"ended_at": utc_now(), "started_at": started_at})
+                return payload, 5
         payload, code = result.as_dict(), 0
     else:
         feature_path = contained_input(args.feature_input, workspace_root, "audit feature input")
