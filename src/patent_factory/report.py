@@ -223,9 +223,11 @@ class ReportRun:
             "artifact_ids": [self.artifact.revision_id],
             "command": "draft",
             "export_path": self.export_path,
+            "language": self.artifact.content.get("language"),
             "next_state": self.next_state,
             "prior_state": self.prior_state,
             "replayed": self.replayed,
+            "report_hash": self.artifact.content_hash,
             "run_id": self.run_id,
             "status": self.next_state,
         }
