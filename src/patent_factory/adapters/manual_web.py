@@ -108,8 +108,14 @@ class ManualWebAdapter:
             encoded = canonical_json(sanitized).encode("utf-8")
             if len(encoded) > envelope.byte_budget:
                 return _failure(AdapterFailureKind.OVERSIZE, "manual import exceeds byte budget")
+            if len(sanitized) > envelope.result_budget:
+                return _failure(
+                    AdapterFailureKind.OVERSIZE,
+                    f"manual import exceeds result budget ({len(sanitized)} records > "
+                    f"{envelope.result_budget}): raise --result-budget or split the import",
+                )
             records: list[AdapterRecord] = []
-            for item in sanitized[: envelope.result_budget]:
+            for item in sanitized:
                 records.append(AdapterRecord(
                     source_type="manual_web", source_locator=item["canonical_url"],
                     original_identifier=item["identifier"], title=item["title"],
@@ -124,6 +130,6 @@ class ManualWebAdapter:
         except (TypeError, ValueError):
             return _failure(AdapterFailureKind.MALFORMED, "manual import envelope is malformed")
         result = AdapterResult(tuple(records), digest(encoded.decode("utf-8")), TERMS_NOTE,
-                               {"received": len(records), "usable": len(records)})
+                               {"received": len(sanitized), "usable": len(records)})
         result.validate()
         return result
