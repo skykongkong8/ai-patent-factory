@@ -214,6 +214,11 @@ def _evidence_map(
         for raw in group.get("records", []):
             if not isinstance(raw, Mapping) or not isinstance(raw.get("evidence_id"), str):
                 continue
+            if raw["evidence_id"] in result:
+                # The research bundle (above) and the authoritative evidence_records
+                # loop (below) carry richer provenance; the audit-corpus projection
+                # only fills identifiers that are otherwise unknown.
+                continue
             record = raw.get("record", {})
             result[raw["evidence_id"]] = {
                 "canonical_url": record.get("canonical_url") if isinstance(record, Mapping) else None,
