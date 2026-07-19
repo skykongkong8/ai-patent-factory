@@ -17,8 +17,15 @@ read as fact. IDs and hashes are copied from earlier outputs, never invented.
 
 ## Steps
 
-0. Help the user assemble `candidate-input-v1` from the research results — do not fake
-   bindings.
+0. Start from a hash-bound draft — `scaffold candidate` pre-fills every evidence
+   binding (IDs, content/span hashes, profile references) so you only author the
+   inventive prose; the result JSON includes the evidence hash table for label
+   upgrades. Never fake a binding.
+
+```bash
+python3 -m patent_factory scaffold candidate --run RUN --run-id RUN_ID \
+  --out workspace/requests/candidate-input-v1.json
+```
 1. Run the CLI verb.
 
 ```bash
