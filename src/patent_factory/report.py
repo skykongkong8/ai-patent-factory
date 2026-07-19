@@ -502,8 +502,14 @@ def _section_bodies(
     corpus: Mapping[str, Any], audit: Mapping[str, Any], decision: Mapping[str, Any] | None,
     evidence: Mapping[str, Mapping[str, Any]], cited_ids: list[str], scorer: Mapping[str, Any],
     language: str = "ko",
+    feature_descriptions: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[str]:
     lex = LEXICON[language]
+    descriptions = feature_descriptions or {}
+
+    def described(finalist_id: Any, feature_ids: Any) -> list[str]:
+        table = descriptions.get(finalist_id, {})
+        return [table.get(item, item) for item in (feature_ids or [])]
     profile_value = profile.get("profile", {})
     profile_facts = profile_value.get("facts", {}) if isinstance(profile_value, Mapping) else {}
     profile_lines = []
@@ -535,7 +541,10 @@ def _section_bodies(
         closest_id = audit_result.get("closest_reference_id")
         closest = evidence.get(closest_id, {}) if closest_id else {}
         pair = next((item for item in audit_result.get("pair_scores", []) if item.get("evidence_id") == closest_id), None)
-        differentiated = ", ".join(pair.get("differentiated_feature_ids", [])) if pair else lex["diff_fallback"]
+        differentiated = (
+            ", ".join(described(finalist.get("finalist_id"), pair.get("differentiated_feature_ids", [])))
+            if pair else lex["diff_fallback"]
+        )
         finalist_lines.extend([
             f"### {finalist.get('rank')}. {candidate.get('title', '')}",
             lex["problem_line"].format(problem=candidate.get("technical_problem", ""), tokens=tokens).rstrip(),
@@ -617,8 +626,8 @@ def _section_bodies(
                 evidence_id=pair.get("evidence_id"), version=pair.get("version"),
                 T=pair.get("T"), F=pair.get("F"), C=pair.get("C"), D=pair.get("D"), Q=pair.get("Q"),
                 r_obs=pair.get("r_obs"), r_hi=pair.get("r_hi"),
-                matched=",".join(pair.get("matched_feature_ids", [])) or lex["none"],
-                differentiated=",".join(pair.get("differentiated_feature_ids", [])) or lex["none"],
+                matched=",".join(described(result.get("finalist_id"), pair.get("matched_feature_ids", []))) or lex["none"],
+                differentiated=",".join(described(result.get("finalist_id"), pair.get("differentiated_feature_ids", []))) or lex["none"],
             ))
         audit_lines.append(lex["counter_line"].format(counterargument=result.get("counterargument", "")))
     if decision is None:
@@ -910,11 +919,28 @@ def _report_payload(
     missing = [item for item in cited_ids if item not in evidence]
     if missing or any(CITATION_RE.fullmatch(f"[@{item}]") is None for item in cited_ids):
         raise StateError("report citation does not resolve to current evidence")
+    feature_descriptions: dict[str, dict[str, str]] = {}
+    for entry in content["feature_map_set"].get("maps", []):
+        if not isinstance(entry, Mapping):
+            continue
+        feature_map = entry.get("feature_map")
+        features = feature_map.get("features") if isinstance(feature_map, Mapping) else None
+        if not isinstance(features, Mapping):
+            continue
+        table = {
+            feature_id: feature["description"]
+            for feature_id, feature in features.items()
+            if isinstance(feature, Mapping)
+            and isinstance(feature.get("description"), str) and feature["description"]
+        }
+        if table:
+            feature_descriptions[entry.get("finalist_id")] = table
     bodies = _section_bodies(
         policy=policy, report_input=report_input, profile=content["profile_context"],
         research=content["research_bundle"], candidates=candidates, finalists=finalists,
         corpus=content["corpus_set"], audit=audit, decision=decision, evidence=evidence,
         cited_ids=cited_ids, scorer=content["scorer_config"], language=language,
+        feature_descriptions=feature_descriptions,
     )
     sections = [
         {"body": body, "heading": policy["section_headings"][index - 1], "number": index}
