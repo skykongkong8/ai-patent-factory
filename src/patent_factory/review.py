@@ -58,7 +58,7 @@ def validate_review_input(value: Mapping[str, Any], *, report: Mapping[str, Any]
     drafter = report.get("drafter", {})
     if resolved_reviewer["id"] == drafter.get("id") or resolved_reviewer["pass_id"] == drafter.get("pass_id"):
         raise ValueError("review_input.reviewer: reviewer identity and pass must be independent from drafter")
-    policy = load_report_policy()
+    policy = load_report_policy(report.get("language", "ko"))
     checks = value["checks"]
     if not isinstance(checks, list):
         raise ValueError("review_input.checks: array required")

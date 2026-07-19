@@ -1,0 +1,37 @@
+{
+  "version": "report-policy-v1.0.0",
+  "language": "en",
+  "section_headings": [
+    "Document Purpose, Scope, and Disclaimer",
+    "Inventor Technical Background and Domain Context",
+    "Problem and Opportunity Areas",
+    "Research Scope and Method",
+    "Key Prior-Art Landscape",
+    "Final Candidates",
+    "Candidate Comparison Matrix",
+    "Final KIPRIS Similarity-Risk Audit",
+    "User Decisions at Similarity Checkpoints",
+    "Patent-Attorney Handoff Questions and Follow-Up Investigations",
+    "Source and Evidence Appendix"
+  ],
+  "report_disclaimer": "The output of this tool is invention-organizing support material and is not legal advice. It provides no legal conclusion on patentability, novelty, validity, or non-infringement/FTO; confirm any decision that matters with a qualified patent attorney.",
+  "similarity_disclaimer": "All similarity figures are provisional research-aid indicators within the retrieved corpus only, and are not a legal determination of novelty, inventive step, patentability, or non-infringement/FTO.",
+  "required_review_checks": [
+    "citation_integrity",
+    "decision_gate_coverage",
+    "factual_grounding",
+    "internal_consistency",
+    "legal_language",
+    "schema_completeness",
+    "source_coverage"
+  ],
+  "prohibited_unqualified_phrases": [
+    "특허 가능하다",
+    "신규성이 있다",
+    "진보성이 있다",
+    "비침해이다",
+    "FTO가 확보되었다",
+    "freedom to operate",
+    "patentable"
+  ]
+}

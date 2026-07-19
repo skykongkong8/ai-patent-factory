@@ -163,16 +163,21 @@ shape (full structure: `schemas/feature-map.schema.json`):
 }
 ```
 
-### `report-input-v1.json` → `/draft`
+### `report-input-v2.json` → `/draft`
+
+The report renders in English (`"language": "en"`, the default recommendation) or
+Korean (`"language": "ko"`). The older `report-input-v1` shape (no `language`
+field) is still accepted and means Korean.
 
 ```json
 {
-  "schema_version": "report-input-v1",
+  "schema_version": "report-input-v2",
+  "language": "en",
   "drafter": {"id": "drafter", "pass_id": "draft-pass", "type": "agent"},
   "report_date": "2026-07-14",
   "profile_fields": ["expertise", "project_summary", "technical_domain"],
-  "handoff_questions": ["권리범위 검토가 필요한가?"],
-  "recommended_investigations": ["추가 실시예를 확인한다"],
+  "handoff_questions": ["Can the differentiating features be claimed independently?"],
+  "recommended_investigations": ["Confirm additional embodiments"],
   "sensitive_disclosures": [],
   "revision": null
 }
