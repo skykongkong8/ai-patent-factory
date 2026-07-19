@@ -10,7 +10,9 @@ from . import __version__
 from .audit import run_audit_retrieval, run_audit_scoring
 from .adapters.base import TransportResponse
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
-from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
+from .adapters.manual_web import (
+    ManualWebAdapter, WEB_SOURCE_TAGS, normalize_web_rows, sanitize_manual_records,
+)
 from .config import load_evaluation_config, load_similarity_config
 from .database import (
     connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts,
@@ -204,6 +206,17 @@ def build_parser() -> argparse.ArgumentParser:
     kipris_live.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic tests")
     kipris_live.add_argument("--documents-root", type=Path, default=Path("documents"))
     kipris_live.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    normalize_web = research_commands.add_parser(
+        "normalize-web",
+        help="normalize agent-gathered public web metadata into a manual-import file (offline)",
+    )
+    normalize_web.add_argument("source", type=Path, help="web-rows-v1 JSON under the documents root")
+    normalize_web.add_argument("--out", type=Path, required=True, help="manual-import JSON written under the documents root")
+    normalize_web.add_argument("--allow-host", action="append", required=True)
+    normalize_web.add_argument("--source-type", choices=sorted(WEB_SOURCE_TAGS), default="web")
+    normalize_web.add_argument("--byte-budget", type=int, default=1_000_000)
+    normalize_web.add_argument("--documents-root", type=Path, default=Path("documents"))
+    normalize_web.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
     ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
@@ -481,10 +494,51 @@ def _research_kipris(
     return payload, 0 if payload["status"] == "complete" else 4
 
 
+def _research_normalize_web(
+    args: argparse.Namespace, *, started_at: str, documents_root: Path,
+) -> tuple[dict[str, Any], int]:
+    source = contained_input(args.source, documents_root, "web rows source")
+    payload = _json_object(source, args.byte_budget, "web rows source")
+    if (
+        set(payload) != {"rows", "schema_version"}
+        or payload["schema_version"] != "web-rows-v1"
+        or not isinstance(payload["rows"], list)
+    ):
+        raise CliError("web rows source must be web-rows-v1 with a rows list")
+    allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
+    if not allowed_hosts or any(not host for host in allowed_hosts):
+        raise CliError("normalize-web requires a non-empty host allowlist")
+    secret = environment_secret("KIPRIS_PLUS_API_KEY")
+    assert_canaries_absent(payload, (secret,) if secret else (), boundary="web_rows")
+    records = normalize_web_rows(payload["rows"], allowed_hosts, args.source_type)
+    out_path = contained_output(args.out, documents_root, "manual import output")
+    out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps({"records": records}, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_path.chmod(0o600)
+    return ({
+        "command": "research",
+        "ended_at": utc_now(),
+        "output_path": str(args.out),
+        "record_count": len(records),
+        "records": [{
+            "content_hash": item["content_hash"], "excerpt_hashes": item["excerpt_hashes"],
+            "identifier": item["identifier"],
+        } for item in records],
+        "source_type": args.source_type,
+        "started_at": started_at,
+        "status": "normalized",
+    }, 0)
+
+
 def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     started_at = utc_now()
     documents_root = private_root(args.documents_root, "documents root")
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    if args.research_command == "normalize-web":
+        return _research_normalize_web(args, started_at=started_at, documents_root=documents_root)
     run_root = contained_input(args.run, workspace_root, "research run", directory=True)
     database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
     if args.research_command == "kipris":

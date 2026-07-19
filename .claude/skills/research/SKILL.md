@@ -23,6 +23,29 @@ whole profile to an adapter. Fixture research is the offline acceptance path. Ma
 imports must be user supplied, HTTPS-derived, size bounded, and restricted to explicit
 `--allow-host` values.
 
+## Out-of-band web deep research (Google Patents · Naver · arXiv · Papers with Code · GitHub)
+
+The CLI itself never fetches the open web. The driving agent performs the search
+out-of-band with its own web tools, then hands the results to the core through the
+offline normalizer:
+
+1. Derive Korean AND English keyword combinations from the profile domain and each
+   candidate topic (synonyms, classifications, applicant names, discovered terms).
+   Never put private profile text beyond approved technical keywords into a search
+   query.
+2. Search each source in both languages; collect only public metadata per hit:
+   `url`, `title`, `identifier` (arXiv id, patent number, repo, …), optional
+   `abstract`/`excerpts`/`limitations`/`language`.
+3. Save the rows as a `web-rows-v1` JSON under `documents/`, then run
+   `python3 -m patent_factory research normalize-web ROWS --out documents/normalized.json
+   --allow-host HOST … --source-type arxiv|google_patents|naver|papers_with_code|github|web`
+   — a pure offline transform that computes the span/content hashes and enforces the
+   HTTPS allowlist.
+4. Import with `research manual documents/normalized.json --allow-host HOST …`.
+   The source tag is preserved as evidence `provenance`.
+
+Repeat per source; each import is one bounded operation with its own adapter event.
+
 ## Rules
 
 Treat each stdout JSON object as authoritative command output. Preserve query,
