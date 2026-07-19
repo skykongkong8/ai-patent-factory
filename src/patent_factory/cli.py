@@ -21,6 +21,7 @@ from .database import (
 from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
+from .lint import audit_advisories, shortlist_advisories
 from .models import QueryEnvelope
 from .paths import contained_input, contained_output, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
@@ -704,6 +705,9 @@ def _shortlist(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             shortlist_input=shortlist_input, config=load_evaluation_config(),
         )
     payload = result.as_dict()
+    if payload["status"] != "insufficient_evidence":
+        # Advisory only: homogeneity smells never block; the user decides.
+        payload["advisories"] = shortlist_advisories(shortlist_input.get("finalists", []))
     payload.update({"ended_at": utc_now(), "started_at": started_at})
     return payload, 5 if payload["status"] == "insufficient_evidence" else 0
 
@@ -838,7 +842,23 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 connection, run_root=run_root, run_id=normalize(args.run_id),
                 feature_input=feature_input, config=load_similarity_config(),
             )
+            advisories = []
+            corpus_row = connection.execute(
+                "SELECT ar.content_json FROM artifact_revisions ar JOIN current_artifacts ca "
+                "ON ca.revision_id=ar.revision_id WHERE ca.run_id=? AND ca.kind='corpus_set'",
+                (normalize(args.run_id),),
+            ).fetchone()
+            audit_row = connection.execute(
+                "SELECT ar.content_json FROM artifact_revisions ar JOIN current_artifacts ca "
+                "ON ca.revision_id=ar.revision_id WHERE ca.run_id=? AND ca.kind='audit_batch'",
+                (normalize(args.run_id),),
+            ).fetchone()
+            if corpus_row is not None and audit_row is not None:
+                advisories = audit_advisories(
+                    json.loads(corpus_row["content_json"]), json.loads(audit_row["content_json"]),
+                )
         payload = result.as_dict()
+        payload["advisories"] = advisories
         code = 8 if payload["status"] == "decision_required" else 7 if payload["status"] == "coverage_insufficient" else 0
     payload.update({"ended_at": utc_now(), "started_at": started_at})
     return payload, code
