@@ -317,6 +317,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_REQUESTS_README = """# requests/
+
+Versioned `*-input-v1`/`v2` request files live here. Do not hand-copy hashes:
+generate a pre-bound draft with the scaffold verbs and fill in the TODO(agent)
+prose —
+
+    python3 -m patent_factory scaffold candidate   --run RUN --run-id ID --out workspace/requests/candidate-input-v1.json
+    python3 -m patent_factory scaffold shortlist   --run RUN --run-id ID --out workspace/requests/shortlist-input-v1.json
+    python3 -m patent_factory scaffold audit-query --run RUN --run-id ID --out workspace/requests/audit-query-input-v1.json
+    python3 -m patent_factory scaffold report      --language en --out workspace/requests/report-input-v2.json
+
+Field notes for every template are in workspace/README.md.
+"""
+
+
 def _initialize(documents: Path, workspace: Path) -> dict[str, Any]:
     created = []
     for name, path in (("documents", documents), ("workspace", workspace)):
@@ -324,6 +339,14 @@ def _initialize(documents: Path, workspace: Path) -> dict[str, Any]:
         private_root(path, f"{name} root", create=True)
         if not existed:
             created.append(name)
+        requests_directory = Path.cwd() / path / "requests"
+        if not requests_directory.exists():
+            requests_directory.mkdir(mode=0o700)
+            created.append(f"{name}/requests")
+    readme = Path.cwd() / workspace / "requests" / "README.md"
+    if not readme.exists():
+        readme.write_text(_REQUESTS_README, encoding="utf-8")
+        readme.chmod(0o600)
     return {"command": "init", "created": created, "status": "ready", "version": __version__}
 
 
