@@ -30,7 +30,17 @@ python3 -m patent_factory research fixture SOURCE --run RUN --run-id RUN_ID --qu
 
 # Manual — user-supplied, HTTPS-derived; requires an explicit host
 python3 -m patent_factory research manual SOURCE --run RUN --run-id RUN_ID --query QUERY --allow-host HOST
+
+# Live KIPRIS — credentialed KO/EN keyword batch (check the credential first)
+python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY
+python3 -m patent_factory research kipris --run RUN --run-id RUN_ID --query QUERY \
+  --korean-synonym KO_TERM --english-synonym EN_TERM
 ```
+
+For the live path, run the credential check first and report its status. If the
+CLI returns `status: credential_required` (exit 5), preserve `gate_id` and
+`subject_revision_hash` and stop — resume only after the user decides the gate,
+re-running the same command with `--decision-id`.
 
 2. Report the stdout JSON `status`, `next_state`, and any adapter failure / coverage
    limitation verbatim. A source failure is an adapter event, not evidence.

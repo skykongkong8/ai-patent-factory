@@ -25,8 +25,13 @@ Templates are in `workspace/README.md`.
 
 ```bash
 python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID --query-input AUDIT_QUERY_INPUT --fixture-manifest FIXTURE_MANIFEST
+# …or, with KIPRIS_PLUS_API_KEY configured and the user's approval, live retrieval:
+python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID --query-input AUDIT_QUERY_INPUT --live
 python3 -m patent_factory audit score --run RUN --run-id RUN_ID --feature-input FEATURE_MAP_SET_INPUT
 ```
+
+On `status: credential_required` (exit 5), preserve `gate_id` and stop; resume
+the exact same request with `--decision-id` after the user decides the gate.
 
 2. Report the stdout JSON `status`/`next_state` and coverage verbatim. The scorer is
    `simrisk-v1.0.0`; do not recompute scores, corpus, feature maps, or labels.

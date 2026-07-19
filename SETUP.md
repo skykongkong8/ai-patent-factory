@@ -108,7 +108,24 @@ python3 -m patent_factory research fixture documents/kipris.xml \
 
 python3 -m patent_factory research manual documents/manual-results.json \
   --run workspace/runs/example --run-id example --query 센서 --allow-host example.com
+
+# Live KIPRIS — credentialed multi-keyword batch (Korean/English expansions)
+python3 -m patent_factory research kipris \
+  --run workspace/runs/example --run-id example \
+  --query 센서 --korean-synonym 감지기 --english-synonym sensor
 ```
+
+`research kipris` fans one origin query plus repeatable `--korean-synonym` /
+`--english-synonym` / `--discovered-term` / `--classification` / `--applicant` /
+`--inventor` expansions (bounded by `--max-calls`, default 12) through the live
+KIPRIS Plus adapter in a single research session. It requires
+`KIPRIS_PLUS_API_KEY` in the environment: a missing or rejected key suspends the
+exact batch behind a credential gate (`status: credential_required`, exit 5) —
+resolve it with `gate decide` and resume with the same command plus
+`--decision-id`. A non-auth source failure is recorded as a coverage limitation
+and the batch continues. One-time live verification:
+`python3 scripts/live_kipris_smoke.py --confirm-live` (offline-skips without the
+key; redacted output only).
 
 Research performs only `research_ready → research_running →
 research_complete | research_incomplete`. Results and failures are written to the
@@ -137,6 +154,9 @@ python3 -m patent_factory shortlist --run RUN --run-id RUN_ID \
 python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
   --query-input workspace/requests/audit-query-input-v1.json \
   --fixture-manifest documents/requests/audit-fixture-manifest-v1.json
+# …or live retrieval with the credentialed adapter (no fixture manifest):
+python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
+  --query-input workspace/requests/audit-query-input-v1.json --live
 python3 -m patent_factory audit score    --run RUN --run-id RUN_ID \
   --feature-input workspace/requests/feature-map-set-input-v1.json
 
