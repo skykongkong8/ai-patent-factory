@@ -1,6 +1,6 @@
 # AI Patent Factory
 
-*A local-first, Korean-first workflow for turning your own inventions into a rigorous, evidence-bound invention report — driven from Claude Code slash commands.*
+*A local-first workflow for turning your own inventions into a rigorous, evidence-bound invention report — English by default, Korean optional — driven from Claude Code slash commands.*
 
 Everything runs on your machine. The private Python CLI (`patent_factory`) is the
 single source of truth for state, gates, and exports; Claude Code drives it
@@ -49,8 +49,12 @@ available as an escape hatch.
 ## Prerequisites
 
 - **CPython 3.11+**. No third-party runtime packages.
-- A terminal (the CLI is offline; only an optional KIPRIS lookup uses the network,
-  and only after you approve it).
+- A terminal. The CLI is offline except the explicitly credentialed live-KIPRIS
+  verbs (`research kipris`, `audit retrieve --live`, gated on
+  `KIPRIS_PLUS_API_KEY` and a credential gate). Open-web evidence (Google
+  Patents · Naver · arXiv · Papers with Code · GitHub) is gathered by the
+  driving agent out-of-band and imported through the offline
+  `research normalize-web` → `research manual` path.
 
 ```bash
 python3 -m patent_factory --version
@@ -74,8 +78,9 @@ except the READMEs is git-ignored.
    [`documents/README.md`](documents/README.md).
 2. **`/setup`** — build your inventor profile from one of three input paths
    (a folder, a single document, or an interview). Safe to re-run.
-3. **`/research`** — start a run and gather bounded evidence (offline `fixture`
-   acceptance path, or user-supplied `manual` results).
+3. **`/research`** — start a run and gather bounded evidence: offline `fixture`,
+   agent-gathered web metadata via `normalize-web` + `manual`, or a live
+   credentialed KIPRIS keyword batch (`kipris`, KO/EN expansions).
 4. **`/ideate`** → **`/shortlist`** — propose evidence-bound candidates, then pick
    three defensible finalists.
 5. **`/audit`** — score each finalist's similarity risk against a KIPRIS corpus.
@@ -94,12 +99,15 @@ command comes next. You don't call Python directly for any of this.
 | `/ideate` | Candidates | Validate and persist ≥3 evidence-bound candidate proposals. |
 | `/shortlist` | Finalists | Persist 3 finalists (each scored on 3 independent axes) or explicit insufficient evidence. |
 | `/audit` | Similarity | Retrieve finalist-specific KIPRIS corpora and score `simrisk-v1.0.0` risk. |
-| `/draft` | Report | Render the private Korean 11-section report with citation/decision bindings. |
+| `/draft` | Report | Render the private 11-section report (English default, Korean optional) with citation/decision bindings. |
 | `/review` | Review + release | Independent reviewer pass, deterministic `validate`, and guarded external `share`. |
 
-Cross-cutting CLI verbs the commands use for you: `gate inspect` / `gate decide`
-(handle one exact gate) and `delete-run` (safely remove one run). All are
-documented in [SETUP.md](SETUP.md).
+Cross-cutting CLI verbs the commands use for you: `scaffold
+{candidate|shortlist|audit-query|report}` (emit a hash-bound draft input with
+every binding pre-filled and the judgment fields left as `TODO(agent)`),
+`gate inspect` / `gate decide` (handle one exact gate) and `delete-run` (safely
+remove one run). All are documented in [SETUP.md](SETUP.md). A committed golden
+end-to-end scenario lives in [`examples/justin/`](examples/justin/README.md).
 
 ## Where your files live
 
