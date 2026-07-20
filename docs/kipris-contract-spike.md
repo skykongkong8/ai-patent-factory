@@ -1,6 +1,10 @@
 # KIPRIS Plus contract spike (G003)
 
-Status: confirmed offline implementation contract, 2026-07-13. This document is a
+Status: implementation contract. Sections below are labelled by EVIDENCE: what a
+recorded live response actually shows, versus what vendor documentation claims.
+The original 2026-07-13 revision marked the whole document "confirmed" while it
+rested on hand-authored fixtures; #38, #39 and #41 all shipped underneath that
+word. See tests/fixtures/PROVENANCE.json for the recordings behind each claim. This document is a
 technical integration record, not a patentability or legal assessment.
 
 ## Primary sources
@@ -13,7 +17,7 @@ technical integration record, not a patentability or legal assessment.
 - [Terms of use](https://plus.kipris.or.kr/portal/main/contents.do?menuNo=200031)
 - [Copyright policy](https://plus.kipris.or.kr/portal/main/contents.do?menuNo=200032)
 
-## Confirmed current contract
+## Current contract (observed in recorded live responses)
 
 The implemented current family is HTTPS/XML under
 `https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice`.
@@ -21,13 +25,13 @@ Authentication uses the query parameter `ServiceKey`; the repository reads its
 value only from `KIPRIS_PLUS_API_KEY`, adds it after request fingerprinting, and
 never stores it in envelopes, events, manifests, logs, or exports.
 
-| Capability | Operation | Confirmed request fields | Implemented output |
+| Capability | Operation | Request fields | Implemented output |
 |---|---|---|---|
 | Keyword search | `getWordSearch` | `ServiceKey`, `word`, `year`, `patent`, `utility`, `numOfRows`, `pageNo` | application number, title, filing date, applicant, abstract, IPC/CPC when supplied, response hash, pagination cursor |
 | Bibliography summary | `getBibliographySumryInfoSearch` | `ServiceKey`, `applicationNumber` | the same bounded normalized record contract where the response supplies it |
 
 Responses may return HTTP 200 while reporting an application failure with
-`successYN=N`. Confirmed examples include result code `10` for an invalid
+`successYN=N`. Observed examples include result code `10` for an invalid
 parameter and `30` for an unregistered service key. The adapter therefore checks
 the application status before accepting any item. HTTP 401/403, 429, timeouts,
 network failures, malformed or unsafe XML, and oversized bodies are normalized
@@ -56,7 +60,7 @@ they do not imply permission to redistribute full source datasets.
 
 ## Explicit unknowns and live-smoke boundary
 
-- No current JSON response contract is confirmed; the implementation accepts XML only.
+- No JSON response contract has been observed; the implementation accepts XML only.
 - Exact account-specific quotas, paid-plan behavior, and rate-limit headers are not assumed.
 - Response drift beyond the committed fixtures is not guessed; it becomes a malformed failure.
 - The legacy URL and any service-side changes require a separately authorized live check.

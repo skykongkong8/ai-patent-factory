@@ -169,6 +169,33 @@ class AdapterRecord:
     field_span_hashes: Mapping[str, str] = field(default_factory=dict)
     interpretations: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
+    # Retrieved legal-status metadata (#42). These enter `as_dict()` — and so
+    # the `record_json` -> corpus_set -> audit_batch hash chain — as of the
+    # declared input-schema batch. They must NEVER enter the adapter's
+    # `normalized_record`, which feeds `content_hash`/`evidence_id`:
+    # `register_status` is mutable (등록 -> 소멸), so hashing it would re-mint
+    # evidence identity every time an upstream status changed, breaking dedup,
+    # idempotency and replay.
+    register_status: str | None = None
+    register_date: str | None = None
+    register_number: str | None = None
+    open_date: str | None = None
+    publication_date: str | None = None
+
+    def legal_status_metadata(self) -> dict[str, str]:
+        """Retrieved status fields, as literal source tokens.
+
+        Values are reported exactly as the service emitted them. Interpreting a
+        token (e.g. rendering 소멸 as "expired" or "invalid") would be a legal
+        conclusion, which CLAUDE.md section 6 forbids.
+        """
+
+        fields = {
+            "open_date": self.open_date, "publication_date": self.publication_date,
+            "register_date": self.register_date, "register_number": self.register_number,
+            "register_status": self.register_status,
+        }
+        return {name: value for name, value in fields.items() if normalize(value)}
 
     def validate(self) -> None:
         for name in ("source_type", "source_locator", "original_identifier", "title", "content_hash", "language", "provenance"):
@@ -186,6 +213,7 @@ class AdapterRecord:
             "limitations": list(self.limitations), "original_identifier": self.original_identifier,
             "provenance": self.provenance, "source_locator": self.source_locator,
             "source_type": self.source_type, "title": self.title,
+            **self.legal_status_metadata(),
         })
 
 

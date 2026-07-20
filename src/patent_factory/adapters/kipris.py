@@ -18,7 +18,7 @@ from patent_factory.models import (
 )
 from patent_factory.provenance import digest, normalize
 
-from .base import TransportResponse, bounded_body, normalized_patent_number
+from .base import TransportResponse, bounded_body, canonical_date, normalized_patent_number
 
 KIPRIS_HOST = "plus.kipris.or.kr"
 KIPRIS_BASE_URL = "https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice"
@@ -95,14 +95,7 @@ def _result_nodes(root: ET.Element) -> tuple[ET.Element, ...]:
     items = root.find(".//items")
     if items is None:
         return ()
-    grouped = tuple(items.findall("./item"))
-    if grouped:
-        return grouped
-    # The confirmed KIPRIS family also emits singleton fields directly under
-    # <items>; treat that container as one record without guessing other shapes.
-    if items.find("./applicationNumber") is not None:
-        return (items,)
-    return ()
+    return tuple(items.findall("./item"))
 
 
 class KiprisAdapter:
@@ -221,8 +214,11 @@ class KiprisAdapter:
 
         try:
             # The live service emits pagination in a <count> element that is a
-            # sibling of <body>; recorded fixtures nest it inside <body>. Search
-            # from the document root so both confirmed shapes resolve.
+            # SIBLING of <body> — see tests/fixtures/kipris/word-search-live-v1.xml.
+            # Only hand-authored fixtures ever nested it inside <body>, and that
+            # invented shape is what let #38 ship. Searching from the document
+            # root resolves the real shape; the structural guard in
+            # tests/unit/test_kipris_live_shape.py stops it drifting back.
             total_text = _text(root, "totalCount")
             rows_text = _text(root, "numOfRows")
             page_text = _text(root, "pageNo")
@@ -250,6 +246,9 @@ class KiprisAdapter:
                 # element separated by "|". Splitting is required for correctness:
                 # an unsplit blob never matches a candidate code, so an exact IPC
                 # subgroup hit scores "unrelated" instead of "subgroup".
+                # cpcNumber is documented by KIPRIS but appears in 0 of the
+                # recorded live items; it is read opportunistically, not on
+                # evidence that the service emits it.
                 classifications = tuple(sorted({
                     part for name in ("ipcNumber", "cpcNumber")
                     if (value := _text(item, name))
@@ -259,7 +258,7 @@ class KiprisAdapter:
                 normalized_record = {
                     "abstract": abstract, "applicant": _text(item, "applicantName"),
                     "application_number": number, "classifications": classifications,
-                    "filing_date": _text(item, "applicationDate"), "title": title,
+                    "filing_date": canonical_date(_text(item, "applicationDate")), "title": title,
                 }
                 field_span_hashes = {
                     field: digest({"field": field, "text": value})
@@ -275,6 +274,15 @@ class KiprisAdapter:
                     abstract=abstract, classifications=classifications,
                     excerpt_hashes=excerpt_hashes, field_span_hashes=field_span_hashes,
                     limitations=("Normalized KIPRIS metadata; not a patentability conclusion.",),
+                    # Retrieved and carried, but deliberately absent from
+                    # `normalized_record` above: `registerStatus` is mutable
+                    # (등록 -> 소멸), so hashing it would re-mint `evidence_id`
+                    # every time a reference's status changed upstream.
+                    register_status=_text(item, "registerStatus"),
+                    register_date=canonical_date(_text(item, "registerDate")),
+                    register_number=_text(item, "registerNumber"),
+                    open_date=canonical_date(_text(item, "openDate")),
+                    publication_date=canonical_date(_text(item, "publicationDate")),
                 ))
                 if len(records) >= envelope.result_budget:
                     break

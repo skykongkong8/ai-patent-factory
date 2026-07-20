@@ -1,0 +1,189 @@
+{
+  "schema_version": "fixture-provenance-v1",
+  "why": [
+    "Issue #43: every KIPRIS fixture was hand-authored, so the adapter suite certified the bug it was meant to catch (#38, #39). This manifest makes fixture origin an enforced, reviewable fact instead of a test docstring.",
+    "Origin is not enough on its own. A RECORDED happy-path body satisfies 'one real response per capability' while certifying nothing — #39 was itself a happy-path-shaped bug. So network capabilities must also cover the edge shapes listed in required_shapes, and each shape is proven by REPLAYING the bytes through the adapter, never by trusting the label below."
+  ],
+  "origins": {
+    "recorded": "Byte-for-byte capture of a real service response via scripts/record_fixtures.py, credential-scrubbed with volatile fields pinned. The only origin that can prove a live contract.",
+    "derived": "Produced by mutating recorded bytes to reach a shape the live service would not return on demand (an error envelope, a truncated body). Honest about not being a real observation.",
+    "synthetic": "Authored by hand. Legitimate ONLY where no live service is involved (scoring goldens). Never acceptable as the oracle for a network adapter's success path.",
+    "unverified": "Pre-dates this manifest and its origin was never established. Treat as synthetic; retire or re-record."
+  },
+  "network_adapters": {
+    "kipris": [
+      "word_search",
+      "bibliography_summary"
+    ],
+    "google_patents": [
+      "word_search"
+    ]
+  },
+  "offline_adapters": {
+    "manual_web": "Makes no network call — normalizes user-supplied rows. Can never have a recorded response, so it is excluded from capability coverage by construction rather than by omission."
+  },
+  "required_shapes": {
+    "kipris/word_search": [
+      "happy_path",
+      "empty",
+      "multi_ipc",
+      "status_variant"
+    ],
+    "kipris/bibliography_summary": [
+      "happy_path",
+      "alternate_date_format"
+    ],
+    "google_patents/word_search": [
+      "happy_path",
+      "paginated",
+      "error"
+    ]
+  },
+  "fixtures": [
+    {
+      "path": "kipris/word-search-live-v1.xml",
+      "sha256": "5edfc8e64e623a290bb21a62b2b640fbf26cdeff2bfac7aa7d62c16d58108f1b",
+      "origin": "recorded",
+      "adapter": "kipris",
+      "capability": "word_search",
+      "shapes": [
+        "happy_path",
+        "multi_ipc",
+        "status_variant"
+      ],
+      "recorded_at": "2026-07-19",
+      "note": "The response that exposed #38: <count> is a SIBLING of <body>, never nested inside it. Carries pipe-delimited ipcNumber (#39) and two distinct registerStatus values (소멸, 등록). Both records are load-bearing for status_variant."
+    },
+    {
+      "path": "kipris/word-search-live-empty-v1.xml",
+      "sha256": "3446101ce074c30b9c99ded2268e581b3706b4f231dc21d9c37fc9c0b5e2219d",
+      "origin": "recorded",
+      "adapter": "kipris",
+      "capability": "word_search",
+      "shapes": [
+        "empty"
+      ],
+      "recorded_at": "2026-07-20",
+      "note": "Zero-hit search. Proves <items/> self-closing with totalCount 0 parses as an empty success, not as a failure."
+    },
+    {
+      "path": "kipris/bibliography-summary-live-v1.xml",
+      "sha256": "905b2cbc9a275558f77557fa6c00dfe069feeefe8a4ade89a49b71f13b7e3a76",
+      "origin": "recorded",
+      "adapter": "kipris",
+      "capability": "bibliography_summary",
+      "shapes": [
+        "happy_path",
+        "alternate_date_format"
+      ],
+      "recorded_at": "2026-07-20",
+      "note": "First real response this capability has ever produced — it had zero production callers until --capability was added. Confirms #41 with evidence: the SAME patent as word-search-live-v1.xml (1020160062884) is returned as 10-2016-0062884 with applicationDate 2016.05.23, versus 20160523 from word_search. Same source_locator, different content_hash."
+    },
+    {
+      "path": "google_patents/organic-results-live-v1.json",
+      "sha256": "cd5d38c632fd3e090ebb7b89097d9a04000d30309ec3d87119fc60f354fbe9e4",
+      "origin": "recorded",
+      "adapter": "google_patents",
+      "capability": "word_search",
+      "shapes": [
+        "happy_path"
+      ],
+      "recorded_at": "2026-07-20",
+      "note": "Carries patent_link, serpapi_link and serpapi_pagination — all three read by the adapter and all three absent from the invented organic-results-v1.json. filing_date arrives as 2020-11-20, a third date format alongside KIPRIS's two."
+    },
+    {
+      "path": "google_patents/organic-results-live-page2-v1.json",
+      "sha256": "8ae53cae686b83cf0d02549cca6540c8799499d2ee802154f7ae9661bfea0302",
+      "origin": "recorded",
+      "adapter": "google_patents",
+      "capability": "word_search",
+      "shapes": [
+        "paginated"
+      ],
+      "recorded_at": "2026-07-20",
+      "note": "Page 2, with serpapi_pagination.previous and .next. The has_more/next_cursor branch had zero positive coverage before this."
+    },
+    {
+      "path": "google_patents/error-rate-limit.json",
+      "sha256": "96c3149cf6f69b55f8136d98300ee535069fe895ffae18bac0b79bf7623fd5cd",
+      "origin": "unverified",
+      "adapter": "google_patents",
+      "capability": "word_search",
+      "shapes": [
+        "error"
+      ],
+      "note": "Hand-authored error envelope. Satisfies the error shape only because provoking a real 429 costs quota and is not reliably reproducible; re-record opportunistically if one is ever observed."
+    },
+    {
+      "path": "google_patents/error-throttle.json",
+      "sha256": "81352057b03df65c887eb21514dd680065aeace9acc4f6e6f42a55a6ab24ef24",
+      "origin": "unverified",
+      "adapter": "google_patents",
+      "capability": "word_search",
+      "shapes": [],
+      "note": "#43: this file and the marker list it validates were written in the same commit from the same guess, so it cannot corroborate the parser."
+    },
+    {
+      "path": "google_patents/organic-results-v1.json",
+      "sha256": "581d7adb76bbae522b7826c7de6e162f2bec2884d50d2e6ef15a7fc13c18fd41",
+      "origin": "unverified",
+      "adapter": "google_patents",
+      "capability": "word_search",
+      "shapes": [],
+      "note": "Invented: born in 455eb1c in the same diff as the adapter, before any live call existed. Omits patent_link, serpapi_link and serpapi_pagination. Superseded as an oracle by organic-results-live-v1.json; retained only while call sites are migrated."
+    },
+    {
+      "path": "kipris/word-search-v1.xml",
+      "sha256": "c09e239befffa36a341c891d4746a3534376a7657a93fad827b9fa4c5e5d326f",
+      "origin": "derived",
+      "adapter": "kipris",
+      "capability": "word_search",
+      "shapes": [],
+      "note": "Minimal single-record fixture for adapter unit tests (pagination, redirect guard, canary scrub). REBUILT into the real sibling-<count> shape — it no longer certifies the pre-#38 nested-<body> shape that let #38 ship. Synthetic content in the real structure, so 'derived'. Not a coverage oracle: word-search-live-v1.xml is the recorded happy_path."
+    },
+    {
+      "path": "serpapi/account-ok.json",
+      "sha256": "524848af1d3076cedce1537cc4b31a3fe5ab7af1b1450ca9363f6900b44466b4",
+      "origin": "unverified",
+      "adapter": null,
+      "capability": null,
+      "shapes": [],
+      "note": "Quota preflight body, not a search response. #44 verified the live account shape matches, but committed nothing."
+    },
+    {
+      "path": "serpapi/account-exhausted.json",
+      "sha256": "27eb3493db6ba172d76c42631020d332de974d67f09caad79cb887ae1cddf712",
+      "origin": "unverified",
+      "adapter": null,
+      "capability": null,
+      "shapes": [],
+      "note": "Exhausted-quota preflight body. Deliberately not reproduced live: exhausting the plan to record it would cost the whole monthly allowance."
+    },
+    {
+      "path": "similarity/goldens/simrisk-v1.0.0.json",
+      "sha256": "b4de3316479e3a77e179d59fca6e1d46f52f11e079cce7748ae9cb65baf41316",
+      "origin": "synthetic",
+      "adapter": null,
+      "capability": null,
+      "shapes": [],
+      "note": "Scoring golden. Synthetic BY DESIGN — it pins deterministic arithmetic, involves no service, and there is nothing to record."
+    },
+    {
+      "path": "similarity/goldens/README.md",
+      "sha256": "51ecbfbdd8dad10ed2c6e4cb83cf64d6c2582cd081903e4e4fe384d541ad3032",
+      "origin": "synthetic",
+      "adapter": null,
+      "capability": null,
+      "shapes": [],
+      "note": "Documentation for the scoring golden."
+    }
+  ],
+  "xfail_allowlist": [
+    {
+      "key": "google_patents/word_search:error",
+      "reason": "The error shape is covered by a hand-authored envelope (error-rate-limit.json), not a recorded 429. Provoking a real rate limit costs quota and is not reliably reproducible.",
+      "added": "2026-07-20",
+      "review_by": "2026-10-20"
+    }
+  ]
+}

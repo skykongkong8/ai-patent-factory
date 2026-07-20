@@ -25,7 +25,7 @@ it in envelopes, events, manifests, logs, or exports. The value is also removed 
 error strings and asserted absent from every stored artifact via the shared
 `credential_canaries()` leak check.
 
-| Capability | Operation | Confirmed request fields | Implemented output |
+| Capability | Operation | Request fields | Implemented output |
 |---|---|---|---|
 | Keyword search | `engine=google_patents` | `api_key`, `q`, `num` (10–100), `page`, `output=json`, optional `country`/`language`/`status`/`type`/`before`/`after`/`sort` | publication number, title, filing/priority date, assignee, snippet abstract, canonical Google Patents URL, response hash, pagination cursor |
 

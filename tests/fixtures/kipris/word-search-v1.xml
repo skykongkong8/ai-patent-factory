@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <response>
-  <header><successYN>Y</successYN><resultCode>00</resultCode></header>
+  <header><successYN>Y</successYN><resultCode>00</resultCode><resultMsg>NORMAL SERVICE.</resultMsg></header>
   <body>
     <items>
       <item>
@@ -10,8 +10,9 @@
         <applicationDate>20240102</applicationDate>
         <applicantName>공개 출원인</applicantName>
         <astrtCont>공개 초록 예시</astrtCont>
+        <registerStatus>공개</registerStatus>
       </item>
     </items>
-    <numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>2</totalCount>
   </body>
+  <count><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>2</totalCount></count>
 </response>
