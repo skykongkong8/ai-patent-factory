@@ -24,6 +24,33 @@ technical-feasibility, and utility-significance axes with score, rationale, conf
 supporting and contrary evidence, gaps, and coverage limitations. If three defensible
 finalists are unavailable, preserve `insufficient_evidence` and stop.
 
+## `synthesis_trace` — the creative delta
+
+Every candidate carries a required `synthesis_trace` object. It is the record of what
+you actually contributed on top of the retrieved prior art, and it is the only place
+that discipline is captured — there is no separate "novelty delta" field, and you must
+not invent one.
+
+- `method` — exactly one of `modify`, `combine`, `adapt`, `constrain`, `transfer`.
+  Anything else is rejected.
+- `evidence_ids` — one or more evidence IDs, each of which must also appear in the
+  candidate's own `evidence_references`. The trace is hash-bound to real retrieved
+  documents; it cannot cite something the candidate did not trace.
+- `narrative` — prose naming which researched mechanisms were combined/adapted and
+  what the delta is. Aim for roughly a **10–30% creative delta**: enough that the
+  candidate is not a restatement of a retrieved document, little enough that it stays
+  anchored to the evidence.
+
+The 10–30% figure is an **ideation heuristic for how much to invent, not a measurement
+and not a novelty claim**. Never write it, or any derived percentage, into a report as
+if it were a measured property of the invention. Describe concrete differentiating
+features instead.
+
+Note the ordering constraint: `synthesis_trace.evidence_ids` is restricted to
+research-phase evidence the candidate already references. The audit's *closest* prior
+art is discovered later, during `/audit`, so a trace authored at `/ideate` time cannot
+be required to cite it. The report renders that relationship descriptively instead.
+
 Never directly edit candidate/finalist/report exports or SQLite. Stop on domain pivot,
 evidence, coverage, excessive-risk, disclosure, revision, and other gates. This skill may
 recommend but never make the user's pivot or excessive-risk decision. Do not load private

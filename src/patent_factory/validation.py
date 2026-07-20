@@ -14,6 +14,7 @@ from .models import ArtifactRevision, RunState
 from .provenance import digest, normalize
 from .report import (
     CITATION_RE,
+    HEDGED_LABELS,
     _current_artifact,
     _evidence_map,
     _excessive_decision,
@@ -81,6 +82,8 @@ def _citation_check(
     ids = [item["evidence_id"] for item in citations]
     if ids != report["appendix_ids"] or set(CITATION_RE.findall(report["markdown"])) != set(ids):
         raise ValueError("validation.citations: token and appendix sets differ")
+    # Set equality above is blind to a token sitting on the wrong bullet.
+    _hedged_citation_check(report)
     unknown = "미상" if report.get("language", "ko") == "ko" else "unknown"
     for item in citations:
         current = evidence.get(item["evidence_id"])
@@ -96,6 +99,21 @@ def _citation_check(
             )
         ):
             raise ValueError("validation.citations: evidence hash is missing or stale")
+
+
+def _hedged_citation_check(report: Mapping[str, Any]) -> None:
+    """Reject any rendered line that hedges and cites at the same time.
+
+    The token-set equality in _citation_check compares the whole document
+    against the appendix, so it cannot see a citation sitting on the WRONG
+    bullet. A line labelled [creative suggestion] / [hypothesis] / [candidate
+    hypothesis] / [profile-based inference] (and the Korean equivalents)
+    asserts no evidentiary support, so a prior-art token on it is misleading.
+    """
+
+    for line in str(report.get("markdown", "")).splitlines():
+        if any(label in line for label in HEDGED_LABELS) and CITATION_RE.search(line):
+            raise ValueError(f"validation.citations: hedged line carries a prior-art citation: {line[:120]}")
 
 
 def _identifier_check(report: Mapping[str, Any]) -> None:

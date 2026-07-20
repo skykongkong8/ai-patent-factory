@@ -113,10 +113,10 @@ def candidate(title, evidence, span, *, domain="센서"):
     user = Claim(EpistemicLabel.USER_STATEMENT, "interview-problem").as_dict()
     return {
         "claims": [
-            {"field": "technical_problem", "claim": user},
-            {"field": "mechanism", "claim": creative},
-            {"field": "expected_effects", "claim": hypothesis},
-            {"field": "synthesis_trace", "claim": creative},
+            {"field": "technical_problem", "claim": user, "evidence_references": [evidence_ref(evidence, span)]},
+            {"field": "mechanism", "claim": creative, "evidence_references": []},
+            {"field": "expected_effects", "claim": hypothesis, "evidence_references": []},
+            {"field": "synthesis_trace", "claim": creative, "evidence_references": []},
         ],
         "components": ["센서", "보정기"],
         "domain": domain,

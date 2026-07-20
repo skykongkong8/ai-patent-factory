@@ -23,7 +23,7 @@ from patent_factory.audit import feature_map_id
 from patent_factory.database import connect_database
 from patent_factory.provenance import digest
 from tests.integration.test_g005_audit import kipris_xml
-from tests.integration.test_g009_scaffolds import filled
+from tests.integration.test_g009_scaffolds import filled, filled_shortlist
 from tests.unit.test_g005_similarity import feature_map
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,9 +70,10 @@ class JustinFullJourneyTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
-    def fill(self, relative: Path) -> dict:
+    def fill(self, relative: Path, *, shortlist: bool = False) -> dict:
         path = ROOT / relative
-        value = filled(json.loads(path.read_text(encoding="utf-8")))
+        draft = json.loads(path.read_text(encoding="utf-8"))
+        value = filled_shortlist(draft) if shortlist else filled(draft)
         path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         return value
 
@@ -151,7 +152,7 @@ class JustinFullJourneyTests(unittest.TestCase):
             "scaffold", "shortlist", "--run", run_rel, "--run-id", "justin",
             "--out", shortlist_path, "--workspace-root", ws_rel,
         )
-        self.fill(shortlist_path)
+        self.fill(shortlist_path, shortlist=True)
         payload = self.step(
             "shortlist", "--run", run_rel, "--run-id", "justin",
             "--input", shortlist_path, "--workspace-root", ws_rel,

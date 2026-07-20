@@ -88,9 +88,20 @@ class G007Fixture(unittest.TestCase):
         }, schema_version="research-bundle-v1")
         candidates = []
         for index, evidence in enumerate(self.evidence, start=1):
+            reference = {"content_hash": evidence["content_hash"], "evidence_id": evidence["evidence_id"], "limitation": None, "span_hash": json.loads(evidence["record_json"])["excerpt_hashes"][0]}
             candidates.append({
-                "candidate_id": f"ca_{index:020x}", "components": [f"구성요소 {index}"], "domain": "센서 시스템",
-                "evidence_references": [{"content_hash": evidence["content_hash"], "evidence_id": evidence["evidence_id"], "limitation": None, "span_hash": json.loads(evidence["record_json"])["excerpt_hashes"][0]}],
+                "candidate_id": f"ca_{index:020x}",
+                # technical_problem carries a per-field citation; mechanism
+                # deliberately carries none, so the report exercises both the
+                # bound and the empty per-field binding.
+                "claims": [
+                    {"claim": {"label": "user_statement", "source_id": "interview-problem"}, "evidence_references": [dict(reference)], "field": "technical_problem"},
+                    {"claim": {"label": "creative_suggestion"}, "evidence_references": [], "field": "mechanism"},
+                    {"claim": {"label": "hypothesis"}, "evidence_references": [], "field": "expected_effects"},
+                    {"claim": {"label": "creative_suggestion"}, "evidence_references": [], "field": "synthesis_trace"},
+                ],
+                "components": [f"구성요소 {index}"], "domain": "센서 시스템",
+                "evidence_references": [dict(reference)],
                 "expected_effects": [f"오차 감소 {index}"], "implementation_example": f"시험 장치 {index}",
                 "interactions": [f"상호작용 {index}"], "mechanism": f"보정 메커니즘 {index}",
                 "measurable_validation": f"오차율 측정 {index}", "required_inputs": [f"센서 입력 {index}"],
@@ -431,13 +442,21 @@ class G007ReportTests(G007Fixture):
         validate_report_artifact(extra)
         mutations["extra_claim"] = extra
 
-        altered_score = json.loads(json.dumps(report))
-        altered_score["sections"][5]["body"] = altered_score["sections"][5]["body"].replace(
-            "differentiation: 79점", "differentiation: 99점", 1,
+        # Axis scores no longer render anywhere (US-019 dropped the numeric axis
+        # matrix and removed the score from `axis_line`), so the altered claim
+        # targets the axis rationale instead — still a substantive axis assertion
+        # the canonical reconstruction must reject. The assertIn keeps the
+        # mutation from silently becoming a no-op if the renderer changes again:
+        # a vacuous mutation would make this subtest certify nothing.
+        altered_axis = json.loads(json.dumps(report))
+        original_rationale = "근거 differentiation 근거 설명 1"
+        self.assertIn(original_rationale, altered_axis["sections"][5]["body"])
+        altered_axis["sections"][5]["body"] = altered_axis["sections"][5]["body"].replace(
+            original_rationale, "근거 differentiation 근거 설명 9", 1,
         )
-        altered_score["markdown"] = render_report_markdown(altered_score["sections"])
-        validate_report_artifact(altered_score)
-        mutations["altered_score"] = altered_score
+        altered_axis["markdown"] = render_report_markdown(altered_axis["sections"])
+        validate_report_artifact(altered_axis)
+        mutations["altered_axis_claim"] = altered_axis
 
         closest = json.loads(json.dumps(report))
         closest["sections"][5]["body"] = closest["sections"][5]["body"].replace(

@@ -62,6 +62,11 @@ class EvaluationAxis:
         if axis != expected_axis:
             raise ValueError(f"{path}.axis: expected {expected_axis}")
         score = item["score"]
+        if isinstance(score, str) and score.startswith("TODO(agent):"):
+            raise ValueError(
+                f"{path}.score: unfilled scaffold placeholder — supply an integer 0-100 "
+                "for this axis before publishing the shortlist"
+            )
         if isinstance(score, bool) or not isinstance(score, int) or not 0 <= score <= 100:
             raise ValueError(f"{path}.score: integer between 0 and 100 required")
         rubric = _text(item["rubric_version"], f"{path}.rubric_version")

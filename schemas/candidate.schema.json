@@ -14,7 +14,7 @@
   ],
   "properties": {
     "candidate_id": {"type": "string", "pattern": "^ca_[0-9a-f]{20}$"},
-    "claims": {"type": "array", "minItems": 4, "items": {"type": "object"}},
+    "claims": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/candidateClaim"}},
     "components": {"$ref": "#/$defs/nonEmptyStrings"},
     "domain": {"$ref": "#/$defs/nonEmptyString"},
     "evaluation_config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -55,6 +55,18 @@
     "unresolved_questions": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}}
   },
   "$defs": {
+    "candidateClaim": {
+      "description": "One candidate field, its epistemic label, and the evidence bound to that field alone. evidence_references is required but may be empty; every entry must also appear in the candidate-level evidence_references.",
+      "type": "object", "additionalProperties": false,
+      "required": ["claim", "evidence_references", "field"],
+      "properties": {
+        "claim": {"type": "object"},
+        "evidence_references": {
+          "type": "array", "minItems": 0, "items": {"$ref": "#/$defs/evidenceReference"}
+        },
+        "field": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
     "evidenceReference": {
       "type": "object", "additionalProperties": false,
       "required": ["content_hash", "evidence_id", "limitation", "span_hash"],

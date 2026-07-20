@@ -153,17 +153,57 @@ class SynthesisTrace:
 
 @dataclass(frozen=True)
 class CandidateClaim:
+    """One candidate field, its epistemic label, and the evidence backing it.
+
+    Per-field citations EXTEND this structure instead of living in a new
+    sibling ``field -> evidence_references`` map. CandidateClaim is already the
+    field-keyed per-field structure: it carries ``field`` plus the ``Claim``
+    that labels it. A parallel map would duplicate the same key space and could
+    drift out of sync with the labels — a field could end up asserting
+    creative_suggestion here while carrying prior-art citations there, which is
+    exactly the citation-hygiene defect this field exists to close.
+
+    ``evidence_references`` is REQUIRED but may be empty: a field with no
+    evidentiary support states that explicitly rather than by omission, and
+    _exact_fields then rejects any pre-change candidate input loudly instead of
+    silently defaulting it to the candidate-level blob. Every reference must
+    also appear in the candidate-level ``evidence_references``, so the report's
+    _cited_ids and appendix stay complete.
+    """
+
     field: str
     claim: Claim
+    evidence_references: tuple[EvidenceReference, ...] = ()
 
     @classmethod
-    def from_dict(cls, value: Any, path: str) -> "CandidateClaim":
+    def from_dict(
+        cls, value: Any, path: str, evidence: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> "CandidateClaim":
         item = _object(value, path)
-        _exact_fields(item, {"claim", "field"}, path)
-        return cls(_text(item["field"], f"{path}.field"), claim_from_dict(dict(_object(item["claim"], f"{path}.claim")), f"{path}.claim"))
+        _exact_fields(item, {"claim", "evidence_references", "field"}, path)
+        raw_references = item["evidence_references"]
+        if not isinstance(raw_references, list):
+            raise ValueError(f"{path}.evidence_references: array required")
+        references = tuple(
+            EvidenceReference.from_dict(
+                reference, f"{path}.evidence_references[{index}]", evidence or {},
+            )
+            for index, reference in enumerate(raw_references)
+        )
+        if len({reference.evidence_id for reference in references}) != len(references):
+            raise ValueError(f"{path}.evidence_references: duplicate evidence revisions are not allowed")
+        return cls(
+            _text(item["field"], f"{path}.field"),
+            claim_from_dict(dict(_object(item["claim"], f"{path}.claim")), f"{path}.claim"),
+            references,
+        )
 
     def as_dict(self) -> dict[str, Any]:
-        return {"claim": self.claim.as_dict(), "field": self.field}
+        return {
+            "claim": self.claim.as_dict(),
+            "evidence_references": [reference.as_dict() for reference in self.evidence_references],
+            "field": self.field,
+        }
 
 
 @dataclass(frozen=True)
@@ -242,9 +282,18 @@ class Candidate:
             raise ValueError(f"{path}.evidence_references: duplicate evidence revisions are not allowed")
         available = {ref.evidence_id for ref in evidence_refs}
         claims = tuple(
-            CandidateClaim.from_dict(entry, f"{path}.claims[{index}]")
+            CandidateClaim.from_dict(entry, f"{path}.claims[{index}]", evidence)
             for index, entry in enumerate(item["claims"])
         ) if isinstance(item["claims"], list) else ()
+        for index, entry in enumerate(claims):
+            unbound = sorted(
+                reference.evidence_id for reference in entry.evidence_references
+                if reference.evidence_id not in available
+            )
+            if unbound:
+                raise ValueError(
+                    f"{path}.claims[{index}].evidence_references: not referenced by the candidate: {', '.join(unbound)}"
+                )
         required_claim_fields = {"technical_problem", "mechanism", "expected_effects", "synthesis_trace"}
         if not required_claim_fields.issubset({entry.field for entry in claims}):
             raise ValueError(f"{path}.claims: required candidate fields must carry epistemic labels")
