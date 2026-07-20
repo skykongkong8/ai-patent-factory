@@ -158,22 +158,23 @@ def canonical_feature_map(value: Mapping[str, Any]) -> dict[str, Any]:
     features: dict[str, Any] = {}
     if isinstance(raw_features, list):
         for feature in raw_features:
-            if not isinstance(feature, Mapping) or set(feature) != {
+            if not isinstance(feature, Mapping) or set(feature) - {"description"} != {
                 "candidate_span_hashes", "category", "essential", "feature_id", "weight",
             }:
                 raise ValueError("feature_map.features: exact fields required")
             feature_id = normalize(feature["feature_id"])
             if not isinstance(feature_id, str) or not feature_id or feature_id in features:
                 raise ValueError("feature_map.features: duplicate or empty feature identity")
-            features[feature_id] = {name: feature[name] for name in (
-                "candidate_span_hashes", "category", "essential", "weight",
-            )}
+            names = ("candidate_span_hashes", "category", "essential", "weight") + (
+                ("description",) if "description" in feature else ()
+            )
+            features[feature_id] = {name: feature[name] for name in names}
     elif isinstance(raw_features, Mapping):
         for raw_id, feature in raw_features.items():
             feature_id = normalize(raw_id)
             if not isinstance(feature_id, str) or not feature_id or feature_id in features or not isinstance(feature, Mapping):
                 raise ValueError("feature_map.features: duplicate or empty feature identity")
-            if set(feature) != {"candidate_span_hashes", "category", "essential", "weight"}:
+            if set(feature) - {"description"} != {"candidate_span_hashes", "category", "essential", "weight"}:
                 raise ValueError("feature_map.features: exact fields required")
             features[feature_id] = dict(feature)
     else:
@@ -234,10 +235,14 @@ def validate_feature_map(value: Mapping[str, Any], config: SimilarityConfig) -> 
         raise ValueError("feature_map.review: reviewer identity and timestamp required")
     totals = {name: Fraction(0) for name in config.feature_weights}
     for feature_id, feature in value["features"].items():
-        if not normalize(feature_id) or not isinstance(feature, Mapping) or set(feature) != {
+        if not normalize(feature_id) or not isinstance(feature, Mapping) or set(feature) - {"description"} != {
             "candidate_span_hashes", "category", "essential", "weight",
         }:
             raise ValueError("feature_map.features: exact fields required")
+        if "description" in feature and (
+            not isinstance(normalize(feature["description"]), str) or not normalize(feature["description"])
+        ):
+            raise ValueError("feature_map.features: description must be a non-empty string when present")
         category = feature["category"]
         if category not in totals or not isinstance(feature["essential"], bool):
             raise ValueError("feature_map.features: invalid identity or category")

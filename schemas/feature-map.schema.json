@@ -63,6 +63,7 @@
         "category": {
           "enum": ["problem", "inputs", "mechanism", "transformations", "outputs", "technical_effects"]
         },
+        "description": {"type": "string", "minLength": 1},
         "essential": {"type": "boolean"},
         "weight": {
           "type": "string",

@@ -20,23 +20,53 @@ from .state import StateError, StateStore, workspace_export_directories
 
 REPORT_VERSION = "report-v1"
 REPORT_INPUT_VERSION = "report-input-v1"
+REPORT_INPUT_VERSION_V2 = "report-input-v2"
+REPORT_LANGUAGES = ("en", "ko")
+DEFAULT_REPORT_LANGUAGE = "en"
 CITATION_RE = re.compile(r"\[@(ev_[0-9a-f]{16})\]")
 POLICY_PATH = Path(__file__).resolve().parents[2] / "config" / "report-v1.0.0.json"
+POLICY_PATHS = {
+    "en": Path(__file__).resolve().parents[2] / "config" / "report-en-v1.0.0.json",
+    "ko": POLICY_PATH,
+}
 TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "templates" / "report-ko.md"
+TEMPLATE_PATHS = {
+    "en": Path(__file__).resolve().parents[2] / "templates" / "report-en.md",
+    "ko": TEMPLATE_PATH,
+}
 SECTION_HEADINGS = [
     "문서 목적·범위 및 면책", "사용자·발명자 기술 배경 및 도메인 맥락", "문제 및 기회 영역",
     "조사 범위 및 방법", "핵심 선행기술 환경", "최종 후보", "후보 비교 매트릭스",
     "최종 KIPRIS 유사도 위험 감사", "유사도 체크포인트 사용자 결정",
     "변리사 인계 질문 및 후속 조사", "출처·근거 부록",
 ]
+SECTION_HEADINGS_EN = [
+    "Document Purpose, Scope, and Disclaimer", "Inventor Technical Background and Domain Context",
+    "Problem and Opportunity Areas", "Research Scope and Method", "Key Prior-Art Landscape",
+    "Final Candidates", "Candidate Comparison Matrix", "Final KIPRIS Similarity-Risk Audit",
+    "User Decisions at Similarity Checkpoints",
+    "Patent-Attorney Handoff Questions and Follow-Up Investigations", "Source and Evidence Appendix",
+]
+SECTION_HEADINGS_BY_LANGUAGE = {"en": SECTION_HEADINGS_EN, "ko": SECTION_HEADINGS}
 REPORT_DISCLAIMER = (
     "이 도구의 결과는 발명 정리 보조 자료이며 법률 자문이 아닙니다. 특허성, 신규성, 유효성 또는 "
     "비침해/FTO에 관한 법적 결론을 제공하지 않으며, 필요한 판단은 자격 있는 변리사·변호사와 확인해야 합니다."
+)
+REPORT_DISCLAIMER_EN = (
+    "The output of this tool is invention-organizing support material and is not legal advice. "
+    "It provides no legal conclusion on patentability, novelty, validity, or non-infringement/FTO; "
+    "confirm any decision that matters with a qualified patent attorney."
 )
 SIMILARITY_DISCLAIMER = (
     "모든 유사도 수치는 검색된 코퍼스 범위 내의 잠정적 연구 보조 지표이며, "
     "법적 신규성·진보성·특허성·비침해/FTO 판단이 아닙니다."
 )
+SIMILARITY_DISCLAIMER_EN = (
+    "All similarity figures are provisional research-aid indicators within the retrieved corpus only, "
+    "and are not a legal determination of novelty, inventive step, patentability, or non-infringement/FTO."
+)
+REPORT_DISCLAIMERS = {"en": REPORT_DISCLAIMER_EN, "ko": REPORT_DISCLAIMER}
+SIMILARITY_DISCLAIMERS = {"en": SIMILARITY_DISCLAIMER_EN, "ko": SIMILARITY_DISCLAIMER}
 REQUIRED_REVIEW_CHECKS = [
     "citation_integrity", "decision_gate_coverage", "factual_grounding", "internal_consistency",
     "legal_language", "schema_completeness", "source_coverage",
@@ -45,6 +75,138 @@ PROHIBITED_UNQUALIFIED_PHRASES = [
     "특허 가능하다", "신규성이 있다", "진보성이 있다", "비침해이다", "FTO가 확보되었다",
     "freedom to operate", "patentable",
 ]
+REDACTION_REPLACEMENTS = {"en": "[REDACTED: sensitive information]", "ko": "[삭제됨: 민감 정보]"}
+# Renderer lexicon: every human-facing literal in _section_bodies, per language.
+# The ko values are byte-exact transcriptions of the original renderer strings —
+# the existing Korean golden/reconstruction tests pin them.
+LEXICON: dict[str, dict[str, str]] = {
+    "ko": {
+        "adapters_line": "- 데이터베이스·사이트/어댑터: {adapters}",
+        "aggregate_weights_line": "- 종합 가중치: {weights}",
+        "appendix_line": (
+            "- [@{evidence_id}] {title} — {identifier}{url} — 출처유형 {source_type}"
+            " — 관찰일 {observed} — 콘텐츠해시 {content_hash} — 한계 {limitations}"
+        ),
+        "audit_failures_line": "- 최종 감사 실패 기록: {count}건",
+        "audit_result_line": (
+            "- {finalist_id}: 관측 위험 {r_obs} / 상한 {r_hi} / 커버리지 {coverage} / 분류 {outcome} / "
+            "근접 문헌 {closest_identifier} {closest_title} / 상한 문헌 {upper_identifier} {upper_title}"
+        ),
+        "axes_heading": "- 평가 축:",
+        "axis_line": (
+            "  - {axis}: {score}점 / 신뢰도 {confidence} / 근거 {rationale} / "
+            "커버리지 {coverage} / 한계 {limitations} / 공백 {gaps} {tokens}"
+        ),
+        "closest_identifier_fallback": "식별자 없음",
+        "closest_line": "- 가장 가까운 선행기술과의 관계: {title} ({identifier})",
+        "closest_title_fallback": "확인된 근접 문헌 없음",
+        "components_line": "- 핵심 구성요소와 상호작용 [후보 가설]: {components}; {interactions} {tokens}",
+        "corpus_cap_line": "- 코퍼스 상한: 후보별 {limit}건",
+        "counter_line": "  - 반론·한계: {counterargument}",
+        "diff_fallback": "근거 범위에서 확인 필요",
+        "differentiated_line": "- 차별화 특징: {differentiated}",
+        "effects_line": "- 기대 기술 효과 [창의적 제안]: {effects} {tokens}",
+        "evidence_count_line": "- 증거 기록 수: {count}",
+        "feature_weights_line": "- 특징 가중치: {weights}",
+        "fit_line": "- 사용자·도메인 적합성 [프로필 기반 추론]: {domain} {tokens}",
+        "followup_heading": "### 권고 후속 조사",
+        "handoff_heading": "### 변리사 인계 질문",
+        "identifier_fallback": "식별자 미상",
+        "implementation_line": "- 구현·검증 예 [창의적 제안]: {example}; {validation} {tokens}",
+        "landscape_line": "- {title} ({identifier}) [@{evidence_id}]",
+        "limitations_line": "- 알려진 한계: {limitations}",
+        "matrix_header": "| 순위 | 후보 | 차별성 | 기술 실현 가능성 | 효용·중요성 |",
+        "mechanism_line": "- 제안 메커니즘: {mechanism} {tokens}",
+        "no_decision_body": "해당 없음: 현재 감사에서 과도 유사도 사용자 체크포인트가 발생하지 않았습니다.",
+        "no_separate_record": "별도 기록 없음",
+        "none": "없음",
+        "none_recorded": "기록 없음",
+        "pair_line": (
+            "  - {evidence_id} [@{evidence_id}]: 버전={version}, T={T}, F={F}, C={C}, "
+            "D={D}, Q={Q}, R_obs={r_obs}, R_hi={r_hi}, 일치={matched}, 차이={differentiated}"
+        ),
+        "problem_hypothesis_line": "- [후보 가설] {problem} {tokens}",
+        "problem_line": "- 문제: {problem} {tokens}",
+        "profile_line": "- [프로필 근거: {labels}; 출처: {sources}] {field}: {value}",
+        "profile_source_fallback": "프로필 기록",
+        "privacy_note": "[개인정보 최소화] 사용자가 명시적으로 선택한 현재 기술 프로필 필드만 출처 유형과 함께 표시합니다.",
+        "purpose_line": "- 목적과 범위: 변리사 검토 전 발명 아이디어와 근거를 구조화하는 내부 보고서",
+        "query_count_line": "- 조사 기록 수: {count}",
+        "query_strategy_fallback": "저장된 질의 지문과 이중언어 확장 사용",
+        "query_strategy_line": "- 질의 전략: {strategy}",
+        "report_date_line": "- 작성일: {date}",
+        "scoring_policy_line": "- 점수 정책: {version}",
+        "search_dates_line": "- 검색일: {dates}",
+        "title_fallback": "제목 미상",
+        "unknown": "미상",
+        "unresolved_fallback": "추가 확인 필요",
+        "unresolved_line": "- 불확실성·후속 질문 [가설]: {questions} {tokens}",
+        "version_line": "- 워크플로/도구 버전: {report_version} / {policy_version}",
+    },
+    "en": {
+        "adapters_line": "- Databases/sites/adapters: {adapters}",
+        "aggregate_weights_line": "- Aggregate weights: {weights}",
+        "appendix_line": (
+            "- [@{evidence_id}] {title} — {identifier}{url} — source type {source_type}"
+            " — observed {observed} — content hash {content_hash} — limitations {limitations}"
+        ),
+        "audit_failures_line": "- Final audit failure records: {count}",
+        "audit_result_line": (
+            "- {finalist_id}: observed risk {r_obs} / upper bound {r_hi} / coverage {coverage} / classification {outcome} / "
+            "closest reference {closest_identifier} {closest_title} / upper-bound reference {upper_identifier} {upper_title}"
+        ),
+        "axes_heading": "- Evaluation axes:",
+        "axis_line": (
+            "  - {axis}: {score} pts / confidence {confidence} / rationale {rationale} / "
+            "coverage {coverage} / limitations {limitations} / gaps {gaps} {tokens}"
+        ),
+        "closest_identifier_fallback": "no identifier",
+        "closest_line": "- Relationship to the closest prior art: {title} ({identifier})",
+        "closest_title_fallback": "no close reference identified",
+        "components_line": "- Key components and interactions [candidate hypothesis]: {components}; {interactions} {tokens}",
+        "corpus_cap_line": "- Corpus cap: {limit} records per finalist",
+        "counter_line": "  - Counterarguments and limits: {counterargument}",
+        "diff_fallback": "requires confirmation within the evidence scope",
+        "differentiated_line": "- Differentiating features: {differentiated}",
+        "effects_line": "- Expected technical effects [creative suggestion]: {effects} {tokens}",
+        "evidence_count_line": "- Evidence record count: {count}",
+        "feature_weights_line": "- Feature weights: {weights}",
+        "fit_line": "- User/domain fit [profile-based inference]: {domain} {tokens}",
+        "followup_heading": "### Recommended follow-up investigations",
+        "handoff_heading": "### Patent-attorney handoff questions",
+        "identifier_fallback": "identifier unknown",
+        "implementation_line": "- Implementation and validation example [creative suggestion]: {example}; {validation} {tokens}",
+        "landscape_line": "- {title} ({identifier}) [@{evidence_id}]",
+        "limitations_line": "- Known limitations: {limitations}",
+        "matrix_header": "| Rank | Candidate | Differentiation | Technical feasibility | Utility/significance |",
+        "mechanism_line": "- Proposed mechanism: {mechanism} {tokens}",
+        "no_decision_body": "Not applicable: no excessive-similarity user checkpoint arose in the current audit.",
+        "no_separate_record": "none recorded",
+        "none": "none",
+        "none_recorded": "none recorded",
+        "pair_line": (
+            "  - {evidence_id} [@{evidence_id}]: version={version}, T={T}, F={F}, C={C}, "
+            "D={D}, Q={Q}, R_obs={r_obs}, R_hi={r_hi}, matched={matched}, differentiated={differentiated}"
+        ),
+        "problem_hypothesis_line": "- [candidate hypothesis] {problem} {tokens}",
+        "problem_line": "- Problem: {problem} {tokens}",
+        "profile_line": "- [profile basis: {labels}; source: {sources}] {field}: {value}",
+        "profile_source_fallback": "profile record",
+        "privacy_note": "[Privacy minimization] Only the current technical profile fields the user explicitly selected are shown, with their source types.",
+        "purpose_line": "- Purpose and scope: an internal report structuring invention ideas and evidence before patent-attorney review",
+        "query_count_line": "- Query record count: {count}",
+        "query_strategy_fallback": "stored query fingerprints with bilingual expansion",
+        "query_strategy_line": "- Query strategy: {strategy}",
+        "report_date_line": "- Date: {date}",
+        "scoring_policy_line": "- Scoring policy: {version}",
+        "search_dates_line": "- Search dates: {dates}",
+        "title_fallback": "untitled",
+        "unknown": "unknown",
+        "unresolved_fallback": "further confirmation required",
+        "unresolved_line": "- Uncertainties and follow-up questions [hypothesis]: {questions} {tokens}",
+        "version_line": "- Workflow/tool version: {report_version} / {policy_version}",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -61,16 +223,23 @@ class ReportRun:
             "artifact_ids": [self.artifact.revision_id],
             "command": "draft",
             "export_path": self.export_path,
+            "language": self.artifact.content.get("language"),
             "next_state": self.next_state,
             "prior_state": self.prior_state,
             "replayed": self.replayed,
+            "report_hash": self.artifact.content_hash,
             "run_id": self.run_id,
             "status": self.next_state,
         }
 
 
-def load_report_policy() -> dict[str, Any]:
-    value = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+def load_report_policy(language: str = "ko") -> dict[str, Any]:
+    if language not in REPORT_LANGUAGES:
+        raise ValueError("report_policy: supported language required")
+    # Keep the module-level POLICY_PATH the ko patch point so frozen-contract
+    # tests (and any caller overriding it) keep working unchanged.
+    path = POLICY_PATH if language == "ko" else POLICY_PATHS[language]
+    value = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "language", "prohibited_unqualified_phrases", "report_disclaimer",
         "required_review_checks", "section_headings", "similarity_disclaimer", "version",
@@ -78,14 +247,14 @@ def load_report_policy() -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != required or value.get("version") != "report-policy-v1.0.0":
         raise ValueError("report_policy: exact report-policy-v1.0.0 fields required")
     if (
-        value.get("language") != "ko"
-        or value.get("section_headings") != SECTION_HEADINGS
-        or value.get("report_disclaimer") != REPORT_DISCLAIMER
-        or value.get("similarity_disclaimer") != SIMILARITY_DISCLAIMER
+        value.get("language") != language
+        or value.get("section_headings") != SECTION_HEADINGS_BY_LANGUAGE[language]
+        or value.get("report_disclaimer") != REPORT_DISCLAIMERS[language]
+        or value.get("similarity_disclaimer") != SIMILARITY_DISCLAIMERS[language]
         or value.get("required_review_checks") != REQUIRED_REVIEW_CHECKS
         or value.get("prohibited_unqualified_phrases") != PROHIBITED_UNQUALIFIED_PHRASES
     ):
-        raise ValueError("report_policy: frozen Korean report-policy-v1.0.0 contract required")
+        raise ValueError("report_policy: frozen report-policy-v1.0.0 contract required")
     return normalize(value)
 
 
@@ -141,7 +310,20 @@ def validate_report_input(value: Mapping[str, Any]) -> dict[str, Any]:
         "drafter", "handoff_questions", "recommended_investigations", "report_date",
         "profile_fields", "revision", "schema_version", "sensitive_disclosures",
     }
-    if not isinstance(value, Mapping) or set(value) != required or value.get("schema_version") != REPORT_INPUT_VERSION:
+    if not isinstance(value, Mapping):
+        raise ValueError("report_input: exact report-input-v1 fields required")
+    version = value.get("schema_version")
+    if version == REPORT_INPUT_VERSION:
+        if set(value) != required:
+            raise ValueError("report_input: exact report-input-v1 fields required")
+        language = "ko"
+    elif version == REPORT_INPUT_VERSION_V2:
+        if set(value) != required | {"language"}:
+            raise ValueError("report_input: exact report-input-v2 fields required")
+        language = value.get("language")
+        if language not in REPORT_LANGUAGES:
+            raise ValueError("report_input.language: en or ko required")
+    else:
         raise ValueError("report_input: exact report-input-v1 fields required")
     drafter = value["drafter"]
     if not isinstance(drafter, Mapping) or set(drafter) != {"id", "pass_id", "type"}:
@@ -184,11 +366,12 @@ def validate_report_input(value: Mapping[str, Any]) -> dict[str, Any]:
     return normalize({
         "drafter": resolved_drafter,
         "handoff_questions": _texts(value["handoff_questions"], "report_input.handoff_questions"),
+        "language": language,
         "profile_fields": _texts(value["profile_fields"], "report_input.profile_fields"),
         "recommended_investigations": _texts(value["recommended_investigations"], "report_input.recommended_investigations"),
         "report_date": report_date,
         "revision": revision,
-        "schema_version": REPORT_INPUT_VERSION,
+        "schema_version": REPORT_INPUT_VERSION_V2,
         "sensitive_disclosures": resolved_disclosures,
     })
 
@@ -320,7 +503,15 @@ def _section_bodies(
     research: Mapping[str, Any], candidates: list[Mapping[str, Any]], finalists: list[Mapping[str, Any]],
     corpus: Mapping[str, Any], audit: Mapping[str, Any], decision: Mapping[str, Any] | None,
     evidence: Mapping[str, Mapping[str, Any]], cited_ids: list[str], scorer: Mapping[str, Any],
+    language: str = "ko",
+    feature_descriptions: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[str]:
+    lex = LEXICON[language]
+    descriptions = feature_descriptions or {}
+
+    def described(finalist_id: Any, feature_ids: Any) -> list[str]:
+        table = descriptions.get(finalist_id, {})
+        return [table.get(item, item) for item in (feature_ids or [])]
     profile_value = profile.get("profile", {})
     profile_facts = profile_value.get("facts", {}) if isinstance(profile_value, Mapping) else {}
     profile_lines = []
@@ -334,15 +525,16 @@ def _section_bodies(
         labels = sorted({str(item.get("label", "")) for item in entry["claims"] if isinstance(item, Mapping)})
         sources = sorted({str(item.get("source_id", "")) for item in entry["claims"] if isinstance(item, Mapping) and item.get("source_id")})
         value = entry["value"] if isinstance(entry["value"], str) else canonical_json(entry["value"])
-        profile_lines.append(
-            f"- [프로필 근거: {','.join(labels)}; 출처: {','.join(sources) or '프로필 기록'}] {field}: {value}"
-        )
+        profile_lines.append(lex["profile_line"].format(
+            labels=",".join(labels), sources=",".join(sources) or lex["profile_source_fallback"],
+            field=field, value=value,
+        ))
     candidate_by_id = {item.get("candidate_id"): item for item in candidates}
     audit_by_finalist = {
         item.get("finalist_id"): item for item in audit.get("results", []) if isinstance(item, Mapping)
     }
     finalist_lines = []
-    comparison_lines = ["| 순위 | 후보 | 차별성 | 기술 실현 가능성 | 효용·중요성 |", "|---:|---|---:|---:|---:|"]
+    comparison_lines = [lex["matrix_header"], "|---:|---|---:|---:|---:|"]
     for finalist in sorted(finalists, key=lambda item: (item.get("rank", 0), item.get("finalist_id", ""))):
         candidate = candidate_by_id.get(finalist.get("candidate_id"), {})
         refs = sorted({ref.get("evidence_id") for ref in candidate.get("evidence_references", []) if isinstance(ref, Mapping) and ref.get("evidence_id")})
@@ -351,23 +543,40 @@ def _section_bodies(
         closest_id = audit_result.get("closest_reference_id")
         closest = evidence.get(closest_id, {}) if closest_id else {}
         pair = next((item for item in audit_result.get("pair_scores", []) if item.get("evidence_id") == closest_id), None)
-        differentiated = ", ".join(pair.get("differentiated_feature_ids", [])) if pair else "근거 범위에서 확인 필요"
+        differentiated = (
+            ", ".join(described(finalist.get("finalist_id"), pair.get("differentiated_feature_ids", [])))
+            if pair else lex["diff_fallback"]
+        )
         finalist_lines.extend([
             f"### {finalist.get('rank')}. {candidate.get('title', '')}",
-            f"- 문제: {candidate.get('technical_problem', '')} {tokens}".rstrip(),
-            f"- 제안 메커니즘: {candidate.get('mechanism', '')} {tokens}".rstrip(),
-            f"- 핵심 구성요소와 상호작용 [후보 가설]: {', '.join(candidate.get('components', []))}; {', '.join(candidate.get('interactions', []))} {tokens}".rstrip(),
-            f"- 기대 기술 효과 [창의적 제안]: {', '.join(candidate.get('expected_effects', []))} {tokens}".rstrip(),
-            f"- 사용자·도메인 적합성 [프로필 기반 추론]: {candidate.get('domain', '')} {tokens}".rstrip(),
-            f"- 가장 가까운 선행기술과의 관계: {closest.get('title') or '확인된 근접 문헌 없음'} "
-            f"({closest.get('identifier') or '식별자 없음'})"
+            lex["problem_line"].format(problem=candidate.get("technical_problem", ""), tokens=tokens).rstrip(),
+            lex["mechanism_line"].format(mechanism=candidate.get("mechanism", ""), tokens=tokens).rstrip(),
+            lex["components_line"].format(
+                components=", ".join(candidate.get("components", [])),
+                interactions=", ".join(candidate.get("interactions", [])), tokens=tokens,
+            ).rstrip(),
+            lex["effects_line"].format(
+                effects=", ".join(candidate.get("expected_effects", [])), tokens=tokens,
+            ).rstrip(),
+            lex["fit_line"].format(domain=candidate.get("domain", ""), tokens=tokens).rstrip(),
+            lex["closest_line"].format(
+                title=closest.get("title") or lex["closest_title_fallback"],
+                identifier=closest.get("identifier") or lex["closest_identifier_fallback"],
+            )
             + (f" [@{closest_id}]" if closest_id else ""),
-            f"- 차별화 특징: {differentiated}" + (f" [@{closest_id}]" if closest_id else ""),
-            f"- 구현·검증 예 [창의적 제안]: {candidate.get('implementation_example', '')}; {candidate.get('measurable_validation', '')} {tokens}".rstrip(),
-            f"- 불확실성·후속 질문 [가설]: {', '.join(candidate.get('unresolved_questions', [])) or '추가 확인 필요'} {tokens}".rstrip(),
+            lex["differentiated_line"].format(differentiated=differentiated)
+            + (f" [@{closest_id}]" if closest_id else ""),
+            lex["implementation_line"].format(
+                example=candidate.get("implementation_example", ""),
+                validation=candidate.get("measurable_validation", ""), tokens=tokens,
+            ).rstrip(),
+            lex["unresolved_line"].format(
+                questions=", ".join(candidate.get("unresolved_questions", [])) or lex["unresolved_fallback"],
+                tokens=tokens,
+            ).rstrip(),
         ])
         axes = {axis.get("axis"): axis for axis in finalist.get("axes", []) if isinstance(axis, Mapping)}
-        finalist_lines.append("- 평가 축:")
+        finalist_lines.append(lex["axes_heading"])
         for axis_name in ("differentiation", "technical_feasibility", "utility_significance"):
             axis = axes.get(axis_name, {})
             axis_refs = sorted({
@@ -377,10 +586,12 @@ def _section_bodies(
             })
             axis_tokens = " ".join(f"[@{item}]" for item in axis_refs)
             finalist_lines.append(
-                f"  - {axis_name}: {axis.get('score', '')}점 / 신뢰도 {axis.get('confidence', '')} / "
-                f"근거 {axis.get('rationale', '')} / 커버리지 {axis.get('coverage_assessment', '')} / "
-                f"한계 {', '.join(axis.get('coverage_limitations', [])) or '없음'} / "
-                f"공백 {', '.join(axis.get('gaps', [])) or '없음'} {axis_tokens}".rstrip()
+                lex["axis_line"].format(
+                    axis=axis_name, score=axis.get("score", ""), confidence=axis.get("confidence", ""),
+                    rationale=axis.get("rationale", ""), coverage=axis.get("coverage_assessment", ""),
+                    limitations=", ".join(axis.get("coverage_limitations", [])) or lex["none"],
+                    gaps=", ".join(axis.get("gaps", [])) or lex["none"], tokens=axis_tokens,
+                ).rstrip()
             )
         comparison_lines.append(
             f"| {finalist.get('rank')} | {candidate.get('title', '')} {tokens} | "
@@ -391,35 +602,38 @@ def _section_bodies(
     landscape = []
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
-        landscape.append(f"- {item.get('title') or '제목 미상'} ({item.get('identifier') or '식별자 미상'}) [@{evidence_id}]")
+        landscape.append(lex["landscape_line"].format(
+            title=item.get("title") or lex["title_fallback"],
+            identifier=item.get("identifier") or lex["identifier_fallback"], evidence_id=evidence_id,
+        ))
     resolved_scorer = scorer.get("config", scorer) if isinstance(scorer, Mapping) else {}
     audit_lines = [
         policy["similarity_disclaimer"],
-        f"- 점수 정책: {resolved_scorer.get('version', 'simrisk-v1.0.0')}",
-        f"- 종합 가중치: {canonical_json(resolved_scorer.get('aggregate_weights', {}))}",
-        f"- 특징 가중치: {canonical_json(resolved_scorer.get('feature_weights', {}))}",
-        f"- 코퍼스 상한: 후보별 {resolved_scorer.get('corpus_limit', 100)}건",
+        lex["scoring_policy_line"].format(version=resolved_scorer.get("version", "simrisk-v1.0.0")),
+        lex["aggregate_weights_line"].format(weights=canonical_json(resolved_scorer.get("aggregate_weights", {}))),
+        lex["feature_weights_line"].format(weights=canonical_json(resolved_scorer.get("feature_weights", {}))),
+        lex["corpus_cap_line"].format(limit=resolved_scorer.get("corpus_limit", 100)),
     ]
     for result in sorted(audit.get("results", []), key=lambda item: item.get("finalist_id", "")):
         closest = evidence.get(result.get("closest_reference_id"), {})
         upper = evidence.get(result.get("upper_bound_reference_id"), {})
-        audit_lines.append(
-            f"- {result.get('finalist_id')}: 관측 위험 {result.get('r_obs')} / 상한 {result.get('r_hi')} / "
-            f"커버리지 {result.get('coverage')} / 분류 {result.get('outcome')} / "
-            f"근접 문헌 {closest.get('identifier') or '없음'} {closest.get('title') or ''} / "
-            f"상한 문헌 {upper.get('identifier') or '없음'} {upper.get('title') or ''}"
-        )
+        audit_lines.append(lex["audit_result_line"].format(
+            finalist_id=result.get("finalist_id"), r_obs=result.get("r_obs"), r_hi=result.get("r_hi"),
+            coverage=result.get("coverage"), outcome=result.get("outcome"),
+            closest_identifier=closest.get("identifier") or lex["none"], closest_title=closest.get("title") or "",
+            upper_identifier=upper.get("identifier") or lex["none"], upper_title=upper.get("title") or "",
+        ))
         for pair in result.get("pair_scores", []):
-            audit_lines.append(
-                f"  - {pair.get('evidence_id')} [@{pair.get('evidence_id')}]: "
-                f"버전={pair.get('version')}, T={pair.get('T')}, F={pair.get('F')}, C={pair.get('C')}, "
-                f"D={pair.get('D')}, Q={pair.get('Q')}, R_obs={pair.get('r_obs')}, R_hi={pair.get('r_hi')}, "
-                f"일치={','.join(pair.get('matched_feature_ids', [])) or '없음'}, "
-                f"차이={','.join(pair.get('differentiated_feature_ids', [])) or '없음'}"
-            )
-        audit_lines.append(f"  - 반론·한계: {result.get('counterargument', '')}")
+            audit_lines.append(lex["pair_line"].format(
+                evidence_id=pair.get("evidence_id"), version=pair.get("version"),
+                T=pair.get("T"), F=pair.get("F"), C=pair.get("C"), D=pair.get("D"), Q=pair.get("Q"),
+                r_obs=pair.get("r_obs"), r_hi=pair.get("r_hi"),
+                matched=",".join(described(result.get("finalist_id"), pair.get("matched_feature_ids", []))) or lex["none"],
+                differentiated=",".join(described(result.get("finalist_id"), pair.get("differentiated_feature_ids", []))) or lex["none"],
+            ))
+        audit_lines.append(lex["counter_line"].format(counterargument=result.get("counterargument", "")))
     if decision is None:
-        decision_body = "해당 없음: 현재 감사에서 과도 유사도 사용자 체크포인트가 발생하지 않았습니다."
+        decision_body = lex["no_decision_body"]
     else:
         decision_body = "\n".join(
             f"- {item['finalist_id']}: {item['action']} — {item['reason']}"
@@ -446,33 +660,38 @@ def _section_bodies(
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
         url = f" — {item['canonical_url']}" if item.get("canonical_url") else ""
-        appendix.append(
-            f"- [@{evidence_id}] {item.get('title') or '제목 미상'} — {item.get('identifier') or '식별자 미상'}{url}"
-            f" — 출처유형 {item.get('source_type') or '미상'} — 관찰일 {item.get('observation_date') or '미상'}"
-            f" — 콘텐츠해시 {item.get('content_hash')} — 한계 {', '.join(item.get('limitations', [])) or '별도 기록 없음'}"
-        )
+        appendix.append(lex["appendix_line"].format(
+            evidence_id=evidence_id, title=item.get("title") or lex["title_fallback"],
+            identifier=item.get("identifier") or lex["identifier_fallback"], url=url,
+            source_type=item.get("source_type") or lex["unknown"],
+            observed=item.get("observation_date") or lex["unknown"],
+            content_hash=item.get("content_hash"),
+            limitations=", ".join(item.get("limitations", [])) or lex["no_separate_record"],
+        ))
     return [
         "\n".join([
-            f"- 작성일: {report_input['report_date']}",
-            f"- 워크플로/도구 버전: {REPORT_VERSION} / {policy['version']}",
-            f"- 목적과 범위: 변리사 검토 전 발명 아이디어와 근거를 구조화하는 내부 보고서",
+            lex["report_date_line"].format(date=report_input["report_date"]),
+            lex["version_line"].format(report_version=REPORT_VERSION, policy_version=policy["version"]),
+            lex["purpose_line"],
             policy["report_disclaimer"],
         ]),
-        "[개인정보 최소화] 사용자가 명시적으로 선택한 현재 기술 프로필 필드만 출처 유형과 함께 표시합니다.\n"
+        lex["privacy_note"] + "\n"
         + "\n".join(profile_lines),
         "\n".join(
-            f"- [후보 가설] {candidate.get('technical_problem', '')} "
-            + " ".join(f"[@{ref.get('evidence_id')}]" for ref in candidate.get("evidence_references", []) if isinstance(ref, Mapping))
+            lex["problem_hypothesis_line"].format(
+                problem=candidate.get("technical_problem", ""),
+                tokens=" ".join(f"[@{ref.get('evidence_id')}]" for ref in candidate.get("evidence_references", []) if isinstance(ref, Mapping)),
+            )
             for candidate in candidates
         ),
         "\n".join([
-            f"- 데이터베이스·사이트/어댑터: {', '.join(adapters) or '기록 없음'}",
-            f"- 검색일: {', '.join(search_dates) or '기록 없음'}",
-            f"- 질의 전략: {', '.join(item for item in query_strategy if item) or '저장된 질의 지문과 이중언어 확장 사용'}",
-            f"- 조사 기록 수: {len(research.get('queries', []))}",
-            f"- 증거 기록 수: {len(evidence)}",
-            f"- 알려진 한계: {', '.join(item for item in limitations if item) or '별도 기록 없음'}",
-            f"- 최종 감사 실패 기록: {len(corpus_failures)}건",
+            lex["adapters_line"].format(adapters=", ".join(adapters) or lex["none_recorded"]),
+            lex["search_dates_line"].format(dates=", ".join(search_dates) or lex["none_recorded"]),
+            lex["query_strategy_line"].format(strategy=", ".join(item for item in query_strategy if item) or lex["query_strategy_fallback"]),
+            lex["query_count_line"].format(count=len(research.get("queries", []))),
+            lex["evidence_count_line"].format(count=len(evidence)),
+            lex["limitations_line"].format(limitations=", ".join(item for item in limitations if item) or lex["no_separate_record"]),
+            lex["audit_failures_line"].format(count=len(corpus_failures)),
         ]),
         "\n".join(landscape),
         "\n".join(finalist_lines),
@@ -480,17 +699,19 @@ def _section_bodies(
         "\n".join(audit_lines),
         decision_body,
         "\n".join([
-            "### 변리사 인계 질문",
+            lex["handoff_heading"],
             *(f"- {item}" for item in report_input["handoff_questions"]),
-            "### 권고 후속 조사",
+            lex["followup_heading"],
             *(f"- {item}" for item in report_input["recommended_investigations"]),
         ]),
         "\n".join(appendix),
     ]
 
 
-def render_report_markdown(sections: Iterable[Mapping[str, Any]]) -> str:
-    template = TEMPLATE_PATH.read_text(encoding="utf-8")
+def render_report_markdown(sections: Iterable[Mapping[str, Any]], language: str = "ko") -> str:
+    if language not in REPORT_LANGUAGES:
+        raise ValueError("report_template: supported language required")
+    template = TEMPLATE_PATHS[language].read_text(encoding="utf-8")
     items = list(sections)
     if len(items) != 11:
         raise ValueError("report.sections: exactly eleven sections required")
@@ -506,7 +727,6 @@ def render_report_markdown(sections: Iterable[Mapping[str, Any]]) -> str:
 
 
 def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    resolved_policy = dict(policy or load_report_policy())
     required = {
         "appendix_ids", "bindings", "citations", "draft_spec", "draft_spec_hash", "drafter", "language", "markdown",
         "policy_hash", "redactions", "report_date", "revision", "run_id", "sections",
@@ -514,7 +734,11 @@ def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, A
     }
     if not isinstance(value, Mapping) or set(value) != required or value.get("version") != REPORT_VERSION:
         raise ValueError("report_artifact: exact report-v1 fields required")
-    if value.get("language") != "ko" or value.get("policy_hash") != digest(resolved_policy):
+    language = value.get("language")
+    if language not in REPORT_LANGUAGES:
+        raise ValueError("report_artifact: Korean policy binding mismatch")
+    resolved_policy = dict(policy or load_report_policy(language))
+    if resolved_policy.get("language") != language or value.get("policy_hash") != digest(resolved_policy):
         raise ValueError("report_artifact: Korean policy binding mismatch")
     drafter = value.get("drafter")
     if (
@@ -541,7 +765,7 @@ def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, A
         or any(
             not isinstance(item, Mapping) or set(item) != redaction_fields
             or any(not isinstance(item.get(name), str) or not item[name] for name in redaction_fields)
-            or item.get("replacement") != "[삭제됨: 민감 정보]"
+            or item.get("replacement") != REDACTION_REPLACEMENTS[language]
             or any(re.fullmatch(r"[0-9a-f]{64}", item[name]) is None for name in ("prior_report_hash", "text_hash"))
             for item in redactions
         )
@@ -562,7 +786,7 @@ def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, A
         or value.get("draft_spec_hash") != digest(draft_spec)
     ):
         raise ValueError("report_artifact.draft_spec: exact hash-bound structured draft inputs required")
-    template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    template = TEMPLATE_PATHS[language].read_text(encoding="utf-8")
     if value.get("template_hash") != digest({"text": normalize(template)}):
         raise ValueError("report_artifact: template binding mismatch")
     sections = value.get("sections")
@@ -575,7 +799,7 @@ def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, A
         if section.get("number") != index or section.get("heading") != expected_headings[index - 1]:
             raise ValueError("report_artifact.sections: exact heading order required")
         _text(section.get("body"), f"report_artifact.sections[{index - 1}].body")
-    expected_markdown = render_report_markdown(sections)
+    expected_markdown = render_report_markdown(sections, language)
     if value.get("markdown") != expected_markdown:
         raise ValueError("report_artifact.markdown: renderer mismatch")
     headings = re.findall(r"^## (?!#)(.+)$", expected_markdown, flags=re.MULTILINE)
@@ -633,7 +857,10 @@ def _report_payload(
     connection: sqlite3.Connection, *, run_id: str, report_input: Mapping[str, Any],
     redactions: Iterable[Mapping[str, Any]] = (),
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
-    policy = load_report_policy()
+    language = report_input.get("language", "ko")
+    if language not in REPORT_LANGUAGES:
+        raise ValueError("report_input.language: en or ko required")
+    policy = load_report_policy(language)
     kinds = (
         "profile_context", "research_bundle", "candidate_set", "finalist_set", "corpus_set",
         "feature_map_set", "scorer_config", "audit_batch",
@@ -694,11 +921,28 @@ def _report_payload(
     missing = [item for item in cited_ids if item not in evidence]
     if missing or any(CITATION_RE.fullmatch(f"[@{item}]") is None for item in cited_ids):
         raise StateError("report citation does not resolve to current evidence")
+    feature_descriptions: dict[str, dict[str, str]] = {}
+    for entry in content["feature_map_set"].get("maps", []):
+        if not isinstance(entry, Mapping):
+            continue
+        feature_map = entry.get("feature_map")
+        features = feature_map.get("features") if isinstance(feature_map, Mapping) else None
+        if not isinstance(features, Mapping):
+            continue
+        table = {
+            feature_id: feature["description"]
+            for feature_id, feature in features.items()
+            if isinstance(feature, Mapping)
+            and isinstance(feature.get("description"), str) and feature["description"]
+        }
+        if table:
+            feature_descriptions[entry.get("finalist_id")] = table
     bodies = _section_bodies(
         policy=policy, report_input=report_input, profile=content["profile_context"],
         research=content["research_bundle"], candidates=candidates, finalists=finalists,
         corpus=content["corpus_set"], audit=audit, decision=decision, evidence=evidence,
-        cited_ids=cited_ids, scorer=content["scorer_config"],
+        cited_ids=cited_ids, scorer=content["scorer_config"], language=language,
+        feature_descriptions=feature_descriptions,
     )
     sections = [
         {"body": body, "heading": policy["section_headings"][index - 1], "number": index}
@@ -734,7 +978,7 @@ def _report_payload(
             or redaction_decision["subject_revision_hash"] != item.get("prior_report_hash")
             or redaction_decision["reason"] != item.get("reason")
             or not redaction_decision["used_at"] or not redaction_decision["consumed_by_event_id"]
-            or item.get("replacement") != "[삭제됨: 민감 정보]"
+            or item.get("replacement") != REDACTION_REPLACEMENTS[language]
         ):
             raise StateError("report redaction history failed exact decision/source validation")
         replaced = False
@@ -753,7 +997,7 @@ def _report_payload(
         "content_hash": evidence[item].get("content_hash"), "evidence_id": item,
         "identifier": evidence[item].get("identifier"), "title": evidence[item].get("title"),
         "limitations": evidence[item].get("limitations", []),
-        "observation_date": evidence[item].get("observation_date") or "미상",
+        "observation_date": evidence[item].get("observation_date") or LEXICON[language]["unknown"],
         "source_type": evidence[item].get("source_type") or "unknown",
         "url": evidence[item].get("canonical_url"),
     } for item in cited_ids]
@@ -765,7 +1009,7 @@ def _report_payload(
     payload = {
         "appendix_ids": cited_ids, "bindings": bindings, "citations": citations,
         "draft_spec": draft_spec, "draft_spec_hash": digest(draft_spec),
-        "drafter": report_input["drafter"], "language": "ko",
+        "drafter": report_input["drafter"], "language": language,
         "policy_hash": digest(policy), "redactions": resolved_redactions,
         "report_date": report_input["report_date"],
         "revision": report_input["revision"], "run_id": run_id, "sections": sections,
@@ -773,10 +1017,10 @@ def _report_payload(
             "field": item["field"], "reason": item["reason"], "text": item["text"],
             "text_hash": digest(item["text"]),
         } for item in report_input["sensitive_disclosures"]],
-        "template_hash": digest({"text": normalize(TEMPLATE_PATH.read_text(encoding="utf-8"))}),
+        "template_hash": digest({"text": normalize(TEMPLATE_PATHS[language].read_text(encoding="utf-8"))}),
         "version": REPORT_VERSION,
     }
-    payload["markdown"] = render_report_markdown(sections)
+    payload["markdown"] = render_report_markdown(sections, language)
     for item in report_input["sensitive_disclosures"]:
         if item["text"] not in payload["markdown"]:
             raise ValueError(f"report_input.sensitive_disclosures: text for {item['field']} is absent")
@@ -862,18 +1106,22 @@ def apply_sensitive_redaction(
         "reason": _text(reason, "redaction.reason"), "report_hash": report_row["content_hash"],
         "review_hash": review_row["content_hash"],
     }
+    language = report.get("language", "ko")
+    if language not in REPORT_LANGUAGES:
+        raise StateError("redaction requires a supported report language")
     redactions = [{
         "decision_id": decision_id, "field": disclosure["field"],
         "prior_report_hash": report_row["content_hash"], "reason": revision["reason"],
-        "replacement": "[삭제됨: 민감 정보]", "text_hash": disclosure["text_hash"],
+        "replacement": REDACTION_REPLACEMENTS[language], "text_hash": disclosure["text_hash"],
     } for disclosure in report.get("sensitive_disclosures", [])]
     draft_spec = report["draft_spec"]
     request = validate_report_input({
         "drafter": report["drafter"], "handoff_questions": draft_spec["handoff_questions"],
+        "language": language,
         "profile_fields": draft_spec["profile_fields"],
         "recommended_investigations": draft_spec["recommended_investigations"],
         "report_date": report["report_date"], "revision": revision,
-        "schema_version": REPORT_INPUT_VERSION, "sensitive_disclosures": [],
+        "schema_version": REPORT_INPUT_VERSION_V2, "sensitive_disclosures": [],
     })
     revised, dependencies = _report_payload(
         connection, run_id=run_id, report_input=request, redactions=redactions,
@@ -892,7 +1140,9 @@ def apply_sensitive_redaction(
 
 
 __all__ = [
-    "CITATION_RE", "POLICY_PATH", "REPORT_INPUT_VERSION", "REPORT_VERSION", "ReportRun",
+    "CITATION_RE", "DEFAULT_REPORT_LANGUAGE", "LEXICON", "POLICY_PATH", "POLICY_PATHS",
+    "REDACTION_REPLACEMENTS", "REPORT_INPUT_VERSION", "REPORT_INPUT_VERSION_V2",
+    "REPORT_LANGUAGES", "REPORT_VERSION", "ReportRun",
     "apply_sensitive_redaction", "load_report_policy", "publish_report", "render_report_markdown", "validate_report_artifact",
     "validate_report_input",
 ]

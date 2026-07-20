@@ -19,8 +19,16 @@ Templates are in `workspace/README.md`.
 
 ## Steps
 
-0. Help the user assemble the query input and, after retrieval, the reviewed
-   feature-map set.
+0. Start from `scaffold audit-query` (the current `finalist_set_hash` and one
+   ko+en query pair per finalist pre-filled; you author the search terms), then
+   after retrieval help assemble the reviewed feature-map set. Give every
+   feature an optional human-readable `description` — the report renders it in
+   place of the raw `df_`/`mf_` feature IDs in sections 6 and 8.
+
+```bash
+python3 -m patent_factory scaffold audit-query --run RUN --run-id RUN_ID \
+  --out workspace/requests/audit-query-input-v1.json
+```
 1. Retrieve, then score.
 
 ```bash

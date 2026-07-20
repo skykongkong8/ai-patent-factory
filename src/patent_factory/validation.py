@@ -30,7 +30,7 @@ VALIDATION_VERSION = "validation-v1"
 VALIDATOR_VERSION = "report-validator-v1.0.0"
 VALIDATION_CHECK_NAMES = [
     "artifact_bindings", "citation_integrity", "decision_coverage", "identifier_shape",
-    "korean_narrative", "legal_language", "report_structure", "review_binding",
+    "legal_language", "narrative_language", "report_structure", "review_binding",
     "semantic_reconstruction",
 ]
 
@@ -81,11 +81,12 @@ def _citation_check(
     ids = [item["evidence_id"] for item in citations]
     if ids != report["appendix_ids"] or set(CITATION_RE.findall(report["markdown"])) != set(ids):
         raise ValueError("validation.citations: token and appendix sets differ")
+    unknown = "미상" if report.get("language", "ko") == "ko" else "unknown"
     for item in citations:
         current = evidence.get(item["evidence_id"])
         if current is None or any(
             item.get(name) != (
-                current.get(source) or "미상" if name == "observation_date" else current.get(source)
+                current.get(source) or unknown if name == "observation_date" else current.get(source)
             )
             for name, source in (
                 ("content_hash", "content_hash"), ("identifier", "identifier"),
@@ -110,7 +111,7 @@ def _identifier_check(report: Mapping[str, Any]) -> None:
 
 
 def _legal_language_check(report: Mapping[str, Any]) -> None:
-    policy = load_report_policy()
+    policy = load_report_policy(report.get("language", "ko"))
     dangerous = (
         re.compile(r"특허(?:를\s*받을\s*수\s*있|\s*가능(?:하|성))", re.IGNORECASE),
         re.compile(r"(?:신규성|진보성).{0,16}(?:있|충족|인정)", re.IGNORECASE),
@@ -120,11 +121,15 @@ def _legal_language_check(report: Mapping[str, Any]) -> None:
         re.compile(r"(?:does\s+not\s+infringe|non[- ]?infringement(?:\s+(?:is|has|confirmed))?)", re.IGNORECASE),
         re.compile(r"(?:비침해|non[- ]?infring|freedom\s+to\s+operate|\bFTO\b).{0,16}(?:확보|가능|보장|is|has)", re.IGNORECASE),
         re.compile(r"\bpatentable\b", re.IGNORECASE),
+        re.compile(r"\bis\s+novel\b", re.IGNORECASE),
+        re.compile(r"\bnovelty\s+(?:is|has\s+been)\s+(?:established|confirmed|present)\b", re.IGNORECASE),
+        re.compile(r"\binventive\s+step\s+(?:is|has)\b", re.IGNORECASE),
     )
     qualifiers = (
         "아닙", "아니다", "단정할 수 없", "판단이 아니", "결론이 아니", "확인해야",
         "확인이 필요", "검토가 필요", "가능성을 검토", "여부", "질문", "research aid",
         "법적 결론을 제공하지", "법적 판단이 아니", "not a legal", "cannot conclude", "does not conclude",
+        "not legal advice", "no legal conclusion", "not legal determination", "question",
     )
     sentences = [item.strip() for item in re.split(r"(?<=[.!?。])\s+|\n+", report["markdown"]) if item.strip()]
     frozen_phrases = tuple(item.casefold() for item in policy["prohibited_unqualified_phrases"])
@@ -135,10 +140,15 @@ def _legal_language_check(report: Mapping[str, Any]) -> None:
             raise ValueError(f"validation.legal_language: unqualified legal conclusion: {sentence[:120]}")
 
 
-def _korean_check(report: Mapping[str, Any]) -> None:
+def _narrative_language_check(report: Mapping[str, Any]) -> None:
+    language = report.get("language", "ko")
+    # Source titles/identifiers keep their original language (often Korean),
+    # so the check asserts the presence of the declared narrative language,
+    # never the absence of the other.
+    pattern, label = (r"[가-힣]", "Korean") if language == "ko" else (r"[A-Za-z]", "English")
     for index, section in enumerate(report["sections"]):
-        if re.search(r"[가-힣]", section["body"]) is None:
-            raise ValueError(f"validation.korean_narrative: section {index + 1} has no Korean narrative")
+        if re.search(pattern, section["body"]) is None:
+            raise ValueError(f"validation.narrative_language: section {index + 1} has no {label} narrative")
 
 
 def _decision_check(
@@ -169,11 +179,12 @@ def _semantic_check(
     request = {
         "drafter": report.get("drafter"),
         "handoff_questions": draft_spec.get("handoff_questions"),
+        "language": report.get("language", "ko"),
         "profile_fields": draft_spec.get("profile_fields"),
         "recommended_investigations": draft_spec.get("recommended_investigations"),
         "report_date": report.get("report_date"),
         "revision": report.get("revision"),
-        "schema_version": "report-input-v1",
+        "schema_version": "report-input-v2",
         "sensitive_disclosures": [
             {"field": item.get("field"), "reason": item.get("reason"), "text": item.get("text")}
             for item in report.get("sensitive_disclosures", []) if isinstance(item, Mapping)
@@ -212,8 +223,8 @@ def build_validation_manifest(
         ("citation_integrity", lambda: _citation_check(connection, run_id, report)),
         ("decision_coverage", lambda: _decision_check(connection, run_id, report)),
         ("identifier_shape", lambda: _identifier_check(report)),
-        ("korean_narrative", lambda: _korean_check(report)),
         ("legal_language", lambda: _legal_language_check(report)),
+        ("narrative_language", lambda: _narrative_language_check(report)),
         ("report_structure", lambda: validate_report_artifact(report)),
         ("review_binding", lambda: _review_check(report_row, report, review_row, review)),
         ("semantic_reconstruction", lambda: _semantic_check(connection, run_id, report)),

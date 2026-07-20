@@ -220,9 +220,12 @@ class KiprisAdapter:
             return _failure(AdapterFailureKind.MALFORMED, "KIPRIS response misses expected items container")
 
         try:
-            total_text = _text(body_node, "totalCount")
-            rows_text = _text(body_node, "numOfRows")
-            page_text = _text(body_node, "pageNo")
+            # The live service emits pagination in a <count> element that is a
+            # sibling of <body>; recorded fixtures nest it inside <body>. Search
+            # from the document root so both confirmed shapes resolve.
+            total_text = _text(root, "totalCount")
+            rows_text = _text(root, "numOfRows")
+            page_text = _text(root, "pageNo")
             if total_text is None or rows_text is None or page_text is None:
                 raise ValueError("pagination fields are required")
             total, rows, page = int(total_text), int(rows_text), int(page_text)
@@ -243,9 +246,15 @@ class KiprisAdapter:
                 if not number:
                     raise ValueError("KIPRIS application number is invalid")
                 abstract = _text(item, "astrtCont")
+                # The live service packs multiple classification codes into one
+                # element separated by "|". Splitting is required for correctness:
+                # an unsplit blob never matches a candidate code, so an exact IPC
+                # subgroup hit scores "unrelated" instead of "subgroup".
                 classifications = tuple(sorted({
-                    value for name in ("ipcNumber", "cpcNumber")
+                    part for name in ("ipcNumber", "cpcNumber")
                     if (value := _text(item, name))
+                    for raw in value.split("|")
+                    if (part := normalize(raw))
                 }))
                 normalized_record = {
                     "abstract": abstract, "applicant": _text(item, "applicantName"),

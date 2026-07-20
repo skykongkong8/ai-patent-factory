@@ -10,7 +10,9 @@ from . import __version__
 from .audit import run_audit_retrieval, run_audit_scoring
 from .adapters.base import TransportResponse
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
-from .adapters.manual_web import ManualWebAdapter, sanitize_manual_records
+from .adapters.manual_web import (
+    ManualWebAdapter, WEB_SOURCE_TAGS, normalize_web_rows, sanitize_manual_records,
+)
 from .config import load_evaluation_config, load_similarity_config
 from .database import (
     connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts,
@@ -19,6 +21,7 @@ from .database import (
 from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
+from .lint import audit_advisories, shortlist_advisories
 from .models import QueryEnvelope
 from .paths import contained_input, contained_output, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
@@ -31,6 +34,10 @@ from .research import (
 from .report import publish_report
 from .review import run_review
 from .runs import prepare_run_profile, start_run
+from .scaffold import (
+    count_todos, evidence_binding_table, scaffold_audit_query_input,
+    scaffold_candidate_input, scaffold_report_input, scaffold_shortlist_input,
+)
 from .sharing import SensitiveDisclosureRequiredError, share_report
 from .validation import validate_and_complete
 
@@ -204,6 +211,17 @@ def build_parser() -> argparse.ArgumentParser:
     kipris_live.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic tests")
     kipris_live.add_argument("--documents-root", type=Path, default=Path("documents"))
     kipris_live.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    normalize_web = research_commands.add_parser(
+        "normalize-web",
+        help="normalize agent-gathered public web metadata into a manual-import file (offline)",
+    )
+    normalize_web.add_argument("source", type=Path, help="web-rows-v1 JSON under the documents root")
+    normalize_web.add_argument("--out", type=Path, required=True, help="manual-import JSON written under the documents root")
+    normalize_web.add_argument("--allow-host", action="append", required=True)
+    normalize_web.add_argument("--source-type", choices=sorted(WEB_SOURCE_TAGS), default="web")
+    normalize_web.add_argument("--byte-budget", type=int, default=1_000_000)
+    normalize_web.add_argument("--documents-root", type=Path, default=Path("documents"))
+    normalize_web.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
     ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
@@ -232,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve.add_argument("--live", action="store_true", help="use the credentialed live KIPRIS adapter instead of fixtures")
     retrieve.add_argument("--byte-budget", type=int, default=2_000_000)
     retrieve.add_argument("--decision-id", help="current credential approval for this exact audit request")
+    retrieve.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic offline fixtures")
     retrieve.add_argument("--documents-root", type=Path, default=Path("documents"))
     retrieve.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     score = audit_commands.add_parser("score", help="score one frozen reviewed feature-map set")
@@ -240,6 +259,27 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--feature-input", type=Path, required=True)
     score.add_argument("--byte-budget", type=int, default=2_000_000)
     score.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+
+    scaffold_command = commands.add_parser(
+        "scaffold", help="emit a hash-bound draft request input for agent completion",
+    )
+    scaffold_commands = scaffold_command.add_subparsers(dest="scaffold_command", required=True)
+    for name in ("candidate", "shortlist", "audit-query", "report"):
+        command = scaffold_commands.add_parser(name, help=f"draft a {name} request input")
+        command.add_argument("--out", type=Path, required=True, help="draft JSON written under the workspace root")
+        command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    for name in ("candidate", "shortlist", "audit-query"):
+        command = scaffold_commands.choices[name]
+        command.add_argument("--run", type=Path, required=True)
+        command.add_argument("--run-id", required=True)
+    scaffold_commands.choices["candidate"].add_argument(
+        "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
+    )
+    scaffold_commands.choices["candidate"].add_argument("--count", type=int, default=3)
+    scaffold_commands.choices["report"].add_argument(
+        "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
+    )
+    scaffold_commands.choices["report"].add_argument("--language", choices=("en", "ko"), default="en")
 
     gate = commands.add_parser("gate", help="inspect or decide one exact current gate")
     gate_commands = gate.add_subparsers(dest="gate_command", required=True)
@@ -279,6 +319,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_REQUESTS_README = """# requests/
+
+Versioned `*-input-v1`/`v2` request files live here. Do not hand-copy hashes:
+generate a pre-bound draft with the scaffold verbs and fill in the TODO(agent)
+prose —
+
+    python3 -m patent_factory scaffold candidate   --run RUN --run-id ID --out workspace/requests/candidate-input-v1.json
+    python3 -m patent_factory scaffold shortlist   --run RUN --run-id ID --out workspace/requests/shortlist-input-v1.json
+    python3 -m patent_factory scaffold audit-query --run RUN --run-id ID --out workspace/requests/audit-query-input-v1.json
+    python3 -m patent_factory scaffold report      --language en --out workspace/requests/report-input-v2.json
+
+Field notes for every template are in workspace/README.md.
+"""
+
+
 def _initialize(documents: Path, workspace: Path) -> dict[str, Any]:
     created = []
     for name, path in (("documents", documents), ("workspace", workspace)):
@@ -286,6 +341,14 @@ def _initialize(documents: Path, workspace: Path) -> dict[str, Any]:
         private_root(path, f"{name} root", create=True)
         if not existed:
             created.append(name)
+        requests_directory = Path.cwd() / path / "requests"
+        if not requests_directory.exists():
+            requests_directory.mkdir(mode=0o700)
+            created.append(f"{name}/requests")
+    readme = Path.cwd() / workspace / "requests" / "README.md"
+    if not readme.exists():
+        readme.write_text(_REQUESTS_README, encoding="utf-8")
+        readme.chmod(0o600)
     return {"command": "init", "created": created, "status": "ready", "version": __version__}
 
 
@@ -481,10 +544,50 @@ def _research_kipris(
     return payload, 0 if payload["status"] == "complete" else 4
 
 
+def _research_normalize_web(
+    args: argparse.Namespace, *, started_at: str, documents_root: Path,
+) -> tuple[dict[str, Any], int]:
+    source = contained_input(args.source, documents_root, "web rows source")
+    payload = _json_object(source, args.byte_budget, "web rows source")
+    if (
+        set(payload) != {"rows", "schema_version"}
+        or payload["schema_version"] != "web-rows-v1"
+        or not isinstance(payload["rows"], list)
+    ):
+        raise CliError("web rows source must be web-rows-v1 with a rows list")
+    allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
+    if not allowed_hosts or any(not host for host in allowed_hosts):
+        raise CliError("normalize-web requires a non-empty host allowlist")
+    secret = environment_secret("KIPRIS_PLUS_API_KEY")
+    assert_canaries_absent(payload, (secret,) if secret else (), boundary="web_rows")
+    records = normalize_web_rows(payload["rows"], allowed_hosts, args.source_type)
+    out_path = _prepare_contained_output(args.out, documents_root, "manual import output")
+    out_path.write_text(
+        json.dumps({"records": records}, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_path.chmod(0o600)
+    return ({
+        "command": "research",
+        "ended_at": utc_now(),
+        "output_path": str(args.out),
+        "record_count": len(records),
+        "records": [{
+            "content_hash": item["content_hash"], "excerpt_hashes": item["excerpt_hashes"],
+            "identifier": item["identifier"],
+        } for item in records],
+        "source_type": args.source_type,
+        "started_at": started_at,
+        "status": "normalized",
+    }, 0)
+
+
 def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     started_at = utc_now()
     documents_root = private_root(args.documents_root, "documents root")
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    if args.research_command == "normalize-web":
+        return _research_normalize_web(args, started_at=started_at, documents_root=documents_root)
     run_root = contained_input(args.run, workspace_root, "research run", directory=True)
     database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
     if args.research_command == "kipris":
@@ -603,8 +706,80 @@ def _shortlist(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             shortlist_input=shortlist_input, config=load_evaluation_config(),
         )
     payload = result.as_dict()
+    if payload["status"] != "insufficient_evidence":
+        # Advisory only: homogeneity smells never block; the user decides.
+        payload["advisories"] = shortlist_advisories(shortlist_input.get("finalists", []))
     payload.update({"ended_at": utc_now(), "started_at": started_at})
     return payload, 5 if payload["status"] == "insufficient_evidence" else 0
+
+
+def _prepare_contained_output(path: Path, root: Path, label: str) -> Path:
+    """Create missing parent directories inside the root, then contain-check."""
+
+    absolute_parent = (Path.cwd() / Path(path)).parent
+    try:
+        absolute_parent.resolve(strict=False).relative_to(root)
+    except ValueError as exc:
+        raise CliError(f"{label} must stay under its private root") from exc
+    pending: list[Path] = []
+    probe = absolute_parent
+    while not probe.exists():
+        pending.append(probe)
+        probe = probe.parent
+    for directory in reversed(pending):
+        directory.mkdir(mode=0o700)
+    return contained_output(path, root, label)
+
+
+def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    out_path = _prepare_contained_output(args.out, workspace_root, "scaffold output")
+    command = args.scaffold_command
+    extras: dict[str, Any] = {}
+    if command in {"candidate", "shortlist", "audit-query"}:
+        contained_input(args.run, workspace_root, "scaffold run", directory=True)
+        database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "scaffold run database")
+        run_id = normalize(args.run_id)
+    if command == "candidate":
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_database(database_path) as connection, connect_database(profile_database) as profile_connection:
+            draft = scaffold_candidate_input(
+                connection, profile_connection, run_id=run_id, count=args.count,
+            )
+            extras["evidence"] = evidence_binding_table(connection, run_id)
+    elif command == "shortlist":
+        with connect_database(database_path) as connection:
+            draft = scaffold_shortlist_input(connection, run_id=run_id, config=load_evaluation_config())
+    elif command == "audit-query":
+        with connect_database(database_path) as connection:
+            draft = scaffold_audit_query_input(connection, run_id=run_id)
+        extras["finalist_set_hash"] = draft["finalist_set_hash"]
+    else:
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_database(profile_database) as profile_connection:
+            draft = scaffold_report_input(profile_connection, language=args.language)
+    out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    out_path.chmod(0o600)
+    return ({
+        "command": "scaffold",
+        "draft": command,
+        "ended_at": utc_now(),
+        "output_path": str(args.out),
+        "started_at": started_at,
+        "status": "scaffolded",
+        "todo_count": count_todos(draft),
+        **extras,
+    }, 0)
 
 
 def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -653,7 +828,7 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 result = run_audit_retrieval(
                     connection, run_root=run_root, run_id=normalize(args.run_id),
                     query_input=query_input, config=load_similarity_config(), adapter_factory=adapter_factory,
-                    credential_decision_id=args.decision_id,
+                    credential_decision_id=args.decision_id, retrieved_at=args.retrieved_at,
                 )
             except CredentialRequiredError as error:
                 payload = _credential_gate_payload("audit", error, normalize(args.run_id))
@@ -668,7 +843,23 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 connection, run_root=run_root, run_id=normalize(args.run_id),
                 feature_input=feature_input, config=load_similarity_config(),
             )
+            advisories = []
+            corpus_row = connection.execute(
+                "SELECT ar.content_json FROM artifact_revisions ar JOIN current_artifacts ca "
+                "ON ca.revision_id=ar.revision_id WHERE ca.run_id=? AND ca.kind='corpus_set'",
+                (normalize(args.run_id),),
+            ).fetchone()
+            audit_row = connection.execute(
+                "SELECT ar.content_json FROM artifact_revisions ar JOIN current_artifacts ca "
+                "ON ca.revision_id=ar.revision_id WHERE ca.run_id=? AND ca.kind='audit_batch'",
+                (normalize(args.run_id),),
+            ).fetchone()
+            if corpus_row is not None and audit_row is not None:
+                advisories = audit_advisories(
+                    json.loads(corpus_row["content_json"]), json.loads(audit_row["content_json"]),
+                )
         payload = result.as_dict()
+        payload["advisories"] = advisories
         code = 8 if payload["status"] == "decision_required" else 7 if payload["status"] == "coverage_insufficient" else 0
     payload.update({"ended_at": utc_now(), "started_at": started_at})
     return payload, code
@@ -744,6 +935,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload, code = _ideate(args)
         elif args.command == "shortlist":
             payload, code = _shortlist(args)
+        elif args.command == "scaffold":
+            payload, code = _scaffold(args)
         elif args.command == "audit":
             payload, code = _audit(args)
         elif args.command == "gate":
