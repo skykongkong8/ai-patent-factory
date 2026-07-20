@@ -121,6 +121,55 @@ class CredentialRequiredError(RuntimeError):
         self.gate = gate
 
 
+@dataclass(frozen=True)
+class ResearchBatchRun:
+    run_id: str
+    prior_state: str
+    next_state: str
+    executions: tuple[ResearchExecution, ...]
+    bundle: Mapping[str, Any]
+    artifact_revision_id: str
+    transition_event_ids: tuple[str, ...]
+    replayed: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        succeeded = sum(
+            1 for item in self.executions if item.status == "success" and item.evidence_ids
+        )
+        failure_kinds = sorted({
+            item.failure_kind for item in self.executions if item.failure_kind
+        })
+        return {
+            "adapter_status": {
+                "failure_kinds": failure_kinds,
+                "status": "success" if succeeded else "failure",
+            },
+            "artifact_ids": [self.artifact_revision_id],
+            "command": "research",
+            "evidence_count": len({
+                evidence_id for item in self.executions for evidence_id in item.evidence_ids
+            }),
+            "manifest": self.bundle["manifest"],
+            "next_state": self.next_state,
+            "planned_count": len(self.executions),
+            "prior_state": self.prior_state,
+            "queries": [
+                {
+                    "evidence_count": len(item.evidence_ids),
+                    "failure_kind": item.failure_kind,
+                    "query_id": item.query_id,
+                    "status": item.status,
+                }
+                for item in self.executions
+            ],
+            "replayed": self.replayed,
+            "run_id": self.run_id,
+            "status": "complete" if self.next_state == RunState.RESEARCH_COMPLETE.value else "incomplete",
+            "succeeded_count": succeeded,
+            "transition_event_ids": list(self.transition_event_ids),
+        }
+
+
 def _terms(values: Iterable[str]) -> tuple[str, ...]:
     normalized = {normalize(value) for value in values if normalize(value)}
     return tuple(sorted(normalized, key=lambda value: (value.casefold(), value)))
@@ -393,6 +442,72 @@ def _credential_scope(
     }
 
 
+def _batch_credential_scope(
+    envelopes: Sequence[QueryEnvelope],
+    *,
+    auth_attempt: str,
+    credential_name: str,
+) -> dict[str, Any]:
+    first = envelopes[0]
+    return {
+        "adapter": normalize(first.adapter),
+        "adapter_version": normalize(first.adapter_version),
+        "allowed_host": normalize(first.allowed_host).casefold(),
+        "auth_attempt": auth_attempt,
+        "capability": normalize(first.capability),
+        "credential_name": credential_name,
+        "query_count": len(envelopes),
+        "request_fingerprint": digest({
+            "fingerprints": [envelope.request_fingerprint for envelope in envelopes],
+        }),
+    }
+
+
+def _verify_and_consume_credential_decision(
+    connection: sqlite3.Connection,
+    state: StateStore,
+    *,
+    run_id: str,
+    credential_decision_id: str,
+    credential_operation: str,
+    subject_revision_hash: str,
+    idempotency_key: str,
+) -> None:
+    """Bind a user decision to the exact suspended request, consuming it once."""
+
+    row = connection.execute(
+        "SELECT ge.approval_scope_json,gd.stale,gd.subject_revision_hash,"
+        "gd.suspended_operation,gd.used_at,gd.consumed_by_event_id FROM gate_decisions gd "
+        "JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id "
+        "WHERE gd.decision_id=? AND gd.run_id=?",
+        (credential_decision_id, run_id),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("credential decision is unavailable")
+    approval_scope = json.loads(row["approval_scope_json"])
+    if (
+        row["stale"]
+        or row["subject_revision_hash"] != subject_revision_hash
+        or row["suspended_operation"] != credential_operation
+    ):
+        raise RuntimeError("credential decision does not match the current request")
+    if row["used_at"]:
+        replay = connection.execute(
+            "SELECT event_id FROM idempotency_records "
+            "WHERE run_id=? AND operation=? AND idempotency_key=?",
+            (run_id, credential_operation, idempotency_key),
+        ).fetchone()
+        if replay is None or replay["event_id"] != row["consumed_by_event_id"]:
+            raise RuntimeError("credential decision was used by a different operation")
+    else:
+        state.consume_decision(
+            credential_decision_id,
+            suspended_operation=credential_operation,
+            subject_revision_hash=subject_revision_hash,
+            approval_scope=approval_scope,
+        )
+
+
 def run_research(
     connection: sqlite3.Connection,
     *,
@@ -449,37 +564,15 @@ def run_research(
             schema_version="research-request-v1",
         )
         if credential_decision_id:
-            row = connection.execute(
-                "SELECT ge.approval_scope_json,gd.stale,gd.subject_revision_hash,"
-                "gd.suspended_operation,gd.used_at,gd.consumed_by_event_id FROM gate_decisions gd "
-                "JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id "
-                "WHERE gd.decision_id=? AND gd.run_id=?",
-                (credential_decision_id, run_id),
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("credential decision is unavailable")
-            approval_scope = json.loads(row["approval_scope_json"])
-            if (
-                row["stale"]
-                or row["subject_revision_hash"] != request_revision.content_hash
-                or row["suspended_operation"] != credential_operation
-            ):
-                raise RuntimeError("credential decision does not match the current request")
-            if row["used_at"]:
-                replay = connection.execute(
-                    "SELECT event_id FROM idempotency_records "
-                    "WHERE run_id=? AND operation=? AND idempotency_key=?",
-                    (run_id, credential_operation, idempotency_key),
-                ).fetchone()
-                if replay is None or replay["event_id"] != row["consumed_by_event_id"]:
-                    raise RuntimeError("credential decision was used by a different operation")
-            else:
-                state.consume_decision(
-                    credential_decision_id,
-                    suspended_operation=credential_operation,
-                    subject_revision_hash=request_revision.content_hash,
-                    approval_scope=approval_scope,
-                )
+            _verify_and_consume_credential_decision(
+                connection,
+                state,
+                run_id=run_id,
+                credential_decision_id=credential_decision_id,
+                credential_operation=credential_operation,
+                subject_revision_hash=request_revision.content_hash,
+                idempotency_key=idempotency_key,
+            )
         if not bool(getattr(adapter, "credential_present", False)):
             scope = _credential_scope(
                 envelope,
@@ -587,4 +680,202 @@ def run_research(
         finished.artifact.revision_id,
         tuple(transition_event_ids),
         bool(started and started.replayed and execution.replayed and finished.replayed),
+    )
+
+
+def run_research_batch(
+    connection: sqlite3.Connection,
+    *,
+    run_root: Path,
+    run_id: str,
+    adapter: SearchAdapter,
+    queries: Sequence[PlannedQuery],
+    idempotency_key: str,
+    retrieved_at: str | None = None,
+    credential_decision_id: str | None = None,
+    fault_at: FaultInjector = None,
+) -> ResearchBatchRun:
+    """Execute a bounded batch of planned queries in one research session.
+
+    Mirrors run_research's authoritative handling, but performs every planned
+    query between the single start transition and the single finish
+    publication — the same store pattern the audit retrieval loop uses. A
+    non-auth source failure is recorded as an adapter event and coverage
+    limitation and the batch continues; an auth failure suspends the exact
+    batch behind a credential gate.
+    """
+
+    if not queries:
+        raise ValueError("research batch requires at least one planned query")
+    if len(queries) > 100:
+        raise ValueError("research batch exceeds the maximum of 100 planned queries")
+    if not normalize(idempotency_key):
+        raise ValueError("idempotency_key: required")
+    prepare = getattr(adapter, "prepare_envelope", None)
+    resolved: list[PlannedQuery] = []
+    for query in queries:
+        envelope = query.envelope
+        if callable(prepare):
+            envelope = prepare(envelope)
+            if not isinstance(envelope, QueryEnvelope):
+                raise TypeError("adapter prepare_envelope must return QueryEnvelope")
+            query = replace(query, envelope=envelope)
+        envelope.validate()
+        if envelope.run_id != normalize(run_id):
+            raise ValueError("research run_id does not match a query envelope")
+        resolved.append(query)
+
+    root, exports = _private_export_directory(run_root, create=False)
+    own = (exports,) if exports.exists() else ()
+    state = StateStore(connection, export_directories=workspace_export_directories(connection, root, own))
+    prior = state.snapshot(run_id)
+    if prior.state is RunState.CREDENTIAL_REQUIRED:
+        raise RuntimeError("credential_required: a current decision must resume the suspended request")
+
+    credential_operation = f"research.execute:{idempotency_key}"
+    requires_credential = bool(getattr(adapter, "requires_credential", False))
+    credential_name = normalize(getattr(adapter, "credential_name", ""))
+    if requires_credential and not credential_name:
+        raise ValueError("credential-requiring adapter must declare its credential name")
+    request_revision = None
+    if requires_credential:
+        if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
+            state.transition(
+                run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
+                operation="research.start", idempotency_key=idempotency_key,
+            )
+        request_revision = state.add_revision(
+            run_id,
+            "research_request",
+            {
+                "plan": [query.as_dict() for query in resolved],
+                "requests": [query.envelope.request_body() for query in resolved],
+            },
+            schema_version="research-request-v1",
+        )
+        if credential_decision_id:
+            _verify_and_consume_credential_decision(
+                connection,
+                state,
+                run_id=run_id,
+                credential_decision_id=credential_decision_id,
+                credential_operation=credential_operation,
+                subject_revision_hash=request_revision.content_hash,
+                idempotency_key=idempotency_key,
+            )
+        if not bool(getattr(adapter, "credential_present", False)):
+            scope = _batch_credential_scope(
+                [query.envelope for query in resolved],
+                auth_attempt=credential_decision_id or "preflight",
+                credential_name=credential_name,
+            )
+            gate = state.suspend_gate(
+                run_id,
+                GateKind.CREDENTIAL,
+                suspended_operation=credential_operation,
+                subject_revision_hash=request_revision.content_hash,
+                approval_scope=scope,
+                return_state=prior.state,
+                actor="research-cli",
+                reason="required adapter credential is unavailable",
+            )
+            raise CredentialRequiredError(gate)
+
+    transition_event_ids: list[str] = []
+    if prior.state is not RunState.RESEARCH_RUNNING:
+        started = state.transition(
+            run_id,
+            RunState.RESEARCH_RUNNING,
+            actor="research-cli",
+            reason="bounded research batch started",
+            operation="research.start",
+            idempotency_key=idempotency_key,
+        )
+        transition_event_ids.append(started.event_id)
+    else:
+        started = None
+    base_key = (
+        f"{idempotency_key}:credential:{credential_decision_id}"
+        if credential_decision_id else idempotency_key
+    )
+    store = ResearchStore(connection)
+    executions: list[ResearchExecution] = []
+    for index, query in enumerate(resolved):
+        execution = store.execute(
+            adapter,
+            query,
+            idempotency_key=f"{base_key}:q{index:02d}",
+            retrieved_at=retrieved_at,
+        )
+        executions.append(execution)
+        if requires_credential and execution.failure_kind == "auth":
+            if request_revision is None:
+                raise RuntimeError("credential adapter has no request revision")
+            scope = _batch_credential_scope(
+                [query.envelope for query in resolved],
+                auth_attempt=credential_decision_id or "remote_auth",
+                credential_name=credential_name,
+            )
+            gate = state.suspend_gate(
+                run_id,
+                GateKind.CREDENTIAL,
+                suspended_operation=credential_operation,
+                subject_revision_hash=request_revision.content_hash,
+                approval_scope=scope,
+                return_state=RunState.RESEARCH_RUNNING,
+                actor="research-cli",
+                reason="adapter rejected the configured credential",
+            )
+            raise CredentialRequiredError(gate)
+    manifest = ResearchStore(connection).manifest(run_id)
+    payload = research_bundle(manifest)
+    succeeded = any(item.status == "success" and item.evidence_ids for item in executions)
+    target = RunState.RESEARCH_COMPLETE if succeeded else RunState.RESEARCH_INCOMPLETE
+    _root, exports = _private_export_directory(root, create=True)
+    state = StateStore(connection, export_directories=workspace_export_directories(connection, root, (exports,)))
+    final_operation = credential_operation if credential_decision_id else "research.finish"
+    evidence_hashes = tuple(dict.fromkeys(
+        evidence_id for item in executions for evidence_id in item.evidence_ids
+    ))
+    finished, exported = state.publish_transition(
+        run_id,
+        target,
+        actor="research-cli",
+        reason="bounded research batch persisted",
+        operation=final_operation,
+        idempotency_key=idempotency_key,
+        evidence_hashes=evidence_hashes,
+        artifact_kind="research_bundle",
+        artifact_content=payload,
+        artifact_schema_version="research-bundle-v1",
+        export_directory=exports,
+        dependencies=(request_revision.revision_id,) if request_revision else (),
+        consumed_decision_id=credential_decision_id,
+        fault_at=fault_at,
+    )
+    if finished.artifact is None:
+        raise RuntimeError("research finish transition did not produce its bundle revision")
+    transition_event_ids.append(finished.event_id)
+    bundle = {
+        **payload,
+        "manifest": {
+            "artifact_id": exported.artifact_id,
+            "byte_hash": exported.content_hash,
+            "byte_size": exported.size,
+            "path": Path(exported.path).relative_to(root).as_posix(),
+        },
+    }
+    return ResearchBatchRun(
+        run_id,
+        prior.state.value,
+        finished.snapshot.state.value,
+        tuple(executions),
+        bundle,
+        finished.artifact.revision_id,
+        tuple(transition_event_ids),
+        bool(
+            started and started.replayed
+            and all(item.replayed for item in executions)
+            and finished.replayed
+        ),
     )

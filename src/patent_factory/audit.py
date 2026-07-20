@@ -175,7 +175,7 @@ def _query_input(value: Mapping[str, Any], finalists: Mapping[str, Mapping[str, 
 def run_audit_retrieval(
     connection: sqlite3.Connection, *, run_root: Path, run_id: str,
     query_input: Mapping[str, Any], config: SimilarityConfig, adapter_factory: AdapterFactory,
-    credential_decision_id: str | None = None,
+    credential_decision_id: str | None = None, retrieved_at: str | None = None,
 ) -> AuditRetrieval:
     canaries = credential_canaries()
     assert_canaries_absent(query_input, canaries, boundary="audit_query_input")
@@ -307,6 +307,7 @@ def run_audit_retrieval(
                 execution = store.execute(
                     adapter_factory(query, page, group["finalist_id"]), planned,
                     idempotency_key=f"audit:{operation_hash}:{group['finalist_id']}:{query_index}:{page}",
+                    retrieved_at=retrieved_at,
                 )
                 query_ids.append(execution.query_id)
                 logical_queries[execution.query_id] = logical_query_id

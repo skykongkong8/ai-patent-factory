@@ -5,12 +5,14 @@ record, not a patentability or legal assessment.
 
 ## Purpose and boundary
 
-`research serpapi` is the **only** command that performs a live network request. It
-runs one bounded Google Patents keyword search through SerpApi's official Google
-Patents engine, normalizes the results into the same hashed evidence graph as the
-KIPRIS and manual-import adapters, and never persists or logs the API key. Every
-other command remains offline; ordinary CI is entirely offline (see the offline seam
-below).
+`research serpapi` is the **only** command that reaches SerpApi, and the only one
+that leaves the KIPRIS host allowlist. It runs one bounded Google Patents keyword
+search through SerpApi's official Google Patents engine, normalizes the results
+into the same hashed evidence graph as the KIPRIS and manual-import adapters, and
+never persists or logs the API key. The repository's other networked paths —
+`research kipris` and `audit retrieve --live` — reach `plus.kipris.or.kr` with
+`KIPRIS_PLUS_API_KEY` instead; every remaining command is offline, and ordinary CI
+is entirely offline (see the offline seam below).
 
 ## Endpoints
 

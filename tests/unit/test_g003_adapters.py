@@ -253,6 +253,34 @@ class ManualWebAdapterTests(unittest.TestCase):
                 self.assertEqual(failed.failure.kind, AdapterFailureKind.MALFORMED)
                 self.assertEqual(failed.records, ())
 
+    def test_result_budget_excess_fails_instead_of_silently_truncating(self):
+        records = [
+            {
+                "canonical_url": f"https://example.com/public/{index}", "identifier": f"public-{index}",
+                "title": f"public {index}", "content_hash": "a" * 64, "language": "ko",
+                "provenance": "user_import", "limitations": [],
+            }
+            for index in range(3)
+        ]
+        exceeded = envelope(
+            adapter="manual_web", version="import-v1", capability="import", host="example.com",
+            projection={"content_type": "application/json", "records": records}, result_budget=2,
+        )
+        failed = ManualWebAdapter(("example.com",)).search(exceeded)
+        self.assertEqual(failed.failure.kind, AdapterFailureKind.OVERSIZE)
+        self.assertEqual(failed.records, ())
+        self.assertIn("result budget", failed.failure.message)
+
+        within = envelope(
+            adapter="manual_web", version="import-v1", capability="import", host="example.com",
+            projection={"content_type": "application/json", "records": records}, result_budget=3,
+        )
+        result = ManualWebAdapter(("example.com",)).search(within)
+        self.assertTrue(result.successful)
+        self.assertEqual(len(result.records), 3)
+        self.assertEqual(result.coverage["received"], 3)
+        self.assertEqual(result.coverage["usable"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

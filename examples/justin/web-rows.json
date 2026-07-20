@@ -1,0 +1,22 @@
+{
+  "schema_version": "web-rows-v1",
+  "rows": [
+    {
+      "url": "https://arxiv.org/abs/2501.01234",
+      "title": "Adaptive KV-Cache Compression for On-Device LLM Inference",
+      "identifier": "arXiv:2501.01234",
+      "abstract": "An attention-entropy-driven compression scheme that reduces on-device KV-cache memory while preserving accuracy.",
+      "excerpts": ["Entropy-guided precision control reduces cache memory by 40 percent."],
+      "limitations": ["arXiv preprint metadata only"],
+      "language": "en"
+    },
+    {
+      "url": "https://patents.google.com/patent/KR102026000001",
+      "title": "Mobile NPU KV-cache management apparatus",
+      "identifier": "KR-10-2026-0000001",
+      "abstract": "A static-ratio KV-cache management apparatus for mobile neural processing units.",
+      "limitations": ["public bibliographic metadata only"],
+      "language": "en"
+    }
+  ]
+}

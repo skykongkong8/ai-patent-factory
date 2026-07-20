@@ -45,16 +45,18 @@ command.
   current approval for the exact recipient/purpose/data class/content hash/scope and
   a minimized egress manifest, run only the local CLI and stop. This document and the
   wrapper do not authorize any external transfer.
-- `research serpapi` is the only opt-in networked command. It egresses only the
+- Three commands are opt-in networked, each credential-gated; every other command
+  is offline, and none send `documents/`, `workspace/`, or profile data.
+  `research kipris` and `audit retrieve --live` egress the bounded query terms and
+  `KIPRIS_PLUS_API_KEY` to `plus.kipris.or.kr`. `research serpapi` egresses the
   bounded search parameters (keyword, country, result paging) and the
-  `SERPAPI_API_KEY` value to `serpapi.com` (including a free quota preflight that
-  runs only after the run and its state are validated locally); the key is never
-  persisted or logged and is canary-scrubbed. All other commands are offline, and
-  none send `documents/`, `workspace/`, or profile data. On confirmed quota
-  exhaustion it stops with `quota_exhausted`, records the stop in the run
-  database, and emits a manual-import template under the documents root instead
-  of fabricating evidence; a transient rate limit is reported as an incomplete
-  research attempt, never as a fabricated quota state.
+  `SERPAPI_API_KEY` value to `serpapi.com`, including a free quota preflight that
+  runs only after the run and its state are validated locally. Keys are never
+  persisted or logged and are canary-scrubbed.
+- On confirmed quota exhaustion `research serpapi` stops with `quota_exhausted`,
+  records the stop in the run database, and emits a manual-import template under
+  the documents root instead of fabricating evidence; a transient rate limit is
+  reported as an incomplete research attempt, never as a fabricated quota state.
 - `share` requires an `external-report-share-v1` request and a current, exact
   sensitive-disclosure decision. Do not copy the report to bypass the gate.
 - Similarity is a research aid within the retrieved corpus. Do not write conclusions

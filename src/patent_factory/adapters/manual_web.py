@@ -19,6 +19,11 @@ MANUAL_RECORD_FIELDS = frozenset({
     "canonical_url", "identifier", "title", "content_hash", "language", "provenance",
     "excerpt_hashes", "interpretations", "limitations",
 })
+WEB_SOURCE_TAGS = ("arxiv", "github", "google_patents", "naver", "papers_with_code", "web")
+WEB_ROW_FIELDS = frozenset({
+    "abstract", "excerpts", "identifier", "interpretations", "language", "limitations",
+    "title", "url",
+})
 
 
 def _failure(kind: AdapterFailureKind, message: str) -> AdapterResult:
@@ -83,6 +88,69 @@ def sanitize_manual_records(
     return sanitized
 
 
+def normalize_web_rows(
+    rows: Any,
+    allowed_hosts: Iterable[str],
+    source_tag: str,
+) -> list[dict[str, Any]]:
+    """Turn agent-gathered public web metadata into import-ready manual records.
+
+    A pure offline transform: the caller performed the retrieval out-of-band; this
+    helper computes the span/content hashes the trusted core requires (the same
+    ``digest({"field", "text"})`` formula the KIPRIS adapter uses) and enforces the
+    HTTPS allowlist. The result always round-trips ``sanitize_manual_records``.
+    """
+
+    if source_tag not in WEB_SOURCE_TAGS:
+        raise ValueError("web source tag must be one of: " + ", ".join(WEB_SOURCE_TAGS))
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("web rows must be a non-empty list")
+    hosts = frozenset(normalize(host).casefold() for host in allowed_hosts if normalize(host))
+    records: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        label = f"web row {index}"
+        if not isinstance(row, Mapping):
+            raise ValueError(f"{label} must be an object")
+        if set(row) - WEB_ROW_FIELDS:
+            raise ValueError(f"{label} contains unsupported fields")
+        url_value = normalize(str(row.get("url", "")))
+        title = normalize(str(row.get("title", "")))
+        identifier = normalize(str(row.get("identifier", "")))
+        if not url_value or not title or not identifier:
+            raise ValueError(f"{label} requires url, title, and identifier")
+        parsed = urllib.parse.urlsplit(url_value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.hostname.casefold() not in hosts:
+            raise PermissionError(f"{label} URL is outside the HTTPS allowlist")
+        if parsed.username or parsed.password or parsed.fragment or (parsed.port not in (None, 443)):
+            raise PermissionError(f"{label} URL contains forbidden components")
+        canonical = urllib.parse.urlunsplit(
+            ("https", parsed.hostname.casefold(), parsed.path or "/", parsed.query, ""),
+        )
+        spans = {"title": title}
+        abstract = normalize(str(row["abstract"])) if row.get("abstract") else ""
+        if abstract:
+            spans["abstract"] = abstract
+        for excerpt_index, excerpt in enumerate(_strings(row.get("excerpts"), "excerpts"), start=1):
+            spans[f"excerpt_{excerpt_index:02d}"] = excerpt
+        field_span_hashes = {
+            field: digest({"field": field, "text": text}) for field, text in spans.items()
+        }
+        excerpt_hashes = sorted(field_span_hashes.values())
+        language = normalize(str(row.get("language", "und"))) or "und"
+        content_hash = digest({
+            "canonical_url": canonical, "excerpt_hashes": excerpt_hashes,
+            "identifier": identifier, "language": language, "title": title,
+        })
+        records.append({
+            "canonical_url": canonical, "content_hash": content_hash,
+            "excerpt_hashes": excerpt_hashes, "identifier": identifier,
+            "interpretations": _strings(row.get("interpretations"), "interpretations"),
+            "language": language, "limitations": _strings(row.get("limitations"), "limitations"),
+            "provenance": source_tag, "title": title,
+        })
+    return sanitize_manual_records(records, allowed_hosts)
+
+
 class ManualWebAdapter:
     name = "manual_web"
     version = "import-v1"
@@ -115,8 +183,14 @@ class ManualWebAdapter:
             encoded = canonical_json(sanitized).encode("utf-8")
             if len(encoded) > envelope.byte_budget:
                 return _failure(AdapterFailureKind.OVERSIZE, "manual import exceeds byte budget")
+            if len(sanitized) > envelope.result_budget:
+                return _failure(
+                    AdapterFailureKind.OVERSIZE,
+                    f"manual import exceeds result budget ({len(sanitized)} records > "
+                    f"{envelope.result_budget}): raise --result-budget or split the import",
+                )
             records: list[AdapterRecord] = []
-            for item in sanitized[: envelope.result_budget]:
+            for item in sanitized:
                 records.append(AdapterRecord(
                     source_type="manual_web", source_locator=item["canonical_url"],
                     original_identifier=item["identifier"], title=item["title"],
@@ -131,6 +205,6 @@ class ManualWebAdapter:
         except (TypeError, ValueError):
             return _failure(AdapterFailureKind.MALFORMED, "manual import envelope is malformed")
         result = AdapterResult(tuple(records), digest(encoded.decode("utf-8")), TERMS_NOTE,
-                               {"received": len(records), "usable": len(records)})
+                               {"received": len(sanitized), "usable": len(records)})
         result.validate()
         return result

@@ -1,23 +1,31 @@
 ---
-description: Render the private Korean 11-section report with citation and decision bindings.
+description: Render the private 11-section report (English default, Korean optional) with citation and decision bindings.
 ---
 
 # /draft — render the report (step 6)
 
-Render the private Korean 11-section report. Follow `CLAUDE.md`, `AGENTS.md`, and
+Render the private 11-section report in English (default) or Korean. Follow `CLAUDE.md`, `AGENTS.md`, and
 `.claude/skills/ideation/SKILL.md`. Pass only a `report-input-v1` bound to the current
 approved artifact hash.
 
 ## Where you provide input
 
-Author `workspace/requests/report-input-v1.json` (template in `workspace/README.md`).
-The core renders the eleven Korean sections and the citation/decision bindings — this
-wrapper never writes or edits `draft.md` or the report export.
+Author `workspace/requests/report-input-v2.json` (template in `workspace/README.md`).
+The report renders in English (`"language": "en"`, the default) or Korean
+(`"language": "ko"`); the legacy `report-input-v1` shape is accepted and means
+Korean. The core renders the eleven sections and the citation/decision bindings —
+this wrapper never writes or edits `draft.md` or the report export.
 
 ## Steps
 
-0. Help the user assemble `report-input-v1` (drafter identity, `report_date`, profile
-   fields, handoff questions).
+0. Ask which report language the user wants (default English), then start from
+   `scaffold report` (renderable profile fields pre-filled; you author the
+   drafter identity, date, and questions):
+
+```bash
+python3 -m patent_factory scaffold report --language en \
+  --out workspace/requests/report-input-v2.json
+```
 1. Run the CLI verb.
 
 ```bash

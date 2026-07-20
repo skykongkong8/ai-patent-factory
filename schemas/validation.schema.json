@@ -17,8 +17,8 @@
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "citation_integrity"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "decision_coverage"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "identifier_shape"}}},
-        {"$ref": "#/$defs/check", "properties": {"name": {"const": "korean_narrative"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "legal_language"}}},
+        {"$ref": "#/$defs/check", "properties": {"name": {"const": "narrative_language"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "report_structure"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "review_binding"}}},
         {"$ref": "#/$defs/check", "properties": {"name": {"const": "semantic_reconstruction"}}}
