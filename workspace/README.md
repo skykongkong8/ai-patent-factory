@@ -149,19 +149,98 @@ The fixture manifest is read from the **documents root**
 
 ### `feature-map-set-input-v1.json` → `/audit score`
 
-Reviewed feature maps per finalist; the scorer is fixed at `simrisk-v1.0.0`. Minimal
-shape (full structure: `schemas/feature-map.schema.json`):
+Reviewed feature maps per finalist; the scorer is fixed at `simrisk-v1.0.0`.
 
+> **`schemas/feature-map.schema.json` describes the persisted *artifact***
+> (`feature-map-set-v1`, what `/audit score` *writes*), **not this input.**
+> Writing this input against that schema produces a shape the verb rejects. The
+> authoritative input contract is `similarity.validate_feature_map` (per-map
+> fields, category weights, decision shape) plus the cross-field checks in
+> `audit.run_audit_scoring` (`src/patent_factory/audit.py:390-472`: hash
+> bindings, exactly one map per current finalist, span provenance, one reviewed
+> decision per retained corpus record).
+
+Each entry in `maps` wraps a `feature_map` with the finalist it belongs to and a
+`map_id`. **Do not hand-author `map_id`**: it digests the *filled* map, so it
+changes the moment you edit a `status` or `rationale`, and a stale one is
+rejected ("map identity does not bind frozen content"). Fill in every judgment
+field first, then derive `map_id` last with:
+
+```bash
+python3 -m patent_factory scaffold feature-map \
+  --seal workspace/requests/feature-map-set-input-v1.json \
+  --out workspace/requests/feature-map-set-input-v1.json
+```
+
+(`scaffold.seal_feature_map_input` re-derives every `map_id` from
+`audit.feature_map_id`; it refuses to seal a map that still has an unfilled
+`TODO(agent)` marker.)
+
+The example below is validated byte-for-byte by
+`tests/unit/test_documented_contracts.py`, which loads it straight out of this
+file and asserts `similarity.canonical_feature_map` /
+`similarity.validate_feature_map` accept every `feature_map`. A full submission
+needs one `maps` entry per current finalist (3 for a full shortlist); only one
+is shown here for brevity.
+
+<!-- feature-map-example:start -->
 ```json
 {
   "schema_version": "feature-map-set-input-v1",
-  "finalist_set_hash": "<from shortlist>",
-  "corpus_set_hash": "<from audit retrieve>",
+  "finalist_set_hash": "<from the shortlist output>",
+  "corpus_set_hash": "<from the audit retrieve output>",
   "maps": [
-    {"feature_map": {"reference_maps": [{"decisions": {"feature-problem": {"status": "matched"}}}]}}
+    {
+      "finalist_id": "<finalist_id from the shortlist output>",
+      "feature_map": {
+        "candidate_classifications": ["G06F 1/00"],
+        "features": [
+          {"feature_id": "feature-problem", "category": "problem", "essential": true, "weight": "0.10",
+           "candidate_span_hashes": ["<span hash cited from the finalist/candidate text>"]},
+          {"feature_id": "feature-inputs", "category": "inputs", "essential": true, "weight": "0.10",
+           "candidate_span_hashes": ["<span hash>"]},
+          {"feature_id": "feature-mechanism", "category": "mechanism", "essential": true, "weight": "0.30",
+           "candidate_span_hashes": ["<span hash>"]},
+          {"feature_id": "feature-transformations", "category": "transformations", "essential": true, "weight": "0.20",
+           "candidate_span_hashes": ["<span hash>"]},
+          {"feature_id": "feature-outputs", "category": "outputs", "essential": true, "weight": "0.10",
+           "candidate_span_hashes": ["<span hash>"]},
+          {"feature_id": "feature-technical_effects", "category": "technical_effects", "essential": true, "weight": "0.20",
+           "candidate_span_hashes": ["<span hash>"]}
+        ],
+        "reference_maps": [
+          {
+            "evidence_id": "ev_0000000000000000",
+            "inspected_fields": ["title", "abstract", "classifications"],
+            "decisions": [
+              {"feature_id": "feature-problem", "status": "matched", "rationale": "reviewer's stated basis, tied to the inspected fields", "reference_span_hashes": ["<span hash from the reviewed reference record>"]},
+              {"feature_id": "feature-inputs", "status": "matched", "rationale": "reviewer's stated basis", "reference_span_hashes": ["<span hash>"]},
+              {"feature_id": "feature-mechanism", "status": "different", "rationale": "reviewer's stated basis", "reference_span_hashes": ["<span hash>"]},
+              {"feature_id": "feature-transformations", "status": "not_disclosed", "rationale": "reviewer's stated basis", "reference_span_hashes": ["<span hash>"]},
+              {"feature_id": "feature-outputs", "status": "unavailable", "rationale": "reviewer's stated basis", "reference_span_hashes": []},
+              {"feature_id": "feature-technical_effects", "status": "matched", "rationale": "reviewer's stated basis", "reference_span_hashes": ["<span hash>"]}
+            ]
+          }
+        ],
+        "review": {
+          "reviewed_at": "2026-07-19T00:00:00Z",
+          "reviewed_by": "<reviewer id>",
+          "status": "reviewed"
+        }
+      },
+      "map_id": "<derived last by 'scaffold feature-map --seal' — never hand-authored>"
+    }
   ]
 }
 ```
+<!-- feature-map-example:end -->
+
+`features` weights must total exactly the `simrisk-v1.0.0` category weights in
+`config/simrisk-v1.0.0.json` (`problem` 0.10, `inputs` 0.10, `mechanism` 0.30,
+`transformations` 0.20, `outputs` 0.10, `technical_effects` 0.20 — the split
+above). Each `reference_maps` entry needs one `decisions` entry per feature
+(`status` one of `matched`/`different`/`not_disclosed`/`unavailable`); every
+status except `unavailable` needs a non-empty `reference_span_hashes`.
 
 ### `report-input-v2.json` → `/draft`
 
@@ -229,6 +308,22 @@ Author this only when a gate stops the pipeline. Copy `gate_id`,
   "plan": {}
 }
 ```
+
+> **`schemas/decision.schema.json` describes the persisted *output***
+> (`decision-set-v1`), **not what you author.** It lists all seven
+> `decisions[]` fields (`action`, `candidate_id`, `corpus_hash`,
+> `feature_map_id`, `finalist_hash`, `finalist_id`, `reason`, `warning`)
+> because that is what the core *writes* to the artifact. For an
+> `excessive_similarity` gate, **you only ever supply**
+> `{"action", "finalist_id", "reason"}` per affected finalist
+> (`src/patent_factory/decisions.py:226-227`); the core looks up and derives
+> `candidate_id`, `corpus_hash`, `feature_map_id`, and `finalist_hash` itself
+> from the current finalist/corpus/feature-map sets, and fills `warning`
+> (`decisions.py:243-249`). Example `decisions` entry for that gate kind:
+>
+> ```json
+> {"action": "retain_with_warning", "finalist_id": "<affected finalist_id>", "reason": "reviewed provisional similarity risk and accept it"}
+> ```
 
 ### `external-report-share-v1.json` → `/review` (share)
 
