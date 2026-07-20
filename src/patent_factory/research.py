@@ -93,6 +93,27 @@ class ResearchRun:
     transition_event_ids: tuple[str, ...]
     replayed: bool
 
+    def _incomplete_reason(self) -> str | None:
+        """Say WHY a run is incomplete, so `incomplete` is not a dead end.
+
+        A run whose adapter succeeded but contributed no NEW evidence is
+        `incomplete` purely because every record deduplicated against evidence
+        already in the run. Without this, re-importing after an
+        excessive-similarity `replace` reroute returns `incomplete`/exit 4 with a
+        non-zero `evidence_count` and no indication that the fix is "supply a
+        reference that is not already here".
+        """
+
+        if self.next_state == RunState.RESEARCH_COMPLETE.value:
+            return None
+        if self.execution.status == "success" and not self.execution.evidence_ids:
+            return (
+                "no_new_evidence: the adapter succeeded but every record already exists in "
+                "this run, so nothing was added. Supply at least one reference not already "
+                "retrieved, or proceed with the evidence you have."
+            )
+        return f"adapter_status_{self.execution.status}"
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "adapter_status": {
@@ -102,6 +123,7 @@ class ResearchRun:
             "artifact_ids": [self.artifact_revision_id],
             "command": "research",
             "evidence_count": len(self.execution.evidence_ids),
+            "incomplete_reason": self._incomplete_reason(),
             "manifest": self.bundle["manifest"],
             "next_state": self.next_state,
             "prior_state": self.prior_state,
@@ -224,6 +246,46 @@ def plan_keyword_queries(
             planned.append(PlannedQuery(envelope, origin, term, kind, depth))
             if len(planned) >= budget.max_calls:
                 return tuple(planned)
+    return tuple(planned)
+
+
+def plan_bibliography_queries(
+    *,
+    run_id: str,
+    application_numbers: Sequence[str],
+    budget: ResearchBudget = ResearchBudget(),
+    adapter: str = "kipris",
+    adapter_version: str = "plus-xml-v1",
+    allowed_host: str = "plus.kipris.or.kr",
+) -> tuple[PlannedQuery, ...]:
+    """Plan one bibliography-summary lookup per application number.
+
+    Kept separate from `plan_keyword_queries` rather than parameterized by
+    capability: the two capabilities take different projections entirely
+    (`{"word": ...}` versus `{"application_number": ...}`), so a shared planner
+    would have to branch on capability at every step and could emit a projection
+    the adapter rejects.
+    """
+
+    budget.validate()
+    numbers = tuple(dict.fromkeys(
+        normalized for value in application_numbers if (normalized := normalize(value))
+    ))
+    if not numbers:
+        raise ValueError("application_numbers: at least one value required")
+    planned: list[PlannedQuery] = []
+    for number in numbers:
+        envelope = QueryEnvelope(
+            run_id=run_id, adapter=adapter, adapter_version=adapter_version,
+            capability="bibliography_summary", allowed_scheme="https", allowed_host=allowed_host,
+            deadline_seconds=10, page=1, page_cap=budget.page_cap,
+            result_budget=budget.per_adapter_results, byte_budget=budget.byte_budget,
+            retry_budget=budget.retry_budget, retry_ownership="research_runner",
+            query_projection={"application_number": number},
+        )
+        planned.append(PlannedQuery(envelope, number, number, "bibliography", 0))
+        if len(planned) >= budget.max_calls:
+            break
     return tuple(planned)
 
 

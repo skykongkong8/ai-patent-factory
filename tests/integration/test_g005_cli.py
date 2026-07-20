@@ -113,6 +113,33 @@ class G005CliTests(unittest.TestCase):
                 "SELECT count(*) FROM research_queries WHERE envelope_json LIKE '%final_similarity_audit%'"
             ).fetchone()[0], 6)
 
+    def test_incomplete_fixture_manifest_fails_as_json_not_a_traceback(self):
+        """A missing manifest entry used to raise a bare KeyError.
+
+        The caller got a Python traceback on stderr instead of a cli-result
+        envelope, exit 1 with no failure_code, and the run had ALREADY moved to
+        audit_running — so a driving agent was left in a state it could not even
+        parse, let alone act on. The required page count appeared in no output.
+        """
+
+        run_root, finalist_hash, finalists = self.prepare("gappy")
+        query_path, manifest_path = self.inputs("gappy", finalist_hash, finalists)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        dropped = manifest["responses"].pop()
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+        result = self.invoke(run_root, "gappy", query_path, manifest_path)
+        self.assertNotEqual(result.returncode, 0)
+        # The contract every driving agent depends on: stdout is always one
+        # parseable cli-result object.
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("audit fixture manifest has no response", payload["error"])
+        # Actionable: name the missing key and the page count that governs it.
+        self.assertIn(dropped["finalist_id"], payload["error"])
+        self.assertIn("page cap", payload["error"])
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_query_canary_is_rejected_before_audit_state_or_persistence(self):
         secret = "G005-KIPRIS-CANARY"
         run_root, finalist_hash, finalists = self.prepare("private")
