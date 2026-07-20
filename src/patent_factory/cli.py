@@ -589,8 +589,7 @@ def _research_normalize_web(
     allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
     if not allowed_hosts or any(not host for host in allowed_hosts):
         raise CliError("normalize-web requires a non-empty host allowlist")
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(payload, (secret,) if secret else (), boundary="web_rows")
+    assert_canaries_absent(payload, credential_canaries(), boundary="web_rows")
     records = normalize_web_rows(payload["rows"], allowed_hosts, args.source_type)
     out_path = _prepare_contained_output(args.out, documents_root, "manual import output")
     out_path.write_text(

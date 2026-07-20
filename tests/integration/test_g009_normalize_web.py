@@ -1,9 +1,11 @@
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from patent_factory import cli
 from patent_factory.adapters.manual_web import normalize_web_rows, sanitize_manual_records
@@ -134,6 +136,38 @@ class NormalizeWebCliTests(unittest.TestCase):
             connection.close()
         self.assertEqual({row["source_type"] for row in rows}, {"manual_web"})
         self.assertEqual({row["provenance"] for row in rows}, {"arxiv"})
+
+    def _canary_run(self, credential_name, secret):
+        """Embed `secret` in a web-rows field and drive normalize-web with it exported."""
+        payload = rows_payload()
+        payload["rows"][0]["abstract"] = f"Leaked via a pasted transcript: {secret}"
+        (self.documents / "leaky.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8",
+        )
+        (self.documents / "leaked-out.json").unlink(missing_ok=True)
+        with mock.patch.dict(os.environ, {credential_name: secret}, clear=False):
+            return self.invoke(
+                "research", "normalize-web", self.documents_rel / "leaky.json",
+                "--out", self.documents_rel / "leaked-out.json",
+                "--allow-host", "arxiv.org", "--allow-host", "patents.google.com",
+                "--source-type", "arxiv",
+                "--documents-root", self.documents_rel, "--workspace-root", self.workspace_rel,
+            )
+
+    def test_web_rows_canary_covers_every_known_credential(self):
+        # Regression: this boundary used to scrub only KIPRIS_PLUS_API_KEY, so a SerpApi key
+        # pasted into a web-rows file crossed it undetected. web_rows is the documented
+        # ingestion path for SerpApi-derived data, which is exactly where such a paste happens.
+        for credential_name in ("SERPAPI_API_KEY", "KIPRIS_PLUS_API_KEY"):
+            with self.subTest(credential=credential_name):
+                secret = f"sk-live-{credential_name.lower()}-9f8e7d6c5b4a"
+                payload, code = self._canary_run(credential_name, secret)
+                self.assertEqual(code, 2, payload)
+                self.assertEqual(payload["status"], "error")
+                self.assertIn("web_rows: canary_detected", payload["error"])
+                # The boundary must not echo the secret it just caught.
+                self.assertNotIn(secret, json.dumps(payload))
+                self.assertFalse((self.documents / "leaked-out.json").exists())
 
     def test_malformed_envelope_is_rejected(self):
         (self.documents / "bad.json").write_text(json.dumps({"rows": []}), encoding="utf-8")
