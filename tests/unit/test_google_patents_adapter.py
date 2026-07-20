@@ -86,12 +86,27 @@ class GooglePatentsAdapterTests(unittest.TestCase):
         result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
         self.assertEqual(result.failure.kind, AdapterFailureKind.AUTH)
 
-    def test_hourly_throughput_error_is_not_quota_exhaustion(self):
-        body = json.dumps({
+    def test_throttle_is_rate_limited_but_distinct_from_quota_exhaustion(self):
+        throttle = json.dumps({
             "error": "You are sending requests too fast, you've exceeded the hourly throughput limit."
         }).encode()
-        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
-        self.assertEqual(result.failure.kind, AdapterFailureKind.MALFORMED)
+        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, throttle)).search(envelope())
+        self.assertEqual(result.failure.kind, AdapterFailureKind.RATE_LIMIT)
+        self.assertTrue(result.failure.retryable)
+        self.assertIn("throttled", result.failure.message)
+        self.assertNotIn("quota", result.failure.message)
+
+        exhausted = json.dumps({"error": "You've run out of searches for this month."}).encode()
+        quota = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, exhausted)).search(envelope())
+        self.assertEqual(quota.failure.kind, AdapterFailureKind.RATE_LIMIT)
+        self.assertIn("quota exhausted", quota.failure.message)
+
+    def test_unrecognized_request_error_stays_malformed(self):
+        # Guards the closed marker lists against over-broad matching.
+        for text in ("Invalid engine parameter.", "Unsupported country code exceeded limits."):
+            body = json.dumps({"error": text}).encode()
+            result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+            self.assertEqual(result.failure.kind, AdapterFailureKind.MALFORMED)
 
     def test_processing_or_missing_status_is_not_terminal_success(self):
         for body in (

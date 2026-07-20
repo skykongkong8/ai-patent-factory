@@ -196,6 +196,34 @@ class SerpApiCliTests(unittest.TestCase):
         self.assertNotIn("searches_left", output)
         self.assertFalse(self._template_path().exists())
 
+    def test_hourly_throttle_gets_a_retry_hint_not_a_manual_handoff(self):
+        # A throttle leaves the monthly allowance intact, so it must surface as a
+        # retryable rate limit with a hint — never as a quota stop.
+        run_root = self.workspace / "serp-hourly"
+        prepare_run(run_root, "serp-hourly")
+        response = self._response_fixture("error-throttle")
+        account = self._account_fixture("account-ok")
+        result = run_cli(
+            *self.common(run_root, "serp-hourly"),
+            "--fixture-response", self.relative(response),
+            "--fixture-account", self.relative(account),
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["adapter_status"]["failure_kind"], "rate_limit")
+        self.assertIn("rate_limit_note", output)
+        self.assertIn("retry shortly", output["rate_limit_note"])
+        self.assertFalse(self._template_path().exists())
+        # The throttle message is recorded as a coverage limitation, distinct
+        # from the monthly-exhaustion wording.
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            reason = connection.execute(
+                "SELECT limitation FROM coverage_limitations ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            self.assertIsNotNone(reason)
+            self.assertIn("throttled", reason["limitation"])
+
     def test_failed_attempt_is_retried_under_a_fresh_key(self):
         run_root = self.workspace / "serp-retry"
         prepare_run(run_root, "serp-retry")

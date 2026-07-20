@@ -32,7 +32,14 @@ The adapter parses `organic_results[]`; pagination and totals come from
 field or any `search_metadata.status` other than a final `"Success"` (including
 `"Processing"`, a missing status, or a non-object container) becomes a normalized
 adapter failure and creates no evidence. HTTP 401/403 → `auth`, 429 → `rate_limit`,
-timeouts and network errors → normalized failures. A `patent_link` is accepted as
+timeouts and network errors → normalized failures. Two closed marker lists split
+the `error` bodies that are recoverable rather than malformed: monthly-allowance
+phrases ("run out of searches", "plan searches", "monthly search") and throttle
+phrases ("too fast", "throughput", "hourly", "per second", "too many requests",
+"slow down"). Both normalize to `rate_limit` because the taxonomy has no separate
+throttle kind, but they carry distinct messages ("monthly search quota exhausted"
+vs. "throttled the request rate") so a throttle is offered a retry instead of a
+manual-import handoff; anything else stays `malformed`. A `patent_link` is accepted as
 the canonical URL only when it is a canonical HTTPS `patents.google.com` URL;
 anything else falls back to the URL constructed from the validated publication
 number. The priority date is never substituted for a missing filing date; the

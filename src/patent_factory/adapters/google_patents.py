@@ -35,6 +35,14 @@ Transport = Callable[[str, float, int], TransportResponse]
 # reclassified as a recoverable quota state.
 _QUOTA_MARKERS = ("run out of searches", "ran out of searches", "plan searches", "monthly search")
 
+# Transient throttling: the allowance is intact but the request arrived too fast.
+# Distinguished from _QUOTA_MARKERS so the caller can offer a retry rather than
+# a manual-import handoff; both normalize to RATE_LIMIT because the failure
+# taxonomy has no separate throttle kind.
+_THROTTLE_MARKERS = (
+    "too fast", "too many requests", "throughput", "hourly", "per second", "slow down",
+)
+
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
@@ -281,6 +289,8 @@ class GooglePatentsAdapter:
             lowered = error_text.casefold()
             if any(marker in lowered for marker in _QUOTA_MARKERS):
                 return _failure(AdapterFailureKind.RATE_LIMIT, "SerpApi monthly search quota exhausted", retryable=True)
+            if any(marker in lowered for marker in _THROTTLE_MARKERS):
+                return _failure(AdapterFailureKind.RATE_LIMIT, "SerpApi throttled the request rate", retryable=True)
             if "api key" in lowered or "api_key" in lowered:
                 return _failure(AdapterFailureKind.AUTH, "SerpApi credential was rejected")
             return _failure(AdapterFailureKind.MALFORMED, "SerpApi reported a request error")
