@@ -61,6 +61,13 @@ def sanitize_manual_records(
             raise ValueError("manual record provenance and identity are required")
         if re.fullmatch(r"[0-9a-f]{64}", content_hash) is None:
             raise ValueError("manual record content_hash must be normalized SHA-256 hex")
+        # Reject unedited fallback-template records so a placeholder skeleton can
+        # never be persisted as authoritative evidence.
+        if content_hash == "0" * 64:
+            raise ValueError("manual record content_hash is the unedited placeholder sentinel")
+        haystack = " ".join((title, identifier, provenance, str(item.get("canonical_url", "")))).casefold()
+        if "replace_with" in haystack:
+            raise ValueError("manual record still contains unedited template placeholders")
         locator = urllib.parse.urlunsplit(("https", url.hostname.casefold(), url.path or "/", url.query, ""))
         sanitized.append({
             "canonical_url": locator,

@@ -29,9 +29,11 @@ TERMS_NOTE = "Normalized metadata only; raw SerpApi/Google Patents responses are
 Transport = Callable[[str, float, int], TransportResponse]
 
 # SerpApi phrases that indicate the monthly search allowance is spent rather than
-# a malformed request or an invalid key. Kept as a small closed list so a genuine
-# malformed response is never silently reclassified as a recoverable quota state.
-_QUOTA_MARKERS = ("run out of searches", "ran out of searches", "exceeded", "plan searches", "monthly search")
+# a malformed request or an invalid key. Kept as a small closed list of quota-specific
+# phrases — a bare word such as "exceeded" would misclassify hourly-throughput errors
+# as monthly exhaustion — so a genuine malformed response is never silently
+# reclassified as a recoverable quota state.
+_QUOTA_MARKERS = ("run out of searches", "ran out of searches", "plan searches", "monthly search")
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -97,6 +99,35 @@ def _assignee(value: Any) -> str | None:
     return None
 
 
+def _canonical_patent_url(link: str | None, number: str) -> str:
+    """Accept the source link only when it is a canonical HTTPS Google Patents URL.
+
+    The accepted URL is re-serialized from its parsed parts (like the manual
+    import path) so raw bytes the parser ignores — e.g. embedded tabs or
+    newlines — can never be persisted verbatim.
+    """
+
+    if link:
+        try:
+            parts = urllib.parse.urlsplit(link)
+            allowed = bool(
+                parts.scheme == "https"
+                and parts.hostname
+                and parts.hostname.casefold() == GOOGLE_PATENTS_HOST
+                and not parts.username
+                and not parts.password
+                and not parts.fragment
+                and parts.port in (None, 443)
+            )
+        except ValueError:
+            allowed = False
+        if allowed:
+            return urllib.parse.urlunsplit(
+                ("https", parts.hostname.casefold(), parts.path or "/", parts.query, "")
+            )
+    return f"https://{GOOGLE_PATENTS_HOST}/patent/{number}/en"
+
+
 def _publication_number(result: dict[str, Any]) -> str | None:
     direct = _text(result.get("publication_number"))
     if direct:
@@ -127,13 +158,17 @@ def serpapi_account(
         raise ValueError("serpapi account query requires a credential")
     call = transport or _default_transport
     url = f"{SERPAPI_ACCOUNT_URL}?{urllib.parse.urlencode({'api_key': api_key})}"
-    response = call(url, deadline, byte_budget)
+    try:
+        response = call(url, deadline, byte_budget)
+        body = bounded_body(response.body, byte_budget)
+    except OverflowError as error:
+        raise ValueError("serpapi account response exceeds byte budget") from error
     if response.final_url and not _allowed_final_url(response.final_url):
         raise ValueError("serpapi account redirect left the allowlist")
     if response.status != 200:
         raise ValueError(f"serpapi account query failed with status {response.status}")
     try:
-        data = json.loads(bounded_body(response.body, byte_budget))
+        data = json.loads(body)
     except (json.JSONDecodeError, ValueError) as error:
         raise ValueError("serpapi account response was not valid JSON") from error
     if not isinstance(data, dict):
@@ -249,15 +284,22 @@ class GooglePatentsAdapter:
             if "api key" in lowered or "api_key" in lowered:
                 return _failure(AdapterFailureKind.AUTH, "SerpApi credential was rejected")
             return _failure(AdapterFailureKind.MALFORMED, "SerpApi reported a request error")
-        status = _text((data.get("search_metadata") or {}).get("status")) or ""
-        if status and status.casefold() not in {"success", "processing"}:
-            return _failure(AdapterFailureKind.MALFORMED, "SerpApi response misses a success status")
+        metadata = data.get("search_metadata")
+        information = data.get("search_information")
+        pagination = data.get("serpapi_pagination")
+        for container in (metadata, information, pagination):
+            if container is not None and not isinstance(container, dict):
+                return _failure(AdapterFailureKind.MALFORMED, "SerpApi response container is not an object")
+        # Only a final "Success" is terminal: "Processing", errors, or a missing
+        # status must never be persisted as an authoritative (even empty) result.
+        status = _text((metadata or {}).get("status")) or ""
+        if status.casefold() != "success":
+            return _failure(AdapterFailureKind.MALFORMED, "SerpApi search status is not a final Success")
 
         organic = data.get("organic_results")
         if organic is not None and not isinstance(organic, list):
             return _failure(AdapterFailureKind.MALFORMED, "SerpApi organic_results is not a list")
-        information = data.get("search_information") or {}
-        total = _int_or_none(information.get("total_results"))
+        total = _int_or_none((information or {}).get("total_results"))
 
         try:
             records: list[AdapterRecord] = []
@@ -272,13 +314,19 @@ class GooglePatentsAdapter:
                 if not number:
                     raise ValueError("SerpApi publication number is invalid")
                 abstract = _text(result.get("snippet"))
-                canonical_url = _text(result.get("patent_link")) or f"https://{GOOGLE_PATENTS_HOST}/patent/{number}/en"
+                canonical_url = _canonical_patent_url(_text(result.get("patent_link")), number)
+                # The priority date is legally distinct from the filing date and is
+                # never substituted for it; its absence is recorded as a limitation.
+                filing_date = _text(result.get("filing_date"))
+                limitations = ["Normalized Google Patents metadata; not a patentability conclusion."]
+                if not filing_date and _text(result.get("priority_date")):
+                    limitations.append("Source reported a priority date only; the filing date is unavailable.")
                 normalized_record = {
                     "abstract": abstract,
                     "applicant": _assignee(result.get("assignee")),
                     "application_number": number,
                     "classifications": (),
-                    "filing_date": _text(result.get("filing_date")) or _text(result.get("priority_date")),
+                    "filing_date": filing_date,
                     "title": title,
                 }
                 field_span_hashes = {
@@ -301,7 +349,7 @@ class GooglePatentsAdapter:
                     abstract=abstract,
                     excerpt_hashes=excerpt_hashes,
                     field_span_hashes=field_span_hashes,
-                    limitations=("Normalized Google Patents metadata; not a patentability conclusion.",),
+                    limitations=tuple(limitations),
                 ))
                 if len(records) >= envelope.result_budget:
                     break
@@ -310,7 +358,7 @@ class GooglePatentsAdapter:
 
         received = len(records)
         coverage_total = total if total is not None else received
-        has_more = bool((data.get("serpapi_pagination") or {}).get("next"))
+        has_more = bool((pagination or {}).get("next"))
         next_cursor = str(envelope.page + 1) if has_more and envelope.page < envelope.page_cap else None
         result = AdapterResult(
             tuple(records), hashlib.sha256(body).hexdigest(), TERMS_NOTE,

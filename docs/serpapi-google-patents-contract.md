@@ -29,20 +29,47 @@ error strings and asserted absent from every stored artifact via the shared
 
 The adapter parses `organic_results[]`; pagination and totals come from
 `search_information.total_results` and `serpapi_pagination.next`. A top-level `error`
-field or `search_metadata.status != "Success"` becomes a normalized adapter failure
-and creates no evidence. HTTP 401/403 → `auth`, 429 → `rate_limit`, timeouts and
-network errors → normalized failures.
+field or any `search_metadata.status` other than a final `"Success"` (including
+`"Processing"`, a missing status, or a non-object container) becomes a normalized
+adapter failure and creates no evidence. HTTP 401/403 → `auth`, 429 → `rate_limit`,
+timeouts and network errors → normalized failures. A `patent_link` is accepted as
+the canonical URL only when it is a canonical HTTPS `patents.google.com` URL;
+anything else falls back to the URL constructed from the validated publication
+number. The priority date is never substituted for a missing filing date; the
+substitution-free absence is recorded as a record limitation instead.
 
 ## Quota model and Path-A fallback
 
-The SerpApi free tier allows 250 searches/month. `research serpapi` performs a free
+The SerpApi free tier allows 250 searches/month. `research serpapi` validates the
+run and its state in the authoritative run database first, then performs a free
 `account.json` preflight and, when `total_searches_left <= --min-quota` (default 1),
 **spends no search**: it writes a ready-to-fill `manual_web` import skeleton to
-`workspace/requests/manual-web-template.json`, returns `status: quota_exhausted`
-(exit code 12), and stops. A SerpApi quota error encountered mid-search normalizes to
-a `rate_limit` failure and triggers the same fallback. The fallback never fabricates
-or auto-substitutes evidence — the user supplies records and re-runs the offline
-`research manual … --allow-host patents.google.com` path.
+`documents/requests/manual-web-template.json` (under the documents root, so the
+offline `research manual` command can consume it directly), records the stop as a
+`research_quota_stop` artifact revision in the run database, returns
+`status: quota_exhausted` (exit code 12), and stops. A template the user has
+already edited is preserved, never overwritten. Unedited `REPLACE_WITH_*`
+placeholders (including the all-zeros `content_hash` sentinel) are rejected by
+`research manual` on import, so the skeleton can never enter the evidence graph.
+
+A `rate_limit` failure encountered mid-search is reported as quota exhaustion
+**only when the free account endpoint confirms it**; otherwise the run is reported
+as an incomplete research attempt (exit code 4) with a `rate_limit_note` — a
+transient per-second/per-hour throttle never fabricates a quota state. Failed
+attempts are retried under an automatically advanced idempotency key (`…-r2`,
+`…-r3`, …), so a stored transient failure is never replayed as the current
+result; a key already used by a credential-decision-bound attempt likewise
+advances instead of being silently reused. Resuming with `--decision-id` reuses
+the exact key the decision is bound to, and an explicit `--idempotency-key`
+keeps exact replay semantics, including stored failures. Replays — successes and
+failures alike — never touch the network: no search, no account re-check, no
+quota conversion. A fresh attempt is refused before the preflight (exit code 2)
+when the run's state does not legally permit research, so refused operations
+never egress the credential and never produce quota-stop artifacts. The fallback
+never fabricates or auto-substitutes evidence — the user supplies records and
+re-runs the offline `research manual … --allow-host patents.google.com` path
+(the exit-12 message prints the full command, including the configured
+documents/workspace roots, with shell-safe quoting).
 
 Missing or rejected credentials suspend the standard credential gate
 (`status: credential_required`, exit code 13); resume with the exact `--decision-id`.
@@ -68,8 +95,11 @@ do not imply permission to redistribute full datasets.
 `research serpapi` accepts hidden `--fixture-response` and `--fixture-account` paths
 (contained under the documents root) that inject deterministic transports instead of
 the network, so the full handler — quota preflight, gate flow, evidence persistence,
-and quota-exhausted fallback — is exercised without any live call. Fixtures live at
-`tests/fixtures/google_patents/` and `tests/fixtures/serpapi/`.
+and quota-exhausted fallback — is exercised without any live call. The two seams are
+all-or-nothing: supplying only one is rejected, because a half-configured seam would
+silently route the other half of the command (and the real credential) to the live
+endpoint. Fixtures live at `tests/fixtures/google_patents/` and
+`tests/fixtures/serpapi/`.
 
 ## Explicit unknowns and live boundary
 

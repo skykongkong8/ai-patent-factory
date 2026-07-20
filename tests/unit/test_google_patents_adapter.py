@@ -86,6 +86,77 @@ class GooglePatentsAdapterTests(unittest.TestCase):
         result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
         self.assertEqual(result.failure.kind, AdapterFailureKind.AUTH)
 
+    def test_hourly_throughput_error_is_not_quota_exhaustion(self):
+        body = json.dumps({
+            "error": "You are sending requests too fast, you've exceeded the hourly throughput limit."
+        }).encode()
+        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+        self.assertEqual(result.failure.kind, AdapterFailureKind.MALFORMED)
+
+    def test_processing_or_missing_status_is_not_terminal_success(self):
+        for body in (
+            json.dumps({"search_metadata": {"status": "Processing"}, "organic_results": []}).encode(),
+            json.dumps({"organic_results": []}).encode(),
+        ):
+            result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+            self.assertEqual(result.failure.kind, AdapterFailureKind.MALFORMED)
+
+    def test_non_object_containers_are_malformed(self):
+        for body in (
+            json.dumps({"search_metadata": "weird"}).encode(),
+            json.dumps({"search_metadata": {"status": "Success"}, "serpapi_pagination": ["x"]}).encode(),
+            json.dumps({"search_metadata": {"status": "Success"}, "search_information": [1]}).encode(),
+        ):
+            result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+            self.assertEqual(result.failure.kind, AdapterFailureKind.MALFORMED)
+
+    def test_offsite_patent_link_falls_back_to_canonical_url(self):
+        body = json.dumps({
+            "search_metadata": {"status": "Success"},
+            "organic_results": [{
+                "publication_number": "KR102000001B1",
+                "title": "Fixture title",
+                "patent_link": "http://evil.example/track?x=1",
+            }],
+        }).encode()
+        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+        self.assertIsNone(result.failure)
+        self.assertEqual(
+            result.records[0].canonical_url,
+            "https://patents.google.com/patent/KR102000001B1/en",
+        )
+
+    def test_accepted_patent_link_is_reserialized_without_smuggled_bytes(self):
+        body = json.dumps({
+            "search_metadata": {"status": "Success"},
+            "organic_results": [{
+                "publication_number": "KR102000001B1",
+                "title": "Fixture title",
+                "patent_link": "https://PATENTS.GOOGLE.COM/patent/KR10\t2000001B1/en\nextra",
+            }],
+        }).encode()
+        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+        self.assertIsNone(result.failure)
+        url = result.records[0].canonical_url
+        self.assertNotIn("\t", url)
+        self.assertNotIn("\n", url)
+        self.assertTrue(url.startswith("https://patents.google.com/"))
+
+    def test_priority_date_is_never_substituted_for_filing_date(self):
+        body = json.dumps({
+            "search_metadata": {"status": "Success"},
+            "organic_results": [{
+                "publication_number": "KR102000001B1",
+                "title": "Fixture title",
+                "priority_date": "2023-01-01",
+            }],
+        }).encode()
+        result = GooglePatentsAdapter("k", transport=lambda *a: TransportResponse(200, {}, body)).search(envelope())
+        self.assertIsNone(result.failure)
+        record = result.records[0]
+        self.assertIsNone(record.filing_date)
+        self.assertTrue(any("priority date" in note for note in record.limitations))
+
     def test_http_status_mapping(self):
         self.assertEqual(GooglePatentsAdapter("k", transport=_raise_http(401)).search(envelope()).failure.kind,
                          AdapterFailureKind.AUTH)
@@ -122,6 +193,13 @@ class GooglePatentsAdapterTests(unittest.TestCase):
         self.assertEqual(account["total_searches_left"], 248)
         self.assertEqual(account["plan_renewal_date"], "2026-08-01")
         self.assertIn("api_key=CANARY-KEY", calls[0])
+
+    def test_account_oversized_body_raises_value_error_not_overflow(self):
+        def transport(url, timeout, budget):
+            return TransportResponse(200, {}, b"x" * (budget + 1), final_url="https://serpapi.com/account.json")
+
+        with self.assertRaises(ValueError):
+            serpapi_account("k", transport=transport, byte_budget=64)
 
 
 if __name__ == "__main__":
