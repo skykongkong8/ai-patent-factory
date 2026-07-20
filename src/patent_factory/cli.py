@@ -723,6 +723,8 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         )
         if args.idempotency_key:
             idempotency_key = base_key
+            if decision_operation is not None and decision_operation != f"research.execute:{base_key}":
+                raise CliError("credential decision does not match the current request")
             lookup = f"{base_key}:credential:{args.decision_id}" if args.decision_id else base_key
             stored = _serpapi_stored_execution(connection, run_id, lookup)
         elif decision_operation is not None:

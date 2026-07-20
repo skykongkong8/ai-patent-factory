@@ -390,6 +390,64 @@ class SerpApiCliTests(unittest.TestCase):
         self.assertIn("credential decision is unavailable", json.loads(result.stdout)["error"])
         self.assertFalse(self._template_path().exists())
 
+    def test_decision_bound_to_another_key_is_refused_before_quota_stop(self):
+        # A fresh, valid decision bound to a different --idempotency-key must be
+        # refused locally: quota state must not decide whether an unauthorized
+        # request is rejected or handed a quota stop.
+        run_root = self.workspace / "serp-rekey"
+        prepare_run(run_root, "serp-rekey")
+        response = self._response_fixture()
+        account = self._account_fixture("account-ok")
+        seams = (
+            "--fixture-response", self.relative(response),
+            "--fixture-account", self.relative(account),
+        )
+        gated = run_cli(
+            *self.common(run_root, "serp-rekey"), "--idempotency-key", "attempt-1", *seams,
+            environment={"SERPAPI_API_KEY": ""},
+        )
+        self.assertEqual(gated.returncode, 13, gated.stdout + gated.stderr)
+        gate_id = json.loads(gated.stdout)["gate_id"]
+        common_gate = (
+            "--run", self.relative(run_root), "--run-id", "serp-rekey",
+            "--gate-id", gate_id, "--workspace-root", self.relative(self.workspace),
+        )
+        gate = json.loads(run_cli("gate", "inspect", *common_gate).stdout)
+        decision_file = self.workspace / "rekey-decision.json"
+        decision_file.write_text(json.dumps({
+            "action": "configure_and_verify", "actor": "user",
+            "approval_scope": gate["approval_scope"], "decisions": [],
+            "gate_id": gate_id, "plan": {}, "reason": "credential configured",
+            "schema_version": "gate-decision-input-v1",
+            "subject_revision_hash": gate["subject_revision_hash"],
+        }, ensure_ascii=False), encoding="utf-8")
+        decided = run_cli("gate", "decide", *common_gate, "--input", self.relative(decision_file))
+        self.assertEqual(decided.returncode, 0, decided.stdout + decided.stderr)
+        decision_id = json.loads(decided.stdout)["decision_id"]
+
+        # Same unauthorized request under both quota conditions: identical refusal.
+        for fixture in ("account-ok", "account-exhausted"):
+            with self.subTest(account=fixture):
+                result = run_cli(
+                    *self.common(run_root, "serp-rekey"),
+                    "--idempotency-key", "attempt-2", "--decision-id", decision_id,
+                    "--fixture-response", self.relative(response),
+                    "--fixture-account", self.relative(self._account_fixture(fixture)),
+                    environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(
+                    "credential decision does not match", json.loads(result.stdout)["error"],
+                )
+                self.assertFalse(self._template_path().exists())
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT count(*) FROM artifact_revisions WHERE kind='research_quota_stop'"
+                ).fetchone()[0],
+                0,
+            )
+
     def test_half_configured_fixture_seams_are_rejected(self):
         run_root = self.workspace / "serp-seam"
         prepare_run(run_root, "serp-seam")
