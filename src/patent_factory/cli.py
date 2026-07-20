@@ -250,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve.add_argument("--live", action="store_true", help="use the credentialed live KIPRIS adapter instead of fixtures")
     retrieve.add_argument("--byte-budget", type=int, default=2_000_000)
     retrieve.add_argument("--decision-id", help="current credential approval for this exact audit request")
+    retrieve.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic offline fixtures")
     retrieve.add_argument("--documents-root", type=Path, default=Path("documents"))
     retrieve.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     score = audit_commands.add_parser("score", help="score one frozen reviewed feature-map set")
@@ -827,7 +828,7 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 result = run_audit_retrieval(
                     connection, run_root=run_root, run_id=normalize(args.run_id),
                     query_input=query_input, config=load_similarity_config(), adapter_factory=adapter_factory,
-                    credential_decision_id=args.decision_id,
+                    credential_decision_id=args.decision_id, retrieved_at=args.retrieved_at,
                 )
             except CredentialRequiredError as error:
                 payload = _credential_gate_payload("audit", error, normalize(args.run_id))

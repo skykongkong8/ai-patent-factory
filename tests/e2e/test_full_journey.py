@@ -182,6 +182,7 @@ class JustinFullJourneyTests(unittest.TestCase):
             "audit", "retrieve", "--run", run_rel, "--run-id", "justin",
             "--query-input", query_path, "--fixture-manifest", docs_rel / "manifest.json",
             "--documents-root", docs_rel, "--workspace-root", ws_rel,
+            "--retrieved-at", RETRIEVED_AT,
         )
         self.assertEqual(payload["status"], "audit_running")
 
