@@ -12,7 +12,7 @@ from .adapters.base import SearchAdapter
 from .database import FaultInjector, immediate_transaction, inject_fault, utc_now
 from .models import AdapterResult, GateEnvelope, GateKind, QueryEnvelope, RunState
 from .provenance import canonical_json, digest, evidence_revision_id, normalize
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .state import StateStore, workspace_export_directories
 
 
@@ -270,14 +270,14 @@ class ResearchStore:
 
         result = adapter.search(envelope)
         result.validate()
-        credential_canary = environment_secret("KIPRIS_PLUS_API_KEY")
+        canaries = credential_canaries()
         assert_canaries_absent(
             {
                 "coverage": dict(result.coverage), "failure": result.failure.as_dict() if result.failure else None,
                 "next_cursor": result.next_cursor, "rate_limit": dict(result.rate_limit) if result.rate_limit else None,
                 "records": [record.as_dict() for record in result.records], "terms_note": result.terms_note,
             },
-            (credential_canary,) if credential_canary else (), boundary="adapter_response",
+            canaries, boundary="adapter_response",
         )
         at = retrieved_at or utc_now()
         event_id = "ae_" + digest({

@@ -13,7 +13,7 @@ from .audit import validate_audit_artifact
 from .config import SimilarityConfig
 from .database import FaultInjector
 from .models import ArtifactRevision, RunState
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .provenance import canonical_json, digest, normalize
 from .state import StateError, StateStore, workspace_export_directories
 
@@ -1031,8 +1031,8 @@ def publish_report(
     connection: sqlite3.Connection, *, run_root: Path, run_id: str,
     report_input: Mapping[str, Any], fault_at: FaultInjector = None,
 ) -> ReportRun:
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(report_input, (secret,) if secret else (), boundary="report_input")
+    canaries = credential_canaries()
+    assert_canaries_absent(report_input, canaries, boundary="report_input")
     request = validate_report_input(report_input)
     state, exports = _report_state(connection, run_root)
     prior = state.snapshot(run_id)

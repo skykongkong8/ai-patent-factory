@@ -225,6 +225,34 @@ class ManualWebAdapterTests(unittest.TestCase):
                 self.assertEqual(failed.failure.kind, AdapterFailureKind.MALFORMED)
                 self.assertNotIn("MANUAL-PRIVATE-CANARY", repr(failed))
 
+    def test_unedited_template_placeholders_are_rejected(self):
+        base = {
+            "canonical_url": "https://patents.google.com/patent/KR102000001B1/en",
+            "identifier": "KR102000001B1", "title": "Real title",
+            "content_hash": "0a1b" * 16, "language": "en",
+            "provenance": "google_patents_manual", "limitations": [],
+        }
+        adapter = ManualWebAdapter(("patents.google.com",))
+        good = envelope(
+            adapter="manual_web", version="import-v1", capability="import", host="patents.google.com",
+            projection={"content_type": "application/json", "records": [base]},
+        )
+        self.assertTrue(adapter.search(good).successful)
+
+        # The quota-fallback template skeleton must never import as evidence.
+        for changed in ({**base, "content_hash": "0" * 64},
+                        {**base, "identifier": "REPLACE_WITH_PUBLICATION"},
+                        {**base, "title": "REPLACE_WITH_TITLE"},
+                        {**base, "canonical_url": "https://patents.google.com/patent/REPLACE_WITH_PUBLICATION/en"}):
+            with self.subTest(fields={key for key in changed if changed[key] != base.get(key)}):
+                query = envelope(
+                    adapter="manual_web", version="import-v1", capability="import", host="patents.google.com",
+                    projection={"content_type": "application/json", "records": [changed]},
+                )
+                failed = adapter.search(query)
+                self.assertEqual(failed.failure.kind, AdapterFailureKind.MALFORMED)
+                self.assertEqual(failed.records, ())
+
     def test_result_budget_excess_fails_instead_of_silently_truncating(self):
         records = [
             {

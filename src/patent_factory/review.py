@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from .database import FaultInjector
 from .models import ArtifactRevision, RunState
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .provenance import digest, normalize
 from .report import _current_artifact, _report_state, load_report_policy, validate_report_artifact
 from .state import StateError
@@ -165,8 +165,8 @@ def run_review(
     connection: sqlite3.Connection, *, run_root: Path, run_id: str,
     review_input: Mapping[str, Any], fault_at: FaultInjector = None,
 ) -> ReviewRun:
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(review_input, (secret,) if secret else (), boundary="review_input")
+    canaries = credential_canaries()
+    assert_canaries_absent(review_input, canaries, boundary="review_input")
     state, exports = _report_state(connection, run_root)
     prior = state.snapshot(run_id)
     if prior.state not in {RunState.DRAFT_READY, RunState.REVIEW_REQUIRED, RunState.REVIEWED, RunState.REVISION_REQUIRED}:

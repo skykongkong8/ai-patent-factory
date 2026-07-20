@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 from .database import FaultInjector, profile_payload
 from .models import ArtifactRevision, RunState
-from .privacy import assert_canaries_absent, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries
 from .paths import enforce_private_directory
 from .provenance import canonical_json, digest, normalize
 from .state import StateError, StateStore, workspace_export_directories
@@ -72,9 +72,9 @@ def prepare_run_profile(
     """Validate and bind an exported profile to its authoritative database."""
 
     authoritative = profile_payload(profile_connection)
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
+    canaries = credential_canaries()
     assert_canaries_absent(
-        authoritative, (secret,) if secret else (), boundary="run_start.profile_context",
+        authoritative, canaries, boundary="run_start.profile_context",
     )
     if canonical_json(profile) != canonical_json(authoritative):
         raise ValueError("run_start: supplied profile export does not match authoritative profile database")
@@ -96,7 +96,7 @@ def prepare_run_profile(
         "version": PROFILE_CONTEXT_VERSION,
     })
     assert_canaries_absent(
-        profile_context, (secret,) if secret else (), boundary="run_start.profile_context",
+        profile_context, canaries, boundary="run_start.profile_context",
     )
     return PreparedRunProfile(profile_revision, profile_hash, profile_context)
 

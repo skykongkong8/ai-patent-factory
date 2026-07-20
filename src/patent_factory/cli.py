@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from . import __version__
 from .audit import run_audit_retrieval, run_audit_scoring
 from .adapters.base import TransportResponse
+from .adapters.google_patents import SERPAPI_HOST, GooglePatentsAdapter, serpapi_account
 from .adapters.kipris import KIPRIS_HOST, KiprisAdapter
 from .adapters.manual_web import (
     ManualWebAdapter, WEB_SOURCE_TAGS, normalize_web_rows, sanitize_manual_records,
@@ -22,10 +24,10 @@ from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
 from .lint import audit_advisories, shortlist_advisories
-from .models import QueryEnvelope
-from .paths import contained_input, contained_output, private_contained_directory, private_root
+from .models import QueryEnvelope, RunState
+from .paths import contained_input, contained_output, owner_only_file, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
-from .privacy import assert_canaries_absent, delete_run, environment_secret
+from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
     CredentialRequiredError, PlannedQuery, ResearchBudget, plan_keyword_queries,
@@ -39,6 +41,7 @@ from .scaffold import (
     scaffold_candidate_input, scaffold_report_input, scaffold_shortlist_input,
 )
 from .sharing import SensitiveDisclosureRequiredError, share_report
+from .state import ALLOWED_TRANSITIONS, GATE_STATE_SET, StateError, StateStore
 from .validation import validate_and_complete
 
 QUESTIONS = (
@@ -97,8 +100,10 @@ def _failure_code(error: BaseException) -> str:
 
 def _redacted_error(error: BaseException) -> str:
     message = str(error)
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    return message.replace(secret, "[REDACTED]") if secret and secret in message else message
+    for secret in credential_canaries():
+        if secret in message:
+            message = message.replace(secret, "[REDACTED]")
+    return message
 
 
 def _cli_result(
@@ -186,6 +191,32 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     manual = research_commands.choices["manual"]
     manual.add_argument("--allow-host", action="append", required=True)
+    serpapi = research_commands.add_parser(
+        "serpapi", help="run one LIVE Google Patents search via SerpApi (opt-in network egress)",
+    )
+    serpapi.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
+    serpapi.add_argument("--run-id", required=True)
+    serpapi.add_argument("--query", required=True)
+    serpapi.add_argument("--country", default="", help="comma-separated country codes, e.g. KR")
+    serpapi.add_argument("--num", type=int, help="results per page (10-100)")
+    serpapi.add_argument("--page", type=int, default=1)
+    serpapi.add_argument("--result-budget", type=int, default=10)
+    serpapi.add_argument("--byte-budget", type=int, default=1_000_000)
+    serpapi.add_argument(
+        "--min-quota", type=int, default=1,
+        help="stop and emit a manual-import template at or below this many searches left",
+    )
+    serpapi.add_argument("--decision-id", help="credential gate decision id")
+    serpapi.add_argument(
+        "--idempotency-key",
+        help="explicit key replays the stored result for this exact request, including "
+             "stored failures; without it a failed attempt is retried under a fresh key",
+    )
+    serpapi.add_argument("--retrieved-at", help="fixed UTC timestamp for deterministic runs")
+    serpapi.add_argument("--documents-root", type=Path, default=Path("documents"))
+    serpapi.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    serpapi.add_argument("--fixture-response", type=Path, help=argparse.SUPPRESS)
+    serpapi.add_argument("--fixture-account", type=Path, help=argparse.SUPPRESS)
     kipris_live = research_commands.add_parser(
         "kipris", help="run credentialed live KIPRIS keyword research (KIPRIS_PLUS_API_KEY)",
     )
@@ -430,8 +461,8 @@ def _profile_conflict(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         decision_input = _json_object(input_path, args.byte_budget, "profile conflict decision")
         if decision_input.get("batch_id") != batch_id:
             raise CliError("profile conflict batch id does not match --batch-id")
-        secret = environment_secret("KIPRIS_PLUS_API_KEY")
-        assert_canaries_absent(decision_input, (secret,) if secret else (), boundary="profile_conflict_decision")
+        canaries = credential_canaries()
+        assert_canaries_absent(decision_input, canaries, boundary="profile_conflict_decision")
         result = resolve_profile_conflicts(connection, decision_input)
         profile_path = contained_output(args.profile or args.workspace_root / "profile.json", workspace_root, "profile output")
         export_profile(connection, profile_path)
@@ -583,6 +614,8 @@ def _research_normalize_web(
 
 
 def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if args.research_command == "serpapi":
+        return _research_serpapi(args)
     started_at = utc_now()
     documents_root = private_root(args.documents_root, "documents root")
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
@@ -651,6 +684,340 @@ def _research(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     payload = result.as_dict()
     payload.update({"started_at": started_at, "ended_at": utc_now()})
     return payload, 0 if payload["status"] == "complete" else 4
+
+
+def _json_fixture_transport(body: bytes) -> Callable[[str, float, int], TransportResponse]:
+    """Deterministic offline transport for tests: replay a fixture body, ignore the URL."""
+
+    def transport(url: str, timeout: float, byte_budget: int) -> TransportResponse:
+        del url, timeout, byte_budget
+        return TransportResponse(200, {"Content-Type": "application/json"}, body)
+
+    return transport
+
+
+def _serpapi_stored_execution(
+    connection: Any, run_id: str, idempotency_key: str,
+) -> dict[str, Any] | None:
+    row = connection.execute(
+        "SELECT result_json FROM research_operations WHERE run_id=? AND idempotency_key=?",
+        (run_id, idempotency_key),
+    ).fetchone()
+    return json.loads(row["result_json"]) if row is not None else None
+
+
+def _serpapi_idempotency_key(
+    connection: Any, run_id: str, base_key: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Reuse a key only when it replays this invocation's stored success.
+
+    Any other prior use of the candidate key — a stored failure, or an attempt
+    bound to a credential decision under the ``:credential:`` suffix — advances
+    to a fresh retry key, because run_research derives its transition and
+    decision bindings from the plain key and would otherwise replay or reject.
+    """
+
+    candidate = base_key
+    attempt = 1
+    while True:
+        rows = connection.execute(
+            "SELECT idempotency_key,result_json FROM research_operations "
+            "WHERE run_id=? AND (idempotency_key=? OR idempotency_key LIKE ?)",
+            (run_id, candidate, f"{candidate}:credential:%"),
+        ).fetchall()
+        if not rows:
+            return candidate, None
+        exact = next(
+            (json.loads(row["result_json"]) for row in rows if row["idempotency_key"] == candidate),
+            None,
+        )
+        if exact is not None and exact.get("status") == "success":
+            return candidate, exact
+        attempt += 1
+        candidate = f"{base_key}-r{attempt}"
+
+
+def _serpapi_decision_operation(connection: Any, run_id: str, decision_id: str) -> str:
+    """Validate a credential decision locally, before any network egress."""
+
+    row = connection.execute(
+        "SELECT suspended_operation, stale FROM gate_decisions WHERE decision_id=? AND run_id=?",
+        (decision_id, run_id),
+    ).fetchone()
+    if row is None:
+        raise CliError("credential decision is unavailable")
+    if row["stale"]:
+        raise CliError("credential decision does not match the current request")
+    operation = row["suspended_operation"] or ""
+    if not operation.startswith("research.execute:"):
+        raise CliError("credential decision does not belong to a research request")
+    return operation
+
+
+def _serpapi_decision_key(
+    connection: Any, run_id: str, decision_id: str, operation: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Resume a credential decision with the exact key the decision is bound to."""
+
+    key = operation[len("research.execute:"):]
+    return key, _serpapi_stored_execution(connection, run_id, f"{key}:credential:{decision_id}")
+
+
+def _serpapi_quota_exhausted(
+    args: argparse.Namespace, documents_root: Path, account: dict[str, Any], started_at: str,
+    *, state: StateStore, run_id: str, envelope: QueryEnvelope,
+    extra: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], int]:
+    private_contained_directory(
+        args.documents_root / "requests", documents_root, "manual web template directory", create=True,
+    )
+    template_relative = (args.documents_root / "requests" / "manual-web-template.json").as_posix()
+    template_path = contained_output(
+        args.documents_root / "requests" / "manual-web-template.json",
+        documents_root, "manual web template",
+    )
+    template = {"records": [{
+        "canonical_url": "https://patents.google.com/patent/REPLACE_WITH_PUBLICATION/en",
+        "identifier": "REPLACE_WITH_PUBLICATION",
+        "title": "REPLACE_WITH_TITLE",
+        "content_hash": "0" * 64,
+        "language": "en",
+        "provenance": "google_patents_manual",
+        "excerpt_hashes": [],
+        "interpretations": [],
+        "limitations": ["User-supplied metadata; not a patentability conclusion."],
+    }]}
+    rendered = json.dumps(template, ensure_ascii=False, indent=2) + "\n"
+    # A template the user already edited is never overwritten; an unreadable or
+    # differently encoded file counts as edited.
+    preserved = False
+    if template_path.exists():
+        if template_path.stat().st_size > 1_000_000:
+            preserved = True
+        else:
+            try:
+                preserved = template_path.read_text(encoding="utf-8") != rendered
+            except (OSError, UnicodeError):
+                preserved = True
+    if not preserved:
+        template_path.write_text(rendered, encoding="utf-8")
+        owner_only_file(template_path)
+    canaries = credential_canaries()
+    stop_record = {
+        "account": {
+            "plan_renewal_date": account.get("plan_renewal_date"),
+            "plan_searches_left": account.get("plan_searches_left"),
+            "total_searches_left": account.get("total_searches_left"),
+        },
+        "fallback_template": template_relative,
+        "min_quota": args.min_quota,
+        "request_fingerprint": envelope.request_fingerprint,
+        "template_preserved": preserved,
+    }
+    assert_canaries_absent(stop_record, canaries, boundary="research_quota_stop")
+    revision = state.add_revision(
+        run_id, "research_quota_stop", stop_record, schema_version="research-quota-stop-v1",
+    )
+    template_note = (
+        "An earlier template at that path contains your edits and was preserved; "
+        "import it or delete it to regenerate."
+        if preserved else
+        "Fill the template with Google Patents records (unedited REPLACE_WITH_* "
+        "placeholders are rejected on import)."
+    )
+    fallback_command = " ".join((
+        "research", "manual", shlex.quote(template_relative),
+        "--run", shlex.quote(str(args.run)), "--run-id", shlex.quote(run_id),
+        "--query", shlex.quote(args.query),
+        "--documents-root", shlex.quote(str(args.documents_root)),
+        "--workspace-root", shlex.quote(str(args.workspace_root)),
+        "--allow-host", "patents.google.com",
+    ))
+    payload = {
+        "command": "research.serpapi",
+        "status": "quota_exhausted",
+        "run_id": run_id,
+        "searches_left": account.get("total_searches_left"),
+        "plan_renewal_date": account.get("plan_renewal_date"),
+        "fallback_template": template_relative,
+        "template_preserved": preserved,
+        "artifact_ids": [revision.revision_id],
+        "message": (
+            "SerpApi monthly search quota exhausted; no further search will be spent. "
+            f"{template_note} Then run: {fallback_command}"
+        ),
+        "started_at": started_at,
+        "ended_at": utc_now(),
+    }
+    if extra:
+        payload.update(extra)
+    assert_canaries_absent(payload, canaries, boundary="research_quota_stop")
+    return payload, 12
+
+
+def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    started_at = utc_now()
+    documents_root = private_root(args.documents_root, "documents root")
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    run_root = contained_input(args.run, workspace_root, "research run", directory=True)
+    database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "research database")
+    api_key = environment_secret("SERPAPI_API_KEY")
+
+    # The offline seams are all-or-nothing: a half-configured seam would silently
+    # send the real credential to the live account endpoint.
+    if (args.fixture_response is None) != (args.fixture_account is None):
+        raise CliError("--fixture-response and --fixture-account must be supplied together")
+    response_transport = None
+    account_transport = None
+    if args.fixture_response is not None:
+        response_transport = _json_fixture_transport(_bounded_bytes(
+            contained_input(args.fixture_response, documents_root, "serpapi response fixture"),
+            args.byte_budget, "serpapi response fixture",
+        ))
+        account_transport = _json_fixture_transport(_bounded_bytes(
+            contained_input(args.fixture_account, documents_root, "serpapi account fixture"),
+            args.byte_budget, "serpapi account fixture",
+        ))
+
+    adapter = GooglePatentsAdapter(api_key, transport=response_transport)
+    projection: dict[str, Any] = {"word": normalize(args.query)}
+    if args.num is not None:
+        projection["num"] = args.num
+    if normalize(args.country):
+        projection["country"] = normalize(args.country)
+    envelope = QueryEnvelope(
+        run_id=normalize(args.run_id), adapter="google_patents", adapter_version="serpapi-v1",
+        capability="word_search", allowed_scheme="https", allowed_host=SERPAPI_HOST,
+        deadline_seconds=15, page=args.page, page_cap=5, result_budget=args.result_budget,
+        byte_budget=args.byte_budget, retry_budget=0, retry_ownership="research_runner",
+        query_projection=projection,
+    )
+    planned = PlannedQuery(envelope, args.query, args.query, "origin", 0)
+    envelope.validate()
+    run_id = envelope.run_id
+    base_key = args.idempotency_key or "serpapi-" + digest({
+        "request_fingerprint": envelope.request_fingerprint, "source_mode": "serpapi",
+    })[:20]
+
+    with connect_database(database_path) as connection:
+        # Validate the run and its state before any network egress: a refused
+        # operation must not send the credential anywhere first.
+        state = StateStore(connection)
+        try:
+            prior = state.snapshot(run_id)
+        except StateError as error:
+            raise CliError(f"research run is not registered in the run database: {run_id}") from error
+        if prior.state is RunState.CREDENTIAL_REQUIRED:
+            raise RuntimeError("credential_required: a current decision must resume the suspended request")
+
+        # Any supplied decision is validated locally first, whatever the key mode.
+        decision_operation = (
+            _serpapi_decision_operation(connection, run_id, args.decision_id)
+            if args.decision_id else None
+        )
+        if args.idempotency_key:
+            idempotency_key = base_key
+            if decision_operation is not None and decision_operation != f"research.execute:{base_key}":
+                raise CliError("credential decision does not match the current request")
+            lookup = f"{base_key}:credential:{args.decision_id}" if args.decision_id else base_key
+            stored = _serpapi_stored_execution(connection, run_id, lookup)
+        elif decision_operation is not None:
+            idempotency_key, stored = _serpapi_decision_key(
+                connection, run_id, args.decision_id, decision_operation,
+            )
+        else:
+            idempotency_key, stored = _serpapi_idempotency_key(connection, run_id, base_key)
+
+        # A fresh attempt is refused here, before any network egress, unless the
+        # state machine can actually accept it; replays are validated by run_research.
+        # A run parked on a gate lists research_running as reachable, but only a
+        # gate decision may take it there, so it is refused too.
+        research_permitted = (
+            prior.state is RunState.RESEARCH_RUNNING
+            or RunState.RESEARCH_RUNNING in ALLOWED_TRANSITIONS.get(prior.state, frozenset())
+        )
+        if stored is None and prior.state in GATE_STATE_SET:
+            raise CliError(
+                f"run state {prior.state.value} requires a gate decision before research"
+            )
+        if stored is None and not research_permitted:
+            raise CliError(f"research is not permitted from run state {prior.state.value}")
+
+        # Free quota preflight: account.json does not consume a search. Replays of
+        # a stored result never touch the network at all.
+        quota_note = None
+        if api_key and stored is None:
+            try:
+                account = serpapi_account(api_key, transport=account_transport)
+            except (ValueError, OSError) as error:
+                account = None
+                quota_note = f"quota preflight unavailable: {_redacted_error(error)}"
+            if account is not None:
+                searches_left = account.get("total_searches_left")
+                if searches_left is not None and searches_left <= args.min_quota:
+                    return _serpapi_quota_exhausted(
+                        args, documents_root, account, started_at,
+                        state=state, run_id=run_id, envelope=envelope,
+                    )
+
+        try:
+            result = run_research(
+                connection, run_root=run_root, run_id=run_id, adapter=adapter,
+                query=planned, idempotency_key=idempotency_key, retrieved_at=args.retrieved_at,
+                credential_decision_id=args.decision_id,
+            )
+        except CredentialRequiredError as error:
+            return ({
+                "command": "research.serpapi",
+                "status": "credential_required",
+                "gate_id": error.gate.gate_id,
+                "next_state": "credential_required",
+                "run_id": run_id,
+                "message": "Configure SERPAPI_API_KEY and approve the credential gate to proceed.",
+                "started_at": started_at,
+                "ended_at": utc_now(),
+            }, 13)
+
+        payload = result.as_dict()
+        payload.update({"started_at": started_at, "ended_at": utc_now()})
+        if quota_note:
+            payload["quota_note"] = quota_note
+        if payload.get("adapter_status", {}).get("failure_kind") == "rate_limit":
+            if stored is not None:
+                # A replay reports the stored attempt as-is: no account re-check,
+                # no network egress, and no quota conversion.
+                payload["rate_limit_note"] = (
+                    "This replayed a stored rate-limited attempt without any network egress; "
+                    "rerun without --idempotency-key/--decision-id to retry under a fresh attempt key."
+                )
+                return payload, 4
+            # Reactive path: report exhaustion only when the free account endpoint
+            # confirms it. A transient throttle must never fabricate a quota state.
+            confirmed = None
+            if api_key:
+                try:
+                    confirmed = serpapi_account(api_key, transport=account_transport)
+                except (ValueError, OSError):
+                    confirmed = None
+            searches_left = confirmed.get("total_searches_left") if confirmed else None
+            if searches_left is not None and searches_left <= args.min_quota:
+                return _serpapi_quota_exhausted(
+                    args, documents_root, confirmed, started_at,
+                    state=state, run_id=run_id, envelope=envelope,
+                    extra={"research_next_state": payload.get("next_state")},
+                )
+            retry_hint = (
+                "rerunning with the same --idempotency-key will replay this stored failure — "
+                "omit it to retry under a fresh attempt key."
+                if args.idempotency_key else
+                "retry shortly (a fresh retry attempt key is chosen automatically)."
+            )
+            payload["rate_limit_note"] = (
+                "SerpApi throttled or rejected this search with a rate-limit response, "
+                "but the free account endpoint did not confirm monthly quota exhaustion; "
+                + retry_hint
+            )
+        return payload, 0 if payload["status"] == "complete" else 4
 
 
 def _json_object(path: Path, byte_budget: int, label: str) -> dict[str, Any]:
@@ -953,7 +1320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload, args=args, started_at=started_at, ended_at=utc_now(), failure_code=None,
         ))
         return code
-    except (CliError, OSError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+    except (CliError, OSError, OverflowError, RuntimeError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         emit(_cli_result(
             {"error": _redacted_error(exc), "status": "error"}, args=args,
             started_at=started_at, ended_at=utc_now(), failure_code=_failure_code(exc),
