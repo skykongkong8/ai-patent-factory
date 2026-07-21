@@ -92,6 +92,28 @@ def _text(value: Any, path: str) -> str:
     return item
 
 
+_TODO_MARKER = "TODO(agent)"
+
+
+def _reject_todo_marker(value: Any, path: str) -> None:
+    """Reject any leftover scaffold placeholder (core-side, not scaffold-side).
+
+    ``scaffold gate-decision`` stubs every judgment field with a ``TODO(agent)``
+    marker (scaffold.TODO); ``count_todos`` only counts them client-side. An
+    unedited draft must fail here, in ``resolve_gate``, or AC-9's "user-authored"
+    guarantee would be a convention instead of an invariant.
+    """
+    if isinstance(value, str):
+        if _TODO_MARKER in value:
+            raise ValueError(f"{path}: unedited TODO(agent) marker must be resolved before deciding")
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            _reject_todo_marker(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_todo_marker(item, f"{path}[{index}]")
+
+
 def _durable_resolution_replay(
     connection: sqlite3.Connection, *, run_id: str, gate_id: str,
     envelope: sqlite3.Row, decision_input: Mapping[str, Any],
@@ -257,6 +279,101 @@ def _resolution(
             "scorer_config_hash": config_row["content_hash"],
         })
         dependencies.extend((finalist_row["revision_id"], corpus_row["revision_id"], feature_row["revision_id"], config_row["revision_id"]))
+    elif kind is GateKind.POST_AUDIT_CHECKPOINT:
+        audit_row, audit = _artifact(connection, run_id, "audit_batch")
+        finalist_row, finalists = _artifact(connection, run_id, "finalist_set")
+        corpus_row, corpora = _artifact(connection, run_id, "corpus_set")
+        feature_row, features = _artifact(connection, run_id, "feature_map_set")
+        config_row, _config = _artifact(connection, run_id, "scorer_config")
+        if audit_row["content_hash"] != envelope["subject_revision_hash"]:
+            raise GateMismatchError("checkpoint decision does not bind the current audit")
+        scope = json.loads(envelope["approval_scope_json"])
+        finalist_map = {item["finalist_id"]: item for item in finalists["finalists"]}
+        corpus_map = {item["finalist_id"]: item for item in corpora["corpora"]}
+        feature_map = {item["finalist_id"]: item for item in features["maps"]}
+        current_bindings = [{
+            "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
+            "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+            "finalist_hash": digest(finalist_map[item["finalist_id"]]), "finalist_id": item["finalist_id"],
+            "map_id": feature_map[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
+            "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+        } for item in audit["results"]]
+        affected = sorted(result["finalist_id"] for result in audit["results"] if result["outcome"] == "decision_required")
+        if (
+            audit.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("finalist_set_hash") != finalist_row["content_hash"]
+            or scope.get("feature_map_set_hash") != feature_row["content_hash"]
+            or scope.get("scorer_config_hash") != config_row["content_hash"]
+            or scope.get("finalist_bindings") != current_bindings
+            or scope.get("affected_finalist_ids") != affected
+        ):
+            raise GateMismatchError("checkpoint decision bindings are stale")
+        all_finalist_ids = sorted(finalist_map)
+        feedback = request.get("feedback", [])
+        if not isinstance(feedback, list) or any(
+            not isinstance(item, Mapping) or set(item) != {"boring", "finalist_id", "interesting"}
+            for item in feedback
+        ):
+            raise ValueError("decision.feedback: exact per-finalist fields required")
+        feedback_ids = [item["finalist_id"] for item in feedback]
+        if len(feedback_ids) != len(set(feedback_ids)) or sorted(feedback_ids) != all_finalist_ids:
+            raise ValueError("decision.feedback: exactly one entry per current finalist required")
+        resolved_feedback = [{
+            "boring": _text(item["boring"], f"decision.feedback.{item['finalist_id']}.boring"),
+            "finalist_id": item["finalist_id"],
+            "interesting": _text(item["interesting"], f"decision.feedback.{item['finalist_id']}.interesting"),
+        } for item in sorted(feedback, key=lambda value: value["finalist_id"])]
+        if action == "stop":
+            if entries:
+                raise ValueError("decision.decisions: stop cannot include finalist decisions")
+            resolved = []
+        elif action == "approve":
+            if not affected:
+                if entries:
+                    raise ValueError("decision.decisions: a clean approve cannot include finalist decisions")
+                resolved = []
+            else:
+                if any(not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"} for item in entries):
+                    raise ValueError("decision.decisions: exact finalist decision fields required")
+                ids = [item["finalist_id"] for item in entries]
+                if len(ids) != len(set(ids)) or sorted(ids) != affected:
+                    raise ValueError("decision.decisions: exactly one current decision per breaching finalist required")
+                if any(item["action"] != "retain_with_warning" for item in entries):
+                    raise ValueError("decision.decisions: approve requires retain_with_warning for every breaching finalist")
+                resolved = []
+                for item in sorted(entries, key=lambda value: value["finalist_id"]):
+                    finalist_id = item["finalist_id"]
+                    resolved.append({
+                        "action": "retain_with_warning", "candidate_id": finalist_map[finalist_id]["candidate_id"],
+                        "corpus_hash": corpus_map[finalist_id]["corpus_hash"],
+                        "feature_map_id": feature_map[finalist_id]["map_id"],
+                        "finalist_hash": digest(finalist_map[finalist_id]), "finalist_id": finalist_id,
+                        "reason": _text(item["reason"], f"decision.decisions.{finalist_id}.reason"),
+                        "warning": "Retained despite excessive provisional similarity risk within the retrieved corpus.",
+                    })
+        else:
+            # re_ideate / re_research: the fate for every finalist (including
+            # breaching ones) is carried by feedback[], never by decisions[].
+            if entries:
+                raise ValueError("decision.decisions: this action must not include finalist decisions")
+            resolved = []
+        if action == "re_research":
+            if not plan:
+                raise ValueError("decision.plan: re_research requires a bounded plan")
+            payload.update({"plan": dict(plan), "plan_hash": digest(plan)})
+        else:
+            if plan:
+                raise ValueError("decision.plan: only re_research accepts a plan")
+            payload["plan"] = {}
+        payload.update({
+            "audit_hash": audit_row["content_hash"], "decisions": resolved,
+            "corpus_set_hash": corpus_row["content_hash"], "feedback": resolved_feedback,
+            "feature_map_set_hash": feature_row["content_hash"],
+            "finalist_set_hash": finalist_row["content_hash"],
+            "scorer_config_hash": config_row["content_hash"],
+        })
+        dependencies.extend((finalist_row["revision_id"], corpus_row["revision_id"], feature_row["revision_id"], config_row["revision_id"]))
     elif kind is GateKind.COVERAGE:
         if entries:
             raise ValueError("decision.decisions: coverage uses one branch action")
@@ -279,13 +396,31 @@ def resolve_gate(
 ) -> DecisionRun:
     canaries = credential_canaries()
     assert_canaries_absent(decision_input, canaries, boundary="decision_input")
-    required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
-    if not isinstance(decision_input, Mapping) or set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
+    if not isinstance(decision_input, Mapping) or "gate_id" not in decision_input:
         raise ValueError("decision: exact gate-decision-input-v1 fields required")
     gate_id = _text(decision_input["gate_id"], "decision.gate_id")
     envelope = connection.execute("SELECT * FROM gate_envelopes WHERE gate_id=? AND run_id=?", (gate_id, run_id)).fetchone()
     if envelope is None:
         raise GateMismatchError("gate is unavailable")
+    # Choice C1: dispatch the exact input-schema version on the gate's OWN
+    # kind, not on caller-supplied shape — a v1 payload can never satisfy a
+    # checkpoint gate and a v2 payload can never satisfy any other gate (R8).
+    if GateKind(envelope["kind"]) is GateKind.POST_AUDIT_CHECKPOINT:
+        required = {
+            "action", "actor", "approval_scope", "decisions", "feedback",
+            "gate_id", "plan", "reason", "schema_version", "subject_revision_hash",
+        }
+        if set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v2":
+            raise ValueError("decision: exact gate-decision-input-v2 fields required")
+        # Core sentinel rejection (RF#5): count_todos only runs scaffold-side
+        # (scaffold.py), so an unedited draft must be rejected here or AC-9's
+        # "user-authored" guarantee is a convention, not an invariant.
+        for field in ("action", "actor", "reason", "feedback", "plan", "decisions"):
+            _reject_todo_marker(decision_input.get(field), f"decision.{field}")
+    else:
+        required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
+        if set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
+            raise ValueError("decision: exact gate-decision-input-v1 fields required")
     if decision_input["subject_revision_hash"] != envelope["subject_revision_hash"] or decision_input["approval_scope"] != json.loads(envelope["approval_scope_json"]):
         raise GateMismatchError("decision does not match current subject and scope")
     replay = _durable_resolution_replay(
