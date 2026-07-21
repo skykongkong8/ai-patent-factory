@@ -781,7 +781,25 @@ def _section_bodies(
         if not isinstance(item, Mapping):
             continue
         plan = json.loads(item["plan_json"]) if isinstance(item.get("plan_json"), str) else item.get("plan_json", {})
-        query_strategy.append(str(plan.get("query") or plan.get("original_query") or plan.get("normalized_query") or item.get("query_id", "")))
+        # `plan_json` is `PlannedQuery.as_dict()` (research.py), which emits
+        # `{depth, origin_query, term, term_kind}` — never `query`,
+        # `original_query`, or `normalized_query`. Reading those three keys meant
+        # this line always fell through to `query_id`, so "Research Scope and
+        # Method" reported the search method as a list of opaque `qu_…` digests
+        # and no reader could tell what was actually searched.
+        #
+        # `term_kind` is rendered alongside the term because it is the only place
+        # the expansion strategy becomes visible: the planner flattens every kind
+        # (origin, synonym_ko, synonym_en, classification, applicant, inventor)
+        # into the same free-text `word=` projection, so the wire request cannot
+        # distinguish them and the persisted plan is the sole surviving record of
+        # which kind a term came from.
+        term = normalize(str(plan.get("term") or plan.get("origin_query") or ""))
+        kind = normalize(str(plan.get("term_kind") or ""))
+        if term:
+            query_strategy.append(f"{term} ({kind})" if kind else term)
+        else:
+            query_strategy.append(str(item.get("query_id", "")))
     appendix = []
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
@@ -819,7 +837,16 @@ def _section_bodies(
             lex["search_dates_line"].format(dates=", ".join(search_dates) or lex["none_recorded"]),
             lex["query_strategy_line"].format(strategy=", ".join(item for item in query_strategy if item) or lex["query_strategy_fallback"]),
             lex["query_count_line"].format(count=len(research.get("queries", []))),
-            lex["evidence_count_line"].format(count=len(evidence)),
+            # The research-stage count, not the run-wide one. `evidence` is
+            # `_evidence_map`, which unions the audit-corpus projection with a
+            # full re-read of `evidence_records` (every row the run ever
+            # retrieved, audit included). Rendering its length under "Research
+            # Scope and Method" overstated the research stage by every record the
+            # audit later pulled — 563 against 154 in the shipped sample.
+            # `research["evidence"]` is the research bundle's own frozen
+            # evidence list, published before the audit runs, so it is the
+            # honest denominator for this section.
+            lex["evidence_count_line"].format(count=len(research.get("evidence", []))),
             lex["limitations_line"].format(limitations=", ".join(item for item in limitations if item) or lex["no_separate_record"]),
             lex["audit_failures_line"].format(count=len(corpus_failures)),
         ]),
