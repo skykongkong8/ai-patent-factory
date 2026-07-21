@@ -1,5 +1,13 @@
 # AI Patent Factory
 
+<p align="center">
+  <img src="assets/mascot/patkong.gif" width="512"
+       alt="Patkong, the AI Patent Factory mascot — a bean-shaped robot in a yellow safety hat works a conveyor on a blueprint backdrop: a document rolls in, Patkong scans it with an eye-beam, its lightbulb antenna switches on, and it presses a red hash-carved seal onto the page before the belt rolls on.">
+</p>
+<p align="center"><sub><b>Patkong (팥콩)</b> — evidence rolls in, an idea lights up, and nothing
+leaves the belt without its hash-bound seal. (The seal binds hashes, not verdicts — decisions
+stay yours.)</sub></p>
+
 *A local-first workflow for turning your own inventions into a rigorous, evidence-bound invention report — English by default, Korean optional — driven from Claude Code slash commands.*
 
 Everything runs on your machine. The private Python CLI (`patent_factory`) is the
@@ -126,6 +134,7 @@ workspace/            # generated state + exports (git-ignored except README)
 SETUP.md              # install + full raw-CLI reference (the escape hatch)
 CLAUDE.md, AGENTS.md  # the agent contract (authority, gates, privacy, no legal calls)
 schemas/, templates/  # JSON Schemas for each input; the Korean report template
+assets/mascot/        # Patkong, the mascot — GIF/PNG + their deterministic stdlib generator
 ```
 
 ## How it works
