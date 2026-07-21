@@ -367,7 +367,7 @@ class StateStore:
             if edge is None:
                 raise StateError("completion artifacts are missing required dependency edges")
         for kind, expected_hash in report.get("bindings", {}).items():
-            if kind == "excessive_gate_resolution":
+            if kind in ("excessive_gate_resolution", "checkpoint_gate_resolution"):
                 row = self.connection.execute(
                     "SELECT 1 FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND content_hash=? AND stale=0",
                     (run_id, expected_hash),
