@@ -72,6 +72,17 @@ class QueryEnvelope:
     allowed_host: str
     deadline_seconds: float
     page: int
+    # Hashed into `request_body()` (below) and therefore frozen at 5: it is a
+    # replay-compat fossil, not a live control. Live paging is governed by the
+    # unhashed `effective_pages` parameter threaded through
+    # `retrieval.execute_paginated` (research.py `ResearchBudget.page_cap`,
+    # `--paging`), which never touches this field. Changing this default (or
+    # letting a CLI flag set it) re-mints every pre-upgrade `request_fingerprint`
+    # and the `subject_revision_hash` of every suspended credential gate —
+    # see PR #49 review finding #2 and the ADR in
+    # `.omc/plans/ralplan-pr49-51-resolution.md`. A versioned fingerprint
+    # (`request_body_v2` without `page_cap`) was considered and deferred, not
+    # foreclosed, as the eventual way to retire this fossil.
     page_cap: int
     result_budget: int
     byte_budget: int

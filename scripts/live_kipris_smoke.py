@@ -113,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
             "evidence_count": payload.get("evidence_count"),
             "exit_code": completed.returncode,
             "next_state": payload.get("next_state"),
+            # Two different units, kept visibly distinct (PR #49 review finding
+            # #12): planned_count is planned TERMS; page_count/succeeded_pages
+            # are EXECUTIONS (one per page). This smoke run never pages, so
+            # they are equal here, but the field names must not imply that.
+            "page_count": payload.get("page_count"),
             "planned_count": payload.get("planned_count"),
             "queries": [
                 {"failure_kind": item.get("failure_kind"), "status": item.get("status")}

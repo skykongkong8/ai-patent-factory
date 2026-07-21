@@ -110,7 +110,7 @@ class ResearchBatchTests(unittest.TestCase):
         self.assertEqual(result.next_state, "research_complete")
         payload = result.as_dict()
         self.assertEqual(payload["planned_count"], 3)
-        self.assertEqual(payload["succeeded_count"], 3)
+        self.assertEqual(payload["succeeded_pages"], 3)
         self.assertEqual(payload["evidence_count"], 1)
         self.assertEqual(payload["status"], "complete")
         self.assertEqual(adapter.calls, ["센서", "감지기", "sensor"])
@@ -125,7 +125,7 @@ class ResearchBatchTests(unittest.TestCase):
         result = self.batch(adapter, plan())
         self.assertEqual(result.next_state, "research_complete")
         payload = result.as_dict()
-        self.assertEqual(payload["succeeded_count"], 2)
+        self.assertEqual(payload["succeeded_pages"], 2)
         self.assertEqual(payload["adapter_status"], {"failure_kinds": ["timeout"], "status": "success"})
         self.assertEqual(
             [item["failure_kind"] for item in payload["queries"]], [None, "timeout", None],
@@ -305,6 +305,73 @@ class ResearchKiprisCliTests(unittest.TestCase):
         self.assertTrue(payload["gate_id"])
         self.assertTrue(payload["subject_revision_hash"])
         self.assertNotIn("stub-key", json.dumps(payload))
+
+    def test_default_invocation_matches_the_pre_paging_fingerprint_through_the_cli(self):
+        """Byte-identity regression (PR #49 review finding #2; Critic MAJOR-1).
+
+        A default `--paging`-off invocation must produce the exact
+        `request_fingerprint` and auto-derived `idempotency_key` a pre-paging
+        run produced for the same `--run-id`/`--query`, proven THROUGH THE CLI
+        entry point — not only via a direct `ResearchBudget` construction — so
+        a `cli.py` default drift (e.g. reviving a `--page-cap` flag, or moving
+        `effective_pages` derivation off `--paging`) cannot silently re-open
+        finding #2 without failing this test. The constants below were
+        recorded with `ResearchBudget(page_cap=5)` — the shipped default both
+        before paging existed and after this freeze-hash fix — for this exact
+        `run_id`/`origin_query`, mirroring `repro_finding2_fingerprint.py`'s
+        own derivation (`request_fingerprint`, `auto_idempotency_key`).
+        """
+
+        with patch.object(cli, "KiprisAdapter", StubKiprisAdapter), patch.dict(
+            os.environ, {"KIPRIS_PLUS_API_KEY": "stub-key"},
+        ):
+            payload, code = self.invoke(
+                "research", "kipris", "--run", self.run_root.relative_to(ROOT),
+                "--run-id", "run", "--query", "on-device inference kv-cache",
+                "--retrieved-at", "2026-01-01T00:00:00Z",
+                "--workspace-root", self.workspace_rel,
+            )
+        self.assertEqual(code, 0, payload)
+        connection = connect_database(self.run_root / "factory.sqlite3")
+        try:
+            fingerprint = connection.execute(
+                "SELECT request_fingerprint FROM research_queries WHERE run_id='run'",
+            ).fetchone()[0]
+            idempotency_key = connection.execute(
+                "SELECT idempotency_key FROM research_operations WHERE run_id='run'",
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(fingerprint, "rq_3b9fc1aa4bac8055c91c")
+        self.assertEqual(idempotency_key, "research-kipris-8cf77e275e1873b2ab1a:q00")
+
+    def test_paging_with_result_budget_at_or_below_thirty_is_rejected_loudly(self):
+        """PR #49 review finding #8: a page is min(30, --result-budget) rows, so
+        `--paging` at the shipped `--result-budget` default (30) would silently
+        do nothing — the same inert-flag defect the review found in
+        `--page-cap`. Reject the combination instead of shipping it again.
+        """
+
+        payload, code = self.invoke(*self.kipris_argv("--paging"))
+        self.assertEqual(code, 2, payload)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("--paging", payload["error"])
+        self.assertIn("--result-budget", payload["error"])
+
+    def test_max_calls_times_effective_pages_over_the_ceiling_is_rejected(self):
+        """PR #49 review finding #3, exercised through the actual CLI wiring:
+        `--max-calls` alone bounds planned terms, but each term can issue up
+        to `effective_pages` requests once `--paging` is on. 21 terms * 5
+        pages = 105 > 100 must be rejected before any query is planned.
+        """
+
+        payload, code = self.invoke(
+            *self.kipris_argv("--paging", "--result-budget", "40", "--max-calls", "21"),
+        )
+        self.assertEqual(code, 2, payload)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("max_calls", payload["error"])
+        self.assertIn("effective_pages", payload["error"])
 
 
 class AuditLiveCliFlagTests(unittest.TestCase):
