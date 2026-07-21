@@ -494,7 +494,14 @@ def run_audit_scoring(
         "dependencies": feature_dependencies,
         "schema_version": "feature-map-set-v1",
     })
-    if any(item["outcome"] == "coverage_insufficient" for item in results):
+    # decision_required keeps precedence over coverage_insufficient (the original
+    # excessive-vs-coverage ordering): a batch with both outcomes present still
+    # stops at the checkpoint, not COVERAGE, so a coverage-insufficient finalist
+    # can ride along inside a checkpoint batch (see the nullable-field handling
+    # below). Only when NO finalist is decision_required does coverage win.
+    if any(item["outcome"] == "decision_required" for item in results):
+        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.POST_AUDIT_CHECKPOINT
+    elif any(item["outcome"] == "coverage_insufficient" for item in results):
         target, gate_kind = RunState.COVERAGE_INSUFFICIENT, GateKind.COVERAGE
     else:
         target, gate_kind = RunState.DECISION_REQUIRED, GateKind.POST_AUDIT_CHECKPOINT
@@ -514,9 +521,34 @@ def run_audit_scoring(
     operation_hash = digest(audit_payload)
     dependencies = (finalist_row["revision_id"], corpus_row["revision_id"], feature_revision.revision_id, config_row["revision_id"])
     publishing, exports = _publishing_state(connection, run_root)
-    if gate_kind:
+    audit_hash = digest(audit_payload)
+    if gate_kind is GateKind.POST_AUDIT_CHECKPOINT:
+        # Every current finalist rides in the scope — not just the breaching
+        # subset — because the checkpoint is raised on clean AND breaching
+        # audits alike, and the dossier needs each finalist's verdict either
+        # way. coverage_insufficient finalists (possible alongside
+        # decision_required ones, per the precedence above) carry null
+        # closest_reference_id/upper_bound_reference_id (similarity.py), which
+        # the scope simply passes through as-is for the dossier to render.
         scope = {
-            "audit_hash": digest(audit_payload), "outcome": target.value,
+            "audit_hash": audit_hash, "outcome": target.value,
+            "affected_finalist_ids": sorted(
+                item["finalist_id"] for item in results if item["outcome"] == "decision_required"
+            ),
+            "finalist_bindings": [{
+                "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
+                "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+                "finalist_hash": digest(finalists[item["finalist_id"]]), "finalist_id": item["finalist_id"],
+                "map_id": maps[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
+                "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+            } for item in results],
+            "corpus_set_hash": corpus_row["content_hash"],
+            "feature_map_set_hash": feature_hash, "finalist_set_hash": finalist_row["content_hash"],
+            "scorer_config_hash": config_row["content_hash"],
+        }
+    else:
+        scope = {
+            "audit_hash": audit_hash, "outcome": target.value,
             "affected_finalist_ids": [item["finalist_id"] for item in results if item["outcome"] == target.value],
             "decision_bindings": [{
                 "corpus_hash": item["corpus_hash"], "finalist_hash": digest(finalists[item["finalist_id"]]),
@@ -526,19 +558,11 @@ def run_audit_scoring(
             "feature_map_set_hash": feature_hash, "finalist_set_hash": finalist_row["content_hash"],
             "scorer_config_hash": config_row["content_hash"],
         }
-        finished, _export, gate = publishing.publish_gate_transition(
-            run_id, gate_kind, actor="audit-cli", reason="final similarity audit requires a decision",
-            operation="audit.finalize", idempotency_key=operation_hash, approval_scope=scope,
-            artifact_kind="audit_batch", artifact_content=audit_payload,
-            artifact_schema_version="audit-batch-v1", dependencies=dependencies,
-            export_directory=exports,
-        )
-        return AuditRun(run_id, target.value, finished.artifact.revision_id, gate.gate_id, finished.replayed)
-    finished, _export = publishing.publish_transition(
-        run_id, target, actor="audit-cli", reason="final similarity audit approved",
-        operation="audit.finalize", idempotency_key=operation_hash,
+    finished, _export, gate = publishing.publish_gate_transition(
+        run_id, gate_kind, actor="audit-cli", reason="final similarity audit requires a decision",
+        operation="audit.finalize", idempotency_key=operation_hash, approval_scope=scope,
         artifact_kind="audit_batch", artifact_content=audit_payload,
         artifact_schema_version="audit-batch-v1", dependencies=dependencies,
         export_directory=exports,
     )
-    return AuditRun(run_id, target.value, finished.artifact.revision_id, None, finished.replayed)
+    return AuditRun(run_id, target.value, finished.artifact.revision_id, gate.gate_id, finished.replayed)
