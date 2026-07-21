@@ -287,6 +287,7 @@ class TransactionalStateKernelTests(unittest.TestCase):
             GateKind.DOMAIN_PIVOT: frozenset({"approve", "reject", "stop"}),
             GateKind.COVERAGE: frozenset({"expand", "retry", "stop"}),
             GateKind.EXCESSIVE_SIMILARITY: frozenset({"retain_with_warning", "refine", "replace", "stop"}),
+            GateKind.POST_AUDIT_CHECKPOINT: frozenset({"approve", "re_ideate", "re_research", "stop"}),
         })
         with tempfile.TemporaryDirectory() as temporary:
             connection = self.database(temporary)
