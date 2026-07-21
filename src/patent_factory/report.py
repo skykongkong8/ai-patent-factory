@@ -122,6 +122,8 @@ LEXICON: dict[str, dict[str, str]] = {
             "- 축 수치는 표시하지 않습니다. 작성자가 입력한 값이며 도구가 계산하지 않고, "
             "후보 순서를 정하는 데에도 사용되지 않습니다."
         ),
+        "checkpoint_action_line": "- 체크포인트 결정: {action} — {reason}",
+        "checkpoint_feedback_line": "  - {finalist_id}: 흥미로운 점 {interesting} / 지루한 점 {boring}",
         "closest_identifier_fallback": "식별자 없음",
         "comparison_axis_line": (
             "- {axis}: {rationale} 커버리지: {coverage}. 커버리지 한계: {limitations}. 공백: {gaps}. {tokens}"
@@ -202,6 +204,8 @@ LEXICON: dict[str, dict[str, str]] = {
             "- Axis figures are not shown: they are author-supplied inputs, are never computed "
             "by this tool, and never determine candidate order."
         ),
+        "checkpoint_action_line": "- Checkpoint decision: {action} — {reason}",
+        "checkpoint_feedback_line": "  - {finalist_id}: interesting {interesting} / boring {boring}",
         "closest_identifier_fallback": "no identifier",
         "comparison_axis_line": (
             "- {axis}: {rationale} Coverage: {coverage}. Coverage limitations: {limitations}. Gaps: {gaps}. {tokens}"
@@ -577,6 +581,79 @@ def _excessive_decision(
     return row, content
 
 
+def _checkpoint_decision(
+    connection: sqlite3.Connection, run_id: str, audit_hash: str, audit: Mapping[str, Any],
+    matches: list[tuple[sqlite3.Row, dict[str, Any]]],
+) -> tuple[sqlite3.Row | None, dict[str, Any] | None]:
+    """Mirror ``_excessive_decision`` for a ``post_audit_checkpoint`` resolution.
+
+    Unlike the excessive path, this is entered on BOTH clean and breaching
+    audits (the checkpoint is always raised), so it never short-circuits to
+    ``None, None`` on an empty ``affected`` set — the caller already confirmed
+    a checkpoint resolution artifact bound to this audit_hash exists before
+    calling this.
+    """
+    affected = sorted(
+        item["finalist_id"] for item in audit.get("results", [])
+        if isinstance(item, Mapping) and item.get("outcome") == "decision_required"
+    )
+    if len(matches) != 1:
+        raise StateError("report requires exactly one current checkpoint decision")
+    row, content = matches[0]
+    decisions = content.get("decisions")
+    if (
+        content.get("action") != "approve"
+        or content.get("subject_revision_hash") != audit_hash
+        or not isinstance(decisions, list)
+        or sorted(item.get("finalist_id") for item in decisions if isinstance(item, Mapping)) != affected
+        or any(item.get("action") != "retain_with_warning" or not normalize(item.get("warning", "")) for item in decisions)
+    ):
+        raise StateError("report requires a complete current checkpoint decision")
+    decision_row = connection.execute(
+        "SELECT gd.*,ge.approval_scope_json,ge.subject_revision_hash AS envelope_subject,"
+        "ge.suspended_operation AS envelope_operation,ge.status AS envelope_status "
+        "FROM gate_decisions gd JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id "
+        "WHERE gd.decision_id=? AND gd.run_id=? AND ge.kind='post_audit_checkpoint'",
+        (content.get("decision_id"), run_id),
+    ).fetchone()
+    if (
+        decision_row is None or decision_row["stale"] or not decision_row["used_at"]
+        or not decision_row["consumed_by_event_id"] or decision_row["action"] != "approve"
+        or decision_row["subject_revision_hash"] != audit_hash
+        or decision_row["envelope_subject"] != audit_hash
+        or decision_row["approval_scope_hash"] != content.get("approval_scope_hash")
+        or decision_row["envelope_status"] != "decided"
+    ):
+        raise StateError("report checkpoint decision row is stale or incompletely consumed")
+    return row, content
+
+
+def _bound_decision(
+    connection: sqlite3.Connection, run_id: str, audit_hash: str, audit: Mapping[str, Any],
+) -> tuple[sqlite3.Row | None, dict[str, Any] | None]:
+    """Resolve the decision bound to the CURRENT audit, by the gate kind that raised it.
+
+    A breaching batch approved through the checkpoint has no
+    ``excessive_similarity`` resolution to match (RF#1) — ``affected`` alone
+    cannot tell a legacy excessive run from a checkpoint-breaching run, so the
+    discriminator is which gate kind actually produced a resolution bound to
+    this audit_hash. Checkpoint resolutions match on
+    ``content.subject_revision_hash`` (every resolution carries it); legacy
+    excessive resolutions match on ``content.audit_hash`` (only they carry it).
+    """
+    checkpoint_matches = []
+    for row in connection.execute(
+        "SELECT * FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND stale=0",
+        (run_id,),
+    ):
+        content = json.loads(row["content_json"])
+        if content.get("gate_kind") == "post_audit_checkpoint" and content.get("subject_revision_hash") == audit_hash:
+            checkpoint_matches.append((row, content))
+    if checkpoint_matches:
+        return _checkpoint_decision(connection, run_id, audit_hash, audit, checkpoint_matches)
+    return _excessive_decision(connection, run_id, audit_hash, audit)
+
+
 def _section_bodies(
     *, policy: Mapping[str, Any], report_input: Mapping[str, Any], profile: Mapping[str, Any],
     research: Mapping[str, Any], candidates: list[Mapping[str, Any]], finalists: list[Mapping[str, Any]],
@@ -760,6 +837,25 @@ def _section_bodies(
         audit_lines.append(lex["counter_line"].format(counterargument=result.get("counterargument", "")))
     if decision is None:
         decision_body = lex["no_decision_body"]
+    elif decision.get("gate_kind") == "post_audit_checkpoint":
+        # Render honestly: the inventor's action/reason plus per-finalist
+        # feedback, and — only when breaches exist — the same retain-with-
+        # warning lines the legacy excessive branch renders below. No legal
+        # conclusion: action/feedback are framed as the inventor's research-aid
+        # decision, never as a novelty/validity finding.
+        checkpoint_lines = [lex["checkpoint_action_line"].format(action=decision["action"], reason=decision["reason"])]
+        checkpoint_lines.extend(
+            f"- {item['finalist_id']}: {item['action']} — {item['reason']}"
+            + (f" — {item['warning']}" if item.get("warning") else "")
+            for item in decision.get("decisions", [])
+        )
+        checkpoint_lines.extend(
+            lex["checkpoint_feedback_line"].format(
+                finalist_id=item["finalist_id"], interesting=item["interesting"], boring=item["boring"],
+            )
+            for item in sorted(decision.get("feedback", []), key=lambda item: item["finalist_id"])
+        )
+        decision_body = "\n".join(checkpoint_lines)
     else:
         decision_body = "\n".join(
             f"- {item['finalist_id']}: {item['action']} — {item['reason']}"
@@ -1092,7 +1188,7 @@ def _report_payload(
         or sorted(result_pairs) != sorted(finalist_pairs)
     ):
         raise StateError("report audit must contain exactly one matching result per current finalist and candidate")
-    decision_row, decision = _excessive_decision(connection, run_id, rows["audit_batch"]["content_hash"], audit)
+    decision_row, decision = _bound_decision(connection, run_id, rows["audit_batch"]["content_hash"], audit)
     evidence = _evidence_map(
         content["research_bundle"], content["corpus_set"], connection=connection, run_id=run_id,
     )
@@ -1170,7 +1266,8 @@ def _report_payload(
     bindings = {kind: rows[kind]["content_hash"] for kind in kinds}
     dependencies = [rows[kind]["revision_id"] for kind in kinds]
     if decision_row is not None:
-        bindings["excessive_gate_resolution"] = decision_row["content_hash"]
+        binding_key = "checkpoint_gate_resolution" if decision.get("gate_kind") == "post_audit_checkpoint" else "excessive_gate_resolution"
+        bindings[binding_key] = decision_row["content_hash"]
         dependencies.append(decision_row["revision_id"])
     citations = [{
         "content_hash": evidence[item].get("content_hash"), "evidence_id": item,
