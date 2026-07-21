@@ -60,7 +60,19 @@ permits zero network requests. Only a user-provided current `gate-decision-input
 resolve the exact gate; this skill does not authorize credentials, paid services,
 hosted-model egress, or a broader data scope.
 
+## Re-entry after `/checkpoint`
+
+A `re_research` checkpoint decision re-enters this stage for one offline second pass —
+`fixture` / `normalize-web` + `manual` only, never `research kipris` / `research
+serpapi` (live is deferred to
+[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)). Read the
+decided `plan.needed_research` from the decision-set export and target the offline
+import at those terms. See `.claude/skills/checkpoint/SKILL.md`.
+
 ## Next
 
-After `/research` reaches `research_complete`, continue with `/ideate`. After `/audit`
-scoring is approved by the core, continue with `/draft`.
+After `/research` reaches `research_complete`, continue with `/ideate`. After
+`/audit` scoring, every batch — clean or breaching — stops at the always-raised
+`post_audit_checkpoint` gate; continue with `/checkpoint`, which resolves to `/draft`
+(`approve`), back to `/ideate` (`re_ideate`), back to this stage (`re_research`), or a
+stop.
