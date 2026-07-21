@@ -14,8 +14,8 @@
     "decision_id": {"type": "string", "pattern": "^gd_[0-9a-f]{20}$"},
     "gate_id": {"type": "string", "pattern": "^ge_[0-9a-f]{20}$"},
     "run_id": {"type": "string", "minLength": 1},
-    "gate_kind": {"enum": ["conflict_resolution", "credential", "sensitive_disclosure", "domain_pivot", "coverage", "excessive_similarity"]},
-    "action": {"enum": ["choose_source", "choose_value", "retain_unresolved", "configure_and_verify", "approve", "degrade", "redact", "reject", "expand", "retry", "retain_with_warning", "refine", "replace", "stop"]},
+    "gate_kind": {"enum": ["conflict_resolution", "credential", "sensitive_disclosure", "domain_pivot", "coverage", "excessive_similarity", "post_audit_checkpoint"]},
+    "action": {"enum": ["choose_source", "choose_value", "retain_unresolved", "configure_and_verify", "approve", "degrade", "redact", "reject", "expand", "retry", "retain_with_warning", "refine", "replace", "re_ideate", "re_research", "stop"]},
     "actor": {"type": "string", "minLength": 1},
     "reason": {"type": "string", "minLength": 1},
     "subject_revision_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -44,6 +44,18 @@
           "finalist_id": {"type": "string", "minLength": 1},
           "reason": {"type": "string", "minLength": 1},
           "warning": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "feedback": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["boring", "finalist_id", "interesting"],
+        "properties": {
+          "boring": {"type": "string", "minLength": 1},
+          "finalist_id": {"type": "string", "minLength": 1},
+          "interesting": {"type": "string", "minLength": 1}
         }
       }
     }

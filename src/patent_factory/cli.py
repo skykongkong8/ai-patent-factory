@@ -38,8 +38,8 @@ from .review import run_review
 from .runs import prepare_run_profile, run_show, run_status, start_run
 from .scaffold import (
     count_todos, evidence_binding_table, scaffold_audit_query_input,
-    scaffold_candidate_input, scaffold_feature_map_input, scaffold_report_input,
-    scaffold_shortlist_input,
+    scaffold_candidate_input, scaffold_feature_map_input, scaffold_gate_decision_input,
+    scaffold_report_input, scaffold_shortlist_input,
     seal_feature_map_input,
 )
 from .sharing import SensitiveDisclosureRequiredError, share_report
@@ -346,6 +346,14 @@ def build_parser() -> argparse.ArgumentParser:
     feature_map.add_argument("--run", type=Path, help="run directory (generation mode)")
     feature_map.add_argument("--run-id", help="run id (generation mode)")
     feature_map.add_argument("--byte-budget", type=int, default=2_000_000)
+    gate_decision = scaffold_commands.add_parser(
+        "gate-decision", help="draft a gate-decision-input-v2 request for one pending checkpoint gate",
+    )
+    gate_decision.add_argument("--out", type=Path, required=True, help="draft JSON written under the workspace root")
+    gate_decision.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    gate_decision.add_argument("--run", type=Path, required=True)
+    gate_decision.add_argument("--run-id", required=True)
+    gate_decision.add_argument("--gate-id", required=True)
 
     gate = commands.add_parser("gate", help="inspect or decide one exact current gate")
     gate_commands = gate.add_subparsers(dest="gate_command", required=True)
@@ -1161,7 +1169,7 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     out_path = _prepare_contained_output(args.out, workspace_root, "scaffold output")
     command = args.scaffold_command
     extras: dict[str, Any] = {}
-    if command in {"candidate", "shortlist", "audit-query"}:
+    if command in {"candidate", "shortlist", "audit-query", "gate-decision"}:
         contained_input(args.run, workspace_root, "scaffold run", directory=True)
         database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "scaffold run database")
         run_id = normalize(args.run_id)
@@ -1182,6 +1190,9 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         with connect_database(database_path) as connection:
             draft = scaffold_audit_query_input(connection, run_id=run_id)
         extras["finalist_set_hash"] = draft["finalist_set_hash"]
+    elif command == "gate-decision":
+        with connect_database(database_path) as connection:
+            draft = scaffold_gate_decision_input(connection, run_id=run_id, gate_id=normalize(args.gate_id))
     elif command == "feature-map":
         if args.seal:
             source = contained_input(args.seal, workspace_root, "feature map seal input")

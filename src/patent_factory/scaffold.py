@@ -196,6 +196,64 @@ def scaffold_audit_query_input(
     }
 
 
+def scaffold_gate_decision_input(
+    connection: sqlite3.Connection, *, run_id: str, gate_id: str,
+) -> dict[str, Any]:
+    """Draft a pre-filled ``gate-decision-input-v2`` for one pending checkpoint gate.
+
+    Bindings (``gate_id``, ``subject_revision_hash``, ``approval_scope``, and
+    every finalist_id/action combination the composition rule fixes) are
+    clerical and pre-filled from the current gate exactly as ``gate inspect``
+    reports it. Judgment fields — the top-level ``action``, ``reason``, every
+    per-finalist ``feedback`` interesting/boring, the breach ``decisions``
+    reasons, and the ``plan`` — are left as ``TODO(agent)`` markers: `gate
+    decide` rejects any of them left unedited (core sentinel check, not this
+    scaffold).
+    """
+    from .decisions import inspect_gate
+    from .models import GateKind
+
+    envelope = inspect_gate(connection, run_id, gate_id)
+    if envelope["kind"] != GateKind.POST_AUDIT_CHECKPOINT.value:
+        raise ScaffoldError("scaffold gate-decision only drafts a post_audit_checkpoint gate")
+    scope = envelope["approval_scope"]
+    affected = scope.get("affected_finalist_ids") or []
+    bindings = scope.get("finalist_bindings") or []
+    return {
+        "action": TODO + "one of: approve, re_ideate, re_research, stop",
+        "actor": TODO + "actor identity",
+        "approval_scope": scope,
+        "decisions": [
+            # Only used when action=approve and breaches exist: exactly one
+            # retain_with_warning entry per breaching finalist (the composition
+            # rule rejects any other shape). Clear this list for every other
+            # action, including approve on a clean audit.
+            {
+                "action": "retain_with_warning",
+                "finalist_id": finalist_id,
+                "reason": TODO + "why this finalist is retained despite the excessive-similarity flag",
+            }
+            for finalist_id in affected
+        ],
+        "feedback": [
+            {
+                "boring": TODO + "what felt less compelling about this finalist",
+                "finalist_id": item["finalist_id"],
+                "interesting": TODO + "what felt worth pursuing about this finalist",
+            }
+            for item in bindings
+        ],
+        "gate_id": gate_id,
+        "plan": {
+            # Only used when action=re_research; clear to {} for every other action.
+            "needed_research": [TODO + "what to search for on an offline second pass (fixture/normalize-web/manual only)"],
+        },
+        "reason": TODO + "why this decision was made",
+        "schema_version": "gate-decision-input-v2",
+        "subject_revision_hash": envelope["subject_revision_hash"],
+    }
+
+
 def scaffold_report_input(
     profile_connection: sqlite3.Connection,
     *,
@@ -429,6 +487,6 @@ def seal_feature_map_input(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "ScaffoldError", "TODO", "count_todos", "evidence_binding_table",
-    "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_report_input",
-    "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
+    "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_gate_decision_input",
+    "scaffold_report_input", "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
 ]
