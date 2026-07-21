@@ -40,6 +40,10 @@ on these rather than treating non-zero as failure:
 | `3` | `conflict_resolution_required` — a profile batch conflicts with existing facts. | Resolve with `profile conflict-inspect` / `conflict-decide`. Never bypass. |
 | `4` | The stage ran but did not reach its complete state (e.g. research `incomplete`). | Read `status`, `next_state`, and `incomplete_reason`. This is recoverable, not a dead end — see below. |
 | `5` | A gate is open: `credential_required`, or `insufficient_evidence` from shortlist. | `gate inspect` → author a decision → `gate decide` → re-run with `--decision-id`. |
+| `7` | `coverage_insufficient` — `audit score` found at least one finalist's corpus coverage too thin to decide, with no finalist requiring the checkpoint. | `gate inspect` → author a `coverage` decision (`expand`/`retry`/`stop`) → `gate decide`. |
+| `8` | `decision_required` — a `post_audit_checkpoint` gate is pending. **Every** `audit score` now stops here, clean or breaching (accepted breaking change: a clean audit no longer exits `0`). | `gate inspect` → compose the dossier → `scaffold gate-decision` → author the `gate-decision-input-v2` → `gate decide` (`approve`/`re_ideate`/`re_research`/`stop`). See `/checkpoint`. |
+| `9` | `sensitive_disclosure_required` — `share` found a sensitive field in the requested scope. | `gate inspect` → author a decision (`approve`/`redact`/`stop`) → `gate decide` → resume `share` with `--decision-id`. |
+| `10` | `revision_required` — the independent review found a defect. | Return to `/draft` with a corrected report; only a new report revision may receive a new review. |
 
 Every one of these still prints a complete `cli-result-v1` object on stdout. If
 you ever get unparseable stdout, that is a bug worth reporting — the envelope is
@@ -170,13 +174,15 @@ auto-start `RESEARCH_RUNNING` from `RESEARCH_READY`/`RESEARCH_RUNNING`, and
 `research serpapi` additionally checks the run's current state before any
 network egress and raises `"research is not permitted from run state ..."` if
 the state can no longer reach `RESEARCH_RUNNING`. Either way, no second
-research call reaches an adapter from a completed run outside the route below.
+research call reaches an adapter from a completed run outside the two
+gate-mediated routes below.
 This is a user-accepted decision — see
 [docs/g009-scope-addendum.md](docs/g009-scope-addendum.md) — because a general
 re-entry edge needs a full invalidation-DAG analysis of what a second research
 pass would invalidate downstream (candidates, finalists, audit).
 
-**One gate-mediated route back does exist.** If the final similarity audit
+**Two gate-mediated routes back do exist**, both reached from the audit stage.
+The first: if the final similarity audit
 raises a COVERAGE gate — evidence coverage on one or more finalists came in
 below threshold — resolving it with `gate decide --action expand` plus a
 bounded expansion plan genuinely returns the run to `research_running`, and a
@@ -190,6 +196,14 @@ queries so they can be told apart) — so the republished bundle, and the
 report's "Research Scope and Method" section rendered from it, describe only
 what research retrieved, never what audit separately pulled into its own
 similarity corpus.
+
+The second: the post-audit `/checkpoint` gate's `re_research` branch, which
+re-enters `RESEARCH_RUNNING` for exactly one bounded second pass, and only
+through `research fixture` / `research normalize-web` + `research manual` —
+never `research kipris` or `research serpapi`. Live credentialed research on
+that second pass is deferred to
+[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48); no
+networked verb, credential gate, or egress policy changed to add this path.
 
 ## Full pipeline verbs
 
@@ -217,10 +231,23 @@ python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
 python3 -m patent_factory audit score    --run RUN --run-id RUN_ID \
   --feature-input workspace/requests/feature-map-set-input-v1.json
 
-# One exact gate (read-only inspect; decide needs a user-authored decision input)
+# Post-audit checkpoint — ALWAYS raised, clean or breaching (exit 8). Scaffold a
+# pre-filled gate-decision-input-v2 draft (judgment fields left TODO(agent));
+# the user completes action/reason/per-finalist feedback (and, on re_research,
+# a bounded plan) before gate decide.
+python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
+  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+
+# One exact gate (read-only inspect; decide needs a user-authored decision input).
+# Legacy gate kinds (credential, coverage, domain_pivot, sensitive_disclosure,
+# excessive_similarity — the last only on gates raised before this feature)
+# still take gate-decision-input-v1; a post_audit_checkpoint gate requires
+# gate-decision-input-v2 and rejects v1 outright, and vice versa.
 python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_ID
 python3 -m patent_factory gate decide  --run RUN --run-id RUN_ID --gate-id GATE_ID \
   --input workspace/requests/gate-decision-input-v1.json
+python3 -m patent_factory gate decide  --run RUN --run-id RUN_ID --gate-id GATE_ID \
+  --input workspace/requests/gate-decision-input-v2.json
 
 # Report → independent review → deterministic validate
 python3 -m patent_factory draft    --run RUN --run-id RUN_ID \
@@ -241,6 +268,8 @@ Gate rule for every stage: `*_required`, `coverage_insufficient`,
 `decision_required`, `insufficient_evidence`, `revision_required`, `stopped`, and
 `error` are hard stops. Preserve `gate_id`, `subject_revision_hash`, `actions`, and
 `next_state`; resume only with the core-issued `decision_id` and the same input.
+`decision_required` is the normal exit of every `audit score` call now (clean or
+breaching), not only a breach — see exit code `8` above and `/checkpoint`.
 
 ## Privacy & hosted egress
 

@@ -2,7 +2,7 @@
 description: Independent reviewer pass, deterministic validate, and guarded external share.
 ---
 
-# /review — independent review, validate & share (step 7)
+# /review — independent review, validate & share (step 8)
 
 Run an independent reviewer pass, then deterministic validation, then (optionally) a
 guarded external share. Follow `.claude/skills/patent-review/SKILL.md`. The reviewer's
