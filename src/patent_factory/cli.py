@@ -30,15 +30,17 @@ from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview
 from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
-    CredentialRequiredError, PlannedQuery, ResearchBudget, plan_keyword_queries,
-    run_research, run_research_batch,
+    CredentialRequiredError, PlannedQuery, ResearchBudget, plan_bibliography_queries,
+    plan_keyword_queries, run_research, run_research_batch,
 )
 from .report import publish_report
 from .review import run_review
-from .runs import prepare_run_profile, start_run
+from .runs import prepare_run_profile, run_show, run_status, start_run
 from .scaffold import (
     count_todos, evidence_binding_table, scaffold_audit_query_input,
-    scaffold_candidate_input, scaffold_report_input, scaffold_shortlist_input,
+    scaffold_candidate_input, scaffold_feature_map_input, scaffold_report_input,
+    scaffold_shortlist_input,
+    seal_feature_map_input,
 )
 from .sharing import SensitiveDisclosureRequiredError, share_report
 from .state import ALLOWED_TRANSITIONS, GATE_STATE_SET, StateError, StateStore
@@ -174,6 +176,19 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--profile-database", type=Path, help="authoritative profile SQLite database")
     start.add_argument("--byte-budget", type=int, default=2_000_000)
     start.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    status = run_commands.add_parser(
+        "status", help="report run state and the content hash of every current artifact",
+    )
+    status.add_argument("--run", type=Path, required=True)
+    status.add_argument("--run-id", required=True)
+    status.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    show = run_commands.add_parser(
+        "show", help="print the body of one current artifact (e.g. corpus_set, audit_batch)",
+    )
+    show.add_argument("--run", type=Path, required=True)
+    show.add_argument("--run-id", required=True)
+    show.add_argument("--kind", required=True, help="artifact kind, as listed by run status")
+    show.add_argument("--workspace-root", type=Path, default=Path("workspace"))
 
     research = commands.add_parser("research", help="run bounded fixture or manual research")
     research_commands = research.add_subparsers(dest="research_command", required=True)
@@ -222,7 +237,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kipris_live.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
     kipris_live.add_argument("--run-id", required=True)
-    kipris_live.add_argument("--query", required=True, help="origin query term")
+    kipris_live.add_argument("--query", help="origin query term (required for word_search)")
+    kipris_live.add_argument(
+        "--capability", choices=("word_search", "bibliography_summary"), default="word_search",
+        help="KIPRIS operation to call; bibliography_summary takes --application-number instead of --query",
+    )
+    kipris_live.add_argument(
+        "--application-number", action="append", default=None,
+        help="repeatable application number for --capability bibliography_summary",
+    )
     for expansion in (
         "korean-synonym", "english-synonym", "discovered-term",
         "classification", "applicant", "inventor",
@@ -311,6 +334,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
     )
     scaffold_commands.choices["report"].add_argument("--language", choices=("en", "ko"), default="en")
+    feature_map = scaffold_commands.add_parser(
+        "feature-map", help="seal a filled feature-map request input by re-deriving every map_id",
+    )
+    feature_map.add_argument("--out", type=Path, required=True, help="sealed JSON written under the workspace root")
+    feature_map.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    feature_map.add_argument(
+        "--seal", type=Path, metavar="INPUT",
+        help="re-derive map_id for an already-filled feature-map-set-input-v1 JSON",
+    )
+    feature_map.add_argument("--run", type=Path, help="run directory (generation mode)")
+    feature_map.add_argument("--run-id", help="run id (generation mode)")
+    feature_map.add_argument("--byte-budget", type=int, default=2_000_000)
 
     gate = commands.add_parser("gate", help="inspect or decide one exact current gate")
     gate_commands = gate.add_subparsers(dest="gate_command", required=True)
@@ -494,6 +529,16 @@ def _run_start(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return result.as_dict(), 0
 
 
+def _run_inspect(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    workspace_root = private_root(args.workspace_root, "workspace root")
+    run_root = contained_input(args.run, workspace_root, "run root", directory=True)
+    database_path = contained_input(args.run / "factory.sqlite3", workspace_root, "run database")
+    with connect_database(database_path) as connection:
+        if args.run_command == "status":
+            return run_status(connection, args.run_id), 0
+        return run_show(connection, args.run_id, args.kind), 0
+
+
 def _delete_run_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     workspace_root = private_root(args.workspace_root, "workspace root")
     run_root = contained_input(args.run, workspace_root, "delete run", directory=True)
@@ -541,16 +586,29 @@ def _research_kipris(
         page_cap=args.page_cap, byte_budget=args.byte_budget,
     )
     budget.validate()
-    planned = plan_keyword_queries(
-        run_id=normalize(args.run_id), origin_query=args.query,
-        korean_synonyms=tuple(args.korean_synonym or ()),
-        english_synonyms=tuple(args.english_synonym or ()),
-        discovered_terms=tuple(args.discovered_term or ()),
-        classifications=tuple(args.classification or ()),
-        applicants=tuple(args.applicant or ()),
-        inventors=tuple(args.inventor or ()),
-        budget=budget,
-    )
+    if args.capability == "bibliography_summary":
+        if not args.application_number:
+            raise CliError("--capability bibliography_summary requires at least one --application-number")
+        if args.query:
+            raise CliError("--query applies to word_search; bibliography_summary takes --application-number")
+        planned = plan_bibliography_queries(
+            run_id=normalize(args.run_id),
+            application_numbers=tuple(args.application_number),
+            budget=budget,
+        )
+    else:
+        if not args.query:
+            raise CliError("--capability word_search requires --query")
+        planned = plan_keyword_queries(
+            run_id=normalize(args.run_id), origin_query=args.query,
+            korean_synonyms=tuple(args.korean_synonym or ()),
+            english_synonyms=tuple(args.english_synonym or ()),
+            discovered_terms=tuple(args.discovered_term or ()),
+            classifications=tuple(args.classification or ()),
+            applicants=tuple(args.applicant or ()),
+            inventors=tuple(args.inventor or ()),
+            budget=budget,
+        )
     service_key = environment_secret("KIPRIS_PLUS_API_KEY") or ""
     adapter = KiprisAdapter(service_key, credential_required=True)
     idempotency_key = args.idempotency_key or "research-kipris-" + digest({
@@ -589,8 +647,7 @@ def _research_normalize_web(
     allowed_hosts = tuple(dict.fromkeys(normalize(host).casefold() for host in args.allow_host))
     if not allowed_hosts or any(not host for host in allowed_hosts):
         raise CliError("normalize-web requires a non-empty host allowlist")
-    secret = environment_secret("KIPRIS_PLUS_API_KEY")
-    assert_canaries_absent(payload, (secret,) if secret else (), boundary="web_rows")
+    assert_canaries_absent(payload, credential_canaries(), boundary="web_rows")
     records = normalize_web_rows(payload["rows"], allowed_hosts, args.source_type)
     out_path = _prepare_contained_output(args.out, documents_root, "manual import output")
     out_path.write_text(
@@ -1125,6 +1182,24 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         with connect_database(database_path) as connection:
             draft = scaffold_audit_query_input(connection, run_id=run_id)
         extras["finalist_set_hash"] = draft["finalist_set_hash"]
+    elif command == "feature-map":
+        if args.seal:
+            source = contained_input(args.seal, workspace_root, "feature map seal input")
+            draft = seal_feature_map_input(_json_object(source, args.byte_budget, "feature map seal input"))
+            extras["sealed_map_ids"] = [item["map_id"] for item in draft["maps"]]
+        else:
+            if not args.run or not args.run_id:
+                raise CliError("scaffold feature-map needs either --seal INPUT or --run/--run-id")
+            contained_input(args.run, workspace_root, "scaffold run", directory=True)
+            feature_database = contained_output(
+                args.run / "factory.sqlite3", workspace_root, "scaffold run database",
+            )
+            with connect_database(feature_database) as connection:
+                draft = scaffold_feature_map_input(
+                    connection, run_id=normalize(args.run_id), config=load_similarity_config(),
+                )
+            extras["finalist_set_hash"] = draft["finalist_set_hash"]
+            extras["corpus_set_hash"] = draft["corpus_set_hash"]
     else:
         profile_database = contained_input(
             args.profile_database or args.workspace_root / "profile.sqlite3",
@@ -1182,7 +1257,23 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 responses[(item["finalist_id"], normalize(item["term"]), item["page"])] = _bounded_bytes(source, args.byte_budget, "audit KIPRIS fixture")
 
             def adapter_factory(query, page, finalist):
-                body = responses[(finalist, normalize(query["term"]), page)]
+                key = (finalist, normalize(query["term"]), page)
+                if key not in responses:
+                    # An unguarded lookup here raised a bare KeyError: the caller
+                    # got a traceback on stderr instead of a cli-result envelope,
+                    # exit 1 with no failure_code, and the run had ALREADY moved
+                    # to audit_running. The required page count is config.page_cap
+                    # and appeared in no CLI output, so there was nothing to act on.
+                    have = sorted(
+                        f"{item[0]}/{item[1]}/page {item[2]}" for item in responses
+                    )
+                    raise CliError(
+                        f"audit fixture manifest has no response for finalist {finalist!r}, "
+                        f"term {normalize(query['term'])!r}, page {page}. Retrieval pages up to "
+                        f"the configured page cap ({load_similarity_config().page_cap}), so supply one response per "
+                        f"(finalist_id, term, page). Present: {', '.join(have) or 'none'}"
+                    )
+                body = responses[key]
 
                 def transport(url, timeout, byte_budget):
                     del url, timeout, byte_budget
@@ -1295,7 +1386,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ))
             return 0
         if args.command == "run":
-            payload, code = _run_start(args)
+            payload, code = (
+                _run_start(args) if args.run_command == "start" else _run_inspect(args)
+            )
         elif args.command == "research":
             payload, code = _research(args)
         elif args.command == "ideate":

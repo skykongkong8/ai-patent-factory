@@ -87,10 +87,14 @@ def scaffold_candidate_input(
         reference = _evidence_reference(evidence[index % len(evidence)])
         candidates.append({
             "claims": [
-                {"claim": dict(hypothesis), "field": "technical_problem"},
-                {"claim": dict(creative), "field": "mechanism"},
-                {"claim": dict(hypothesis), "field": "expected_effects"},
-                {"claim": dict(creative), "field": "synthesis_trace"},
+                # evidence_references bind citations to ONE field. The scaffold
+                # pre-fills technical_problem and mechanism, whose report bullets
+                # render citations, and leaves the hedged fields empty — the
+                # renderer prints no prior-art token on a hedged bullet anyway.
+                {"claim": dict(hypothesis), "evidence_references": [dict(reference)], "field": "technical_problem"},
+                {"claim": dict(creative), "evidence_references": [dict(reference)], "field": "mechanism"},
+                {"claim": dict(hypothesis), "evidence_references": [], "field": "expected_effects"},
+                {"claim": dict(creative), "evidence_references": [], "field": "synthesis_trace"},
             ],
             "components": [TODO + "key component"],
             "domain": domain,
@@ -145,7 +149,12 @@ def scaffold_shortlist_input(
                     "gaps": [],
                     "rationale": TODO + f"why this candidate scores as it does on {axis}",
                     "rubric_version": config.rubrics[axis],
-                    "score": 0,
+                    # A bare 0 here is why the committed golden rendered a
+                    # 0/0/0 comparison matrix: `filled()`-style helpers rewrite
+                    # only TODO(agent) STRINGS, so a numeric placeholder sails
+                    # through untouched and evaluation.py accepts it as a real
+                    # score. A sentinel that fails validation cannot be left in.
+                    "score": TODO + "integer 0-100 for this axis",
                     "supporting_evidence_references": supporting,
                 }
                 for axis in ("differentiation", "technical_feasibility", "utility_significance")
@@ -242,8 +251,184 @@ def count_todos(value: Any) -> int:
     return 0
 
 
+def scaffold_feature_map_input(
+    connection: sqlite3.Connection, *, run_id: str, config: Any,
+) -> dict[str, Any]:
+    """Draft a feature-map request with every derivable binding pre-filled.
+
+    Three things here are pure clerical derivation and cannot be authored by
+    hand from CLI output:
+
+    * ``candidate_span_hashes`` — ``digest({"field": f, "text": normalize(t)})``
+      over ``FEATURE_SOURCE_FIELDS``. An agent that does not emit these has to
+      reverse-engineer this repo's canonicalization (NFKC, strip, compact
+      separators, sorted keys) and finds out only via a generic "candidate span
+      does not belong to the finalist revision".
+    * ``weight``/``essential`` — ``weight`` must sum EXACTLY to the configured
+      category weights, so a wrong guess is rejected outright.
+    * the three artifact hashes.
+
+    What it deliberately does NOT do:
+
+    * It does not pre-fill ``reference_span_hashes``. Choosing which retained
+      span justifies a decision is the reviewer's judgment. Instead each
+      decision carries ``available_reference_span_hashes`` — the menu — with the
+      choice left empty. Enumerating options is clerical; choosing is not.
+    * It does not emit the frozen ``review`` attestation. A tool must never
+      manufacture the record that a human review occurred.
+    * It does not compute ``map_id``: that digests the FILLED map, so it only
+      exists after the judgment fields are written. Seal it afterwards with
+      ``scaffold feature-map --seal``.
+    """
+
+    # Imported inside the function, like feature_map_id below: audit imports the
+    # report/state layers this module also imports.
+    from .audit import _candidate_span_hashes
+
+    finalist_row, finalist_set = _current_artifact(connection, run_id, "finalist_set")
+    corpus_row, corpus_set = _current_artifact(connection, run_id, "corpus_set")
+    _candidate_row, candidate_set = _current_artifact(connection, run_id, "candidate_set")
+    finalists = finalist_set.get("finalists") or []
+    if not finalists:
+        raise ScaffoldError("scaffold requires a current finalist set — run /shortlist first")
+    candidates = {item["candidate_id"]: item for item in candidate_set.get("candidates", [])}
+    corpora = {item["finalist_id"]: item for item in corpus_set.get("corpora", [])}
+    weights = dict(config.feature_weights)
+
+    maps = []
+    for finalist in finalists:
+        finalist_id = finalist.get("finalist_id")
+        corpus = corpora.get(finalist_id)
+        if corpus is None:
+            raise ScaffoldError(f"corpus set has no entry for {finalist_id} — run /audit retrieve first")
+        candidate = candidates.get(finalist.get("candidate_id"), {})
+        features = []
+        for category in sorted(weights):
+            spans = sorted(_candidate_span_hashes(candidate, category))
+            features.append({
+                "candidate_span_hashes": spans,
+                "category": category,
+                "description": TODO + f"what the {category} feature actually is, in the inventor's terms",
+                "essential": True,
+                "feature_id": f"feature-{category}",
+                "weight": weights[category],
+            })
+        reference_maps = []
+        for record in corpus.get("records", []):
+            span_menu = sorted((record.get("record") or {}).get("field_span_hashes", {}).values())
+            inspected = sorted(
+                field for field, value in (record.get("record") or {}).items()
+                if field in {"title", "abstract", "classifications"} and value
+            )
+            reference_maps.append({
+                "decisions": [{
+                    "available_reference_span_hashes": span_menu,
+                    "feature_id": feature["feature_id"],
+                    "rationale": TODO + "why this reference does or does not disclose the feature",
+                    "reference_span_hashes": [],
+                    "status": TODO + "one of: matched, different, not_disclosed, unknown",
+                } for feature in features],
+                "evidence_id": record.get("evidence_id"),
+                "inspected_fields": inspected,
+            })
+        maps.append({
+            "feature_map": {
+                "candidate_classifications": sorted(candidate.get("classifications", []) or []),
+                "features": features,
+                "reference_maps": reference_maps,
+                "review": TODO + (
+                    "replace with a review block once a human has actually reviewed this map; "
+                    "a scaffold must not assert that a review happened"
+                ),
+            },
+            "finalist_id": finalist_id,
+            "map_id": TODO + "derive with: scaffold feature-map --seal, after filling every field",
+        })
+    return {
+        "corpus_set_hash": corpus_row["content_hash"],
+        "finalist_set_hash": finalist_row["content_hash"],
+        "maps": maps,
+        "schema_version": "feature-map-set-input-v1",
+    }
+
+
+def _strip_scaffold_only_keys(feature_map: Any) -> Any:
+    """Drop the pick-list menu the generator added, before validation sees it.
+
+    ``scaffold feature-map`` writes ``available_reference_span_hashes`` into each
+    decision so the agent can choose ``reference_span_hashes`` from it. That key
+    is tool-authored scaffolding, not a judgment field — but
+    ``canonical_feature_map`` demands each decision be *exactly*
+    ``{feature_id, rationale, reference_span_hashes, status}`` and rejects the
+    extra key. Removing it is clerical, so ``--seal`` does it rather than making
+    the agent hand-delete a field the tool itself added.
+    """
+
+    if not isinstance(feature_map, Mapping):
+        return feature_map
+    result = dict(feature_map)
+    reference_maps = []
+    for reference in result.get("reference_maps", []) or []:
+        if not isinstance(reference, Mapping):
+            reference_maps.append(reference)
+            continue
+        cleaned = dict(reference)
+        cleaned["decisions"] = [
+            {key: value for key, value in decision.items() if key != "available_reference_span_hashes"}
+            if isinstance(decision, Mapping) else decision
+            for decision in (cleaned.get("decisions") or [])
+        ]
+        reference_maps.append(cleaned)
+    if "reference_maps" in result:
+        result["reference_maps"] = reference_maps
+    return result
+
+
+def seal_feature_map_input(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Recompute every ``map_id`` from the map it is supposed to bind.
+
+    ``map_id`` digests the *canonicalized filled* map, so it changes the moment an
+    agent writes a ``status`` or a ``rationale`` — which means it cannot be
+    pre-filled by a scaffold, and ``audit score`` rejects a stale one outright
+    (``audit.run_audit_scoring``: "map identity does not bind frozen content").
+    Sealing is the last clerical step before submission: it re-derives the
+    identity, it never edits a judgment field.
+
+    Validation stays authoritative in ``audit``; this only refuses shapes it
+    cannot seal correctly.
+    """
+
+    from .audit import feature_map_id
+
+    if not isinstance(payload, Mapping):
+        raise ScaffoldError("seal: feature-map-set-input-v1 object required")
+    if payload.get("schema_version") != "feature-map-set-input-v1":
+        raise ScaffoldError("seal: schema_version must be feature-map-set-input-v1")
+    maps = payload.get("maps")
+    if not isinstance(maps, list) or not maps:
+        raise ScaffoldError("seal: maps must be a non-empty list")
+    sealed_maps = []
+    for index, item in enumerate(maps):
+        if not isinstance(item, Mapping) or "feature_map" not in item or "finalist_id" not in item:
+            raise ScaffoldError(f"seal: maps[{index}] needs feature_map and finalist_id")
+        remaining = set(item) - {"feature_map", "finalist_id", "map_id"}
+        if remaining:
+            raise ScaffoldError(f"seal: maps[{index}] has unexpected fields: {', '.join(sorted(remaining))}")
+        feature_map = _strip_scaffold_only_keys(item["feature_map"])
+        if count_todos(feature_map):
+            raise ScaffoldError(
+                f"seal: maps[{index}] still contains TODO(agent) markers; fill every judgment field first"
+            )
+        sealed_maps.append({
+            "feature_map": feature_map,
+            "finalist_id": item["finalist_id"],
+            "map_id": feature_map_id(item["finalist_id"], feature_map),
+        })
+    return {**dict(payload), "maps": sealed_maps}
+
+
 __all__ = [
     "ScaffoldError", "TODO", "count_todos", "evidence_binding_table",
     "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_report_input",
-    "scaffold_shortlist_input",
+    "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
 ]

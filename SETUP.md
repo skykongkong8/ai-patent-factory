@@ -27,6 +27,30 @@ exports). Override locations with `init --documents DIR --workspace DIR` if need
   JSON `invalid_arguments` result.
 - Some safe stop states exit non-zero, so **do not discard the JSON based on exit
   code alone** — read `status` / `next_state` first.
+
+#### Exit codes
+
+A non-zero exit is usually a *gate*, not a crash. Any driving agent must branch
+on these rather than treating non-zero as failure:
+
+| Code | Meaning | What to do |
+| ---: | --- | --- |
+| `0` | The operation completed. | Continue to the next stage. |
+| `2` | Invalid input, unsafe path, or a validation error. `status` is `error` and `failure_code` names the class. | Fix the input and re-run. Nothing was written. |
+| `3` | `conflict_resolution_required` — a profile batch conflicts with existing facts. | Resolve with `profile conflict-inspect` / `conflict-decide`. Never bypass. |
+| `4` | The stage ran but did not reach its complete state (e.g. research `incomplete`). | Read `status`, `next_state`, and `incomplete_reason`. This is recoverable, not a dead end — see below. |
+| `5` | A gate is open: `credential_required`, or `insufficient_evidence` from shortlist. | `gate inspect` → author a decision → `gate decide` → re-run with `--decision-id`. |
+
+Every one of these still prints a complete `cli-result-v1` object on stdout. If
+you ever get unparseable stdout, that is a bug worth reporting — the envelope is
+the contract.
+
+**On `incomplete_reason`:** research reports `incomplete` when the adapter
+succeeded but contributed no *new* evidence — every record deduplicated against
+what the run already had. `evidence_count` will still be non-zero, which reads
+as a dead end without the reason field. The fix is to supply at least one
+reference the run has not already retrieved, or to proceed with existing
+evidence.
 - Path rules everywhere: inputs and `--responses` files live under the documents
   root; databases, exports, and versioned request files live under the workspace
   root. Absolute paths, `..`, symlinks (root, intermediate, or target),
@@ -134,6 +158,44 @@ under the run's owner-only `research-exports/`. A source failure is an adapter e
 never evidence. Current/legacy API distinctions, errors, limits, and open questions
 are in [docs/kipris-contract-spike.md](docs/kipris-contract-spike.md).
 
+### One research operation per run
+
+`ALLOWED_TRANSITIONS[RunState.RESEARCH_COMPLETE]` only permits
+`DOMAIN_PIVOT_REQUIRED` or `IDEATION_RUNNING` (`src/patent_factory/state.py:84`)
+— there is deliberately no `RESEARCH_COMPLETE → RESEARCH_RUNNING` re-entry
+edge. **A run can execute at most one research operation.** Once a research
+verb (`research fixture`, `research manual`, `research kipris`, or
+`research serpapi`) completes a run, a second research call on that same run is
+refused: `research.py:552` and `research.py:742` only start
+`RESEARCH_RUNNING` from `RESEARCH_READY`/`RESEARCH_RUNNING`, and `research
+serpapi`'s own preflight check (`cli.py:977`) raises
+`"research is not permitted from run state ..."` once the run has moved past
+it. This is a user-accepted decision — see
+[docs/g009-scope-addendum.md](docs/g009-scope-addendum.md) — because re-adding
+the re-entry edge needs a full invalidation-DAG analysis of what a second
+research pass would invalidate downstream (candidates, finalists, audit).
+
+To combine KIPRIS and SerpApi/Google Patents evidence, run **two runs**, one
+adapter each, and take each independently through `/ideate` onward:
+
+```bash
+# Run A — KIPRIS
+python3 -m patent_factory run start \
+  --run workspace/runs/example-kipris --run-id example-kipris \
+  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
+python3 -m patent_factory research kipris \
+  --run workspace/runs/example-kipris --run-id example-kipris \
+  --query 센서 --korean-synonym 감지기 --english-synonym sensor
+
+# Run B — SerpApi (Google Patents)
+python3 -m patent_factory run start \
+  --run workspace/runs/example-serpapi --run-id example-serpapi \
+  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
+python3 -m patent_factory research serpapi \
+  --run workspace/runs/example-serpapi --run-id example-serpapi \
+  --query "sensor calibration"
+```
+
 ## Full pipeline verbs
 
 Each stage below takes a versioned `*-input-v1.json` you author under
@@ -205,5 +267,23 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 python3 -m compileall -q src tests
 python3 -m patent_factory --help
 ```
+
+This is the **authoritative** test command. The suite is pure standard-library
+`unittest` and runs fully offline with no installation step — `pyproject.toml`
+declares `dependencies = []`, and neither `pytest` nor `ruff` is a project
+dependency. Do not add them, and do not report results from a `pytest` run: it
+ignores the `load_tests` protocol this suite uses, so its counts do not match.
+`PYTHONPATH=src` is optional (the root `patent_factory/` shim already appends
+`src/patent_factory` to the package path); both forms exercise the same code.
+
+Live, credential-gated paths (`research kipris`, `research serpapi`,
+`audit retrieve --live`) are excluded from this run by design. Nothing in the
+codebase reads `.env`, so those verbs need the credentials exported first:
+
+```bash
+set -a && . ./.env && set +a
+```
+
+Without that step every live verb stops at the credential gate (exit 5).
 
 The agent behavior contract is in [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md).

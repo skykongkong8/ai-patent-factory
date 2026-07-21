@@ -24,6 +24,22 @@ REPORT_INPUT_VERSION_V2 = "report-input-v2"
 REPORT_LANGUAGES = ("en", "ko")
 DEFAULT_REPORT_LANGUAGE = "en"
 CITATION_RE = re.compile(r"\[@(ev_[0-9a-f]{16})\]")
+# The literal hedging markers the renderer stamps onto bullets that assert no
+# evidentiary support. A hedged bullet must never carry a prior-art citation
+# token: doing so implies the hedged statement is backed by the cited document.
+HEDGED_LABELS = (
+    "[후보 가설]", "[창의적 제안]", "[프로필 기반 추론]", "[가설]",
+    "[candidate hypothesis]", "[creative suggestion]", "[profile-based inference]", "[hypothesis]",
+)
+# The LEXICON line keys whose ko AND en templates carry one of HEDGED_LABELS.
+# Hedging is a property of the RENDER SITE, not of the underlying claim label:
+# the same field (e.g. technical_problem) is rendered hedged in section 3 and
+# unhedged in section 6, so the decision cannot be delegated to the claim.
+# test_us016_hedged_labels keeps this set from drifting away from the templates.
+HEDGED_LINE_KEYS = frozenset({
+    "components_line", "effects_line", "fit_line", "implementation_line",
+    "problem_hypothesis_line", "unresolved_line",
+})
 POLICY_PATH = Path(__file__).resolve().parents[2] / "config" / "report-v1.0.0.json"
 POLICY_PATHS = {
     "en": Path(__file__).resolve().parents[2] / "config" / "report-en-v1.0.0.json",
@@ -85,19 +101,37 @@ LEXICON: dict[str, dict[str, str]] = {
         "aggregate_weights_line": "- 종합 가중치: {weights}",
         "appendix_line": (
             "- [@{evidence_id}] {title} — {identifier}{url} — 출처유형 {source_type}"
-            " — 관찰일 {observed} — 콘텐츠해시 {content_hash} — 한계 {limitations}"
+            " — 관찰일 {observed} — 콘텐츠해시 {content_hash}{legal_status} — 한계 {limitations}"
         ),
         "audit_failures_line": "- 최종 감사 실패 기록: {count}건",
+        # Retrieved metadata only. The token is reproduced exactly as the source
+        # emitted it and paired with an observation date; interpreting it (e.g.
+        # rendering 소멸 as "만료" or "무효") would be a legal conclusion, which
+        # CLAUDE.md section 6 forbids.
+        "legal_status_clause": " — 출처 보고 법적상태 {status} (관찰일 {observed}, 원문 표기 그대로)",
         "audit_result_line": (
             "- {finalist_id}: 관측 위험 {r_obs} / 상한 {r_hi} / 커버리지 {coverage} / 분류 {outcome} / "
             "근접 문헌 {closest_identifier} {closest_title} / 상한 문헌 {upper_identifier} {upper_title}"
         ),
         "axes_heading": "- 평가 축:",
         "axis_line": (
-            "  - {axis}: {score}점 / 신뢰도 {confidence} / 근거 {rationale} / "
+            "  - {axis}: 신뢰도 {confidence} / 근거 {rationale} / "
             "커버리지 {coverage} / 한계 {limitations} / 공백 {gaps} {tokens}"
         ),
+        "axis_figures_note": (
+            "- 축 수치는 표시하지 않습니다. 작성자가 입력한 값이며 도구가 계산하지 않고, "
+            "후보 순서를 정하는 데에도 사용되지 않습니다."
+        ),
         "closest_identifier_fallback": "식별자 없음",
+        "comparison_axis_line": (
+            "- {axis}: {rationale} 커버리지: {coverage}. 커버리지 한계: {limitations}. 공백: {gaps}. {tokens}"
+        ),
+        "delta_heading": "- 근접 검색 문헌과 다른 것으로 기술된 특징:",
+        "delta_line": "  - {feature} — 합성 조작 {method}; {axis} 축에서 다른 것으로 기술됨 [@{closest}]",
+        "delta_none": "- 근접 검색 문헌 대비 기록된 상이 특징이 없습니다.",
+        "ranking_basis_line": (
+            "- 아래 순서는 후보별로 기록된 선정 우선순위를 따릅니다. 축 점수에 따른 순위가 아닙니다."
+        ),
         "closest_line": "- 가장 가까운 선행기술과의 관계: {title} ({identifier})",
         "closest_title_fallback": "확인된 근접 문헌 없음",
         "components_line": "- 핵심 구성요소와 상호작용 [후보 가설]: {components}; {interactions} {tokens}",
@@ -115,7 +149,6 @@ LEXICON: dict[str, dict[str, str]] = {
         "implementation_line": "- 구현·검증 예 [창의적 제안]: {example}; {validation} {tokens}",
         "landscape_line": "- {title} ({identifier}) [@{evidence_id}]",
         "limitations_line": "- 알려진 한계: {limitations}",
-        "matrix_header": "| 순위 | 후보 | 차별성 | 기술 실현 가능성 | 효용·중요성 |",
         "mechanism_line": "- 제안 메커니즘: {mechanism} {tokens}",
         "no_decision_body": "해당 없음: 현재 감사에서 과도 유사도 사용자 체크포인트가 발생하지 않았습니다.",
         "no_separate_record": "별도 기록 없음",
@@ -148,19 +181,40 @@ LEXICON: dict[str, dict[str, str]] = {
         "aggregate_weights_line": "- Aggregate weights: {weights}",
         "appendix_line": (
             "- [@{evidence_id}] {title} — {identifier}{url} — source type {source_type}"
-            " — observed {observed} — content hash {content_hash} — limitations {limitations}"
+            " — observed {observed} — content hash {content_hash}{legal_status} — limitations {limitations}"
         ),
         "audit_failures_line": "- Final audit failure records: {count}",
+        # Retrieved metadata only. The token is reproduced exactly as the source
+        # emitted it and paired with an observation date; interpreting it (e.g.
+        # rendering 소멸 as "expired" or "invalid") would be a legal conclusion,
+        # which CLAUDE.md section 6 forbids.
+        "legal_status_clause": " — source-reported legal status {status} (observed {observed}, verbatim source token)",
         "audit_result_line": (
             "- {finalist_id}: observed risk {r_obs} / upper bound {r_hi} / coverage {coverage} / classification {outcome} / "
             "closest reference {closest_identifier} {closest_title} / upper-bound reference {upper_identifier} {upper_title}"
         ),
         "axes_heading": "- Evaluation axes:",
         "axis_line": (
-            "  - {axis}: {score} pts / confidence {confidence} / rationale {rationale} / "
+            "  - {axis}: confidence {confidence} / rationale {rationale} / "
             "coverage {coverage} / limitations {limitations} / gaps {gaps} {tokens}"
         ),
+        "axis_figures_note": (
+            "- Axis figures are not shown: they are author-supplied inputs, are never computed "
+            "by this tool, and never determine candidate order."
+        ),
         "closest_identifier_fallback": "no identifier",
+        "comparison_axis_line": (
+            "- {axis}: {rationale} Coverage: {coverage}. Coverage limitations: {limitations}. Gaps: {gaps}. {tokens}"
+        ),
+        "delta_heading": "- Described differences from the closest retrieved reference:",
+        "delta_line": (
+            "  - {feature} — synthesis operation {method}; described as differing on the {axis} axis [@{closest}]"
+        ),
+        "delta_none": "- No differing features are recorded against the closest retrieved reference.",
+        "ranking_basis_line": (
+            "- Ordering below follows the shortlist priority recorded for each candidate. "
+            "It is not an ordering by axis score."
+        ),
         "closest_line": "- Relationship to the closest prior art: {title} ({identifier})",
         "closest_title_fallback": "no close reference identified",
         "components_line": "- Key components and interactions [candidate hypothesis]: {components}; {interactions} {tokens}",
@@ -178,7 +232,6 @@ LEXICON: dict[str, dict[str, str]] = {
         "implementation_line": "- Implementation and validation example [creative suggestion]: {example}; {validation} {tokens}",
         "landscape_line": "- {title} ({identifier}) [@{evidence_id}]",
         "limitations_line": "- Known limitations: {limitations}",
-        "matrix_header": "| Rank | Candidate | Differentiation | Technical feasibility | Utility/significance |",
         "mechanism_line": "- Proposed mechanism: {mechanism} {tokens}",
         "no_decision_body": "Not applicable: no excessive-similarity user checkpoint arose in the current audit.",
         "no_separate_record": "none recorded",
@@ -427,6 +480,32 @@ def _evidence_map(
     return result
 
 
+def _field_reference_tokens(candidate: Mapping[str, Any], field: str) -> str:
+    """Render the citation tokens bound to ONE candidate field.
+
+    Per-field references live on ``Candidate.claims[*].evidence_references``
+    (ideation.CandidateClaim) rather than in a parallel field -> references map.
+    ``claims`` is already the field-keyed structure — it carries ``field`` plus
+    the epistemic ``Claim`` for that field — so a sibling map would duplicate the
+    same key space and could silently disagree with it about which fields exist.
+    Keeping the references on the claim makes the label and its support one
+    atomic unit, and reuses the existing claim/evidence cross-check in
+    ideation.Candidate.from_dict instead of adding a second one.
+
+    A field with no claim, or a claim with an empty reference list, renders no
+    token at all — an empty per-field binding is legitimate, not an error.
+    """
+
+    ids = sorted({
+        reference["evidence_id"]
+        for entry in candidate.get("claims", []) or ()
+        if isinstance(entry, Mapping) and entry.get("field") == field
+        for reference in entry.get("evidence_references", []) or ()
+        if isinstance(reference, Mapping) and isinstance(reference.get("evidence_id"), str)
+    })
+    return " ".join(f"[@{item}]" for item in ids)
+
+
 def _cited_ids(candidates: Iterable[Mapping[str, Any]], finalists: Iterable[Mapping[str, Any]], audit: Mapping[str, Any]) -> list[str]:
     cited: set[str] = set()
     for candidate in candidates:
@@ -509,6 +588,17 @@ def _section_bodies(
     lex = LEXICON[language]
     descriptions = feature_descriptions or {}
 
+    def bullet(key: str, candidate: Mapping[str, Any], field: str, **values: Any) -> str:
+        """Render one candidate bullet with the citations bound to ITS own field.
+
+        A bullet whose template carries a hedged label renders no prior-art
+        token regardless of what the field binds, because the label states the
+        line is not evidence-backed.
+        """
+
+        tokens = "" if key in HEDGED_LINE_KEYS else _field_reference_tokens(candidate, field)
+        return lex[key].format(tokens=tokens, **values).rstrip()
+
     def described(finalist_id: Any, feature_ids: Any) -> list[str]:
         table = descriptions.get(finalist_id, {})
         return [table.get(item, item) for item in (feature_ids or [])]
@@ -534,9 +624,18 @@ def _section_bodies(
         item.get("finalist_id"): item for item in audit.get("results", []) if isinstance(item, Mapping)
     }
     finalist_lines = []
-    comparison_lines = [lex["matrix_header"], "|---:|---|---:|---:|---:|"]
+    # Section 7 is prose, not a score table. The axis scores it used to tabulate
+    # are validated pass-throughs (evaluation.EvaluationAxis): never computed
+    # here and never used to order finalists, which evaluation.py ranks by
+    # (priority, candidate_id). A bare number under a column headed
+    # "Differentiation" reads as a novelty assessment whoever authored it, so the
+    # section states its ranking basis and renders the axis fields as prose.
+    comparison_lines = [lex["ranking_basis_line"], lex["axis_figures_note"]]
     for finalist in sorted(finalists, key=lambda item: (item.get("rank", 0), item.get("finalist_id", ""))):
         candidate = candidate_by_id.get(finalist.get("candidate_id"), {})
+        # Candidate-level aggregate. Used ONLY by the section 7 candidate
+        # heading, which summarises the whole candidate. Individual bullets bind
+        # their own field references via _field_reference_tokens.
         refs = sorted({ref.get("evidence_id") for ref in candidate.get("evidence_references", []) if isinstance(ref, Mapping) and ref.get("evidence_id")})
         tokens = " ".join(f"[@{item}]" for item in refs)
         audit_result = audit_by_finalist.get(finalist.get("finalist_id"), {})
@@ -549,16 +648,18 @@ def _section_bodies(
         )
         finalist_lines.extend([
             f"### {finalist.get('rank')}. {candidate.get('title', '')}",
-            lex["problem_line"].format(problem=candidate.get("technical_problem", ""), tokens=tokens).rstrip(),
-            lex["mechanism_line"].format(mechanism=candidate.get("mechanism", ""), tokens=tokens).rstrip(),
-            lex["components_line"].format(
+            bullet("problem_line", candidate, "technical_problem", problem=candidate.get("technical_problem", "")),
+            bullet("mechanism_line", candidate, "mechanism", mechanism=candidate.get("mechanism", "")),
+            bullet(
+                "components_line", candidate, "components",
                 components=", ".join(candidate.get("components", [])),
-                interactions=", ".join(candidate.get("interactions", [])), tokens=tokens,
-            ).rstrip(),
-            lex["effects_line"].format(
-                effects=", ".join(candidate.get("expected_effects", [])), tokens=tokens,
-            ).rstrip(),
-            lex["fit_line"].format(domain=candidate.get("domain", ""), tokens=tokens).rstrip(),
+                interactions=", ".join(candidate.get("interactions", [])),
+            ),
+            bullet(
+                "effects_line", candidate, "expected_effects",
+                effects=", ".join(candidate.get("expected_effects", [])),
+            ),
+            bullet("fit_line", candidate, "domain", domain=candidate.get("domain", "")),
             lex["closest_line"].format(
                 title=closest.get("title") or lex["closest_title_fallback"],
                 identifier=closest.get("identifier") or lex["closest_identifier_fallback"],
@@ -566,17 +667,19 @@ def _section_bodies(
             + (f" [@{closest_id}]" if closest_id else ""),
             lex["differentiated_line"].format(differentiated=differentiated)
             + (f" [@{closest_id}]" if closest_id else ""),
-            lex["implementation_line"].format(
+            bullet(
+                "implementation_line", candidate, "implementation_example",
                 example=candidate.get("implementation_example", ""),
-                validation=candidate.get("measurable_validation", ""), tokens=tokens,
-            ).rstrip(),
-            lex["unresolved_line"].format(
+                validation=candidate.get("measurable_validation", ""),
+            ),
+            bullet(
+                "unresolved_line", candidate, "unresolved_questions",
                 questions=", ".join(candidate.get("unresolved_questions", [])) or lex["unresolved_fallback"],
-                tokens=tokens,
-            ).rstrip(),
+            ),
         ])
         axes = {axis.get("axis"): axis for axis in finalist.get("axes", []) if isinstance(axis, Mapping)}
         finalist_lines.append(lex["axes_heading"])
+        comparison_lines.append(f"### {finalist.get('rank')}. {candidate.get('title', '')} {tokens}".rstrip())
         for axis_name in ("differentiation", "technical_feasibility", "utility_significance"):
             axis = axes.get(axis_name, {})
             axis_refs = sorted({
@@ -585,20 +688,43 @@ def _section_bodies(
                 for ref in axis.get(field, []) if isinstance(ref, Mapping) and ref.get("evidence_id")
             })
             axis_tokens = " ".join(f"[@{item}]" for item in axis_refs)
+            axis_limitations = ", ".join(axis.get("coverage_limitations", [])) or lex["none"]
+            axis_gaps = ", ".join(axis.get("gaps", [])) or lex["none"]
             finalist_lines.append(
                 lex["axis_line"].format(
-                    axis=axis_name, score=axis.get("score", ""), confidence=axis.get("confidence", ""),
+                    axis=axis_name, confidence=axis.get("confidence", ""),
                     rationale=axis.get("rationale", ""), coverage=axis.get("coverage_assessment", ""),
-                    limitations=", ".join(axis.get("coverage_limitations", [])) or lex["none"],
-                    gaps=", ".join(axis.get("gaps", [])) or lex["none"], tokens=axis_tokens,
+                    limitations=axis_limitations, gaps=axis_gaps, tokens=axis_tokens,
                 ).rstrip()
             )
-        comparison_lines.append(
-            f"| {finalist.get('rank')} | {candidate.get('title', '')} {tokens} | "
-            f"{axes.get('differentiation', {}).get('score', '')} | "
-            f"{axes.get('technical_feasibility', {}).get('score', '')} | "
-            f"{axes.get('utility_significance', {}).get('score', '')} |"
-        )
+            comparison_lines.append(
+                lex["comparison_axis_line"].format(
+                    axis=axis_name, rationale=axis.get("rationale", ""),
+                    coverage=axis.get("coverage_assessment", ""),
+                    limitations=axis_limitations, gaps=axis_gaps, tokens=axis_tokens,
+                ).rstrip()
+            )
+        # Per-feature delta narrative: strictly descriptive. It reports which
+        # features the similarity feature map recorded as differing from the
+        # closest retrieved reference, and under which synthesis operation the
+        # candidate was authored. Features are not axis-tagged in the frozen
+        # candidate input schema, so the line names `differentiation` — the only
+        # axis these deltas bear on — rather than inventing a per-feature axis.
+        trace = candidate.get("synthesis_trace")
+        method = trace.get("method", "") if isinstance(trace, Mapping) else ""
+        delta_features = described(
+            finalist.get("finalist_id"), pair.get("differentiated_feature_ids", []),
+        ) if pair else []
+        if delta_features and closest_id:
+            comparison_lines.append(lex["delta_heading"])
+            comparison_lines.extend(
+                lex["delta_line"].format(
+                    feature=item, method=method, axis="differentiation", closest=closest_id,
+                )
+                for item in delta_features
+            )
+        else:
+            comparison_lines.append(lex["delta_none"])
     landscape = []
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
@@ -660,7 +786,14 @@ def _section_bodies(
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
         url = f" — {item['canonical_url']}" if item.get("canonical_url") else ""
+        record = item.get("record") if isinstance(item.get("record"), Mapping) else {}
+        status_token = record.get("register_status")
+        legal_status = lex["legal_status_clause"].format(
+            status=status_token,
+            observed=record.get("register_date") or item.get("observation_date") or lex["unknown"],
+        ) if status_token else ""
         appendix.append(lex["appendix_line"].format(
+            legal_status=legal_status,
             evidence_id=evidence_id, title=item.get("title") or lex["title_fallback"],
             identifier=item.get("identifier") or lex["identifier_fallback"], url=url,
             source_type=item.get("source_type") or lex["unknown"],
@@ -678,10 +811,7 @@ def _section_bodies(
         lex["privacy_note"] + "\n"
         + "\n".join(profile_lines),
         "\n".join(
-            lex["problem_hypothesis_line"].format(
-                problem=candidate.get("technical_problem", ""),
-                tokens=" ".join(f"[@{ref.get('evidence_id')}]" for ref in candidate.get("evidence_references", []) if isinstance(ref, Mapping)),
-            )
+            bullet("problem_hypothesis_line", candidate, "technical_problem", problem=candidate.get("technical_problem", ""))
             for candidate in candidates
         ),
         "\n".join([
@@ -736,10 +866,10 @@ def validate_report_artifact(value: Mapping[str, Any], *, policy: Mapping[str, A
         raise ValueError("report_artifact: exact report-v1 fields required")
     language = value.get("language")
     if language not in REPORT_LANGUAGES:
-        raise ValueError("report_artifact: Korean policy binding mismatch")
+        raise ValueError("report_artifact: policy binding mismatch")
     resolved_policy = dict(policy or load_report_policy(language))
     if resolved_policy.get("language") != language or value.get("policy_hash") != digest(resolved_policy):
-        raise ValueError("report_artifact: Korean policy binding mismatch")
+        raise ValueError("report_artifact: policy binding mismatch")
     drafter = value.get("drafter")
     if (
         not isinstance(drafter, Mapping) or set(drafter) != {"id", "pass_id", "type"}
@@ -1064,7 +1194,7 @@ def publish_report(
     operation = "report.revise" if request["revision"] is not None else "report.publish"
     target = RunState.DRAFT_READY
     result, exported = state.publish_transition(
-        run_id, target, actor="draft-cli", reason="Korean report rendered from approved artifacts",
+        run_id, target, actor="draft-cli", reason="report rendered from approved artifacts",
         operation=operation, idempotency_key=digest({"request": request, "bindings": payload["bindings"]}),
         artifact_kind="report", artifact_content=payload, artifact_schema_version=REPORT_VERSION,
         dependencies=dependencies, export_directory=exports,

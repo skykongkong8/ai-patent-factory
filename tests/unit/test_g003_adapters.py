@@ -58,7 +58,7 @@ class KiprisAdapterTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
-    def test_confirmed_xml_normalizes_and_paginates_without_persisting_key(self):
+    def test_xml_normalizes_and_paginates_without_persisting_key(self):
         body = Path("tests/fixtures/kipris/word-search-v1.xml").read_bytes()
         calls = []
 
@@ -133,22 +133,14 @@ class KiprisAdapterTests(unittest.TestCase):
         ).search(envelope())
         self.assertEqual(invalid_port.failure.kind, AdapterFailureKind.ACCESS_DENIED)
 
-    def test_singleton_fields_directly_under_items_are_normalized(self):
-        body = b"""<response><successYN>Y</successYN><body><items>
-          <inventionTitle>singleton</inventionTitle><applicationNumber>10-2025-0000001</applicationNumber>
-          <applicationDate>20250101</applicationDate><ipcNumber>H04L 1/00</ipcNumber>
-        </items><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></body></response>"""
-        adapter = KiprisAdapter("secret", transport=lambda *_: TransportResponse(200, {}, body))
-        result = adapter.search(envelope())
-        self.assertTrue(result.successful)
-        self.assertEqual(len(result.records), 1)
-        self.assertEqual(result.records[0].source_locator, "kr-patent:1020250000001")
-
-    def test_confirmed_bibliography_summary_operation_uses_application_number(self):
-        body = b"""<response><successYN>Y</successYN><body><items><item>
-          <inventionTitle>summary</inventionTitle><applicationNumber>10-2025-0000002</applicationNumber>
-        </item></items><numOfRows>1</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount>
-        </body></response>"""
+    def test_bibliography_summary_operation_uses_application_number(self):
+        # Driven by a RECORDED response. This test was previously named
+        # "test_confirmed_..." while being fed hand-authored XML — the same
+        # unearned "confirmed" that #43 found throughout this repo.
+        body = (
+            Path(__file__).resolve().parents[1]
+            / "fixtures" / "kipris" / "bibliography-summary-live-v1.xml"
+        ).read_bytes()
         calls = []
 
         def transport(url, *_):
@@ -157,13 +149,18 @@ class KiprisAdapterTests(unittest.TestCase):
 
         query = envelope(
             capability="bibliography_summary",
-            projection={"application_number": "10-2025-0000002"},
+            projection={"application_number": "1020160062884"},
         )
         result = KiprisAdapter("secret", transport=transport).search(query)
         self.assertTrue(result.successful)
-        self.assertEqual(result.records[0].source_locator, "kr-patent:1020250000002")
+        self.assertEqual(result.records[0].source_locator, "kr-patent:1020160062884")
         self.assertIn("getBibliographySumryInfoSearch", calls[0])
-        self.assertIn("applicationNumber=10-2025-0000002", calls[0])
+        self.assertIn("applicationNumber=1020160062884", calls[0])
+        # The recorded response proves #41: this capability returns the filing
+        # date dotted (2016.05.23) where word_search returns 20160523. Both are
+        # now canonicalized to one form, so the format alone can no longer
+        # produce two content_hash values for one patent.
+        self.assertEqual(result.records[0].filing_date, "2016-05-23")
 
     def test_oversize_timeout_rate_limit_and_unsupported_are_normalized(self):
         cases = (

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from patent_factory.adapters.base import TransportResponse
 from patent_factory.adapters.kipris import KiprisAdapter
 from patent_factory.audit import feature_map_id, run_audit_retrieval, run_audit_scoring
+from patent_factory.scaffold import seal_feature_map_input
 from patent_factory.config import load_evaluation_config, load_similarity_config
 from patent_factory.database import connect_database
 from patent_factory.evaluation import run_shortlist
@@ -29,12 +30,26 @@ except ImportError:
 
 
 def kipris_xml(number):
+    """A one-item KIPRIS response in the shape the live service actually returns.
+
+    This helper drives the golden end-to-end journey (tests/e2e/test_full_journey.py).
+    It used to nest <numOfRows>/<pageNo>/<totalCount> INSIDE <body> — the exact
+    invented shape that let #38 ship, where the live path failed 100% of the time
+    while every test passed. The live service emits <count> as a SIBLING of
+    <body>; see the recorded response in tests/fixtures/kipris/word-search-live-v1.xml
+    and the structural guard in tests/unit/test_kipris_live_shape.py.
+
+    The multi-value ipcNumber below is also deliberate: the live service packs
+    codes into one pipe-delimited element, which is what #39 mis-scored.
+    """
+
     return f"""<?xml version='1.0' encoding='UTF-8'?>
-<response><header><successYN>Y</successYN><resultCode>00</resultCode></header><body><items><item>
-<inventionTitle>공통 감사 기술</inventionTitle><ipcNumber>G06F 1/00</ipcNumber>
+<response><header><successYN>Y</successYN><resultCode>00</resultCode><resultMsg>NORMAL SERVICE.</resultMsg></header><body><items><item>
+<inventionTitle>공통 감사 기술</inventionTitle><ipcNumber>G06F 1/00|G06N 3/04</ipcNumber>
 <applicationNumber>{number}</applicationNumber><applicationDate>20260101</applicationDate>
 <applicantName>공개 출원인</applicantName><astrtCont>동일 메커니즘 공개 초록</astrtCont>
-</item></items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></body></response>""".encode()
+<registerStatus>등록</registerStatus><registerDate>20260301</registerDate>
+</item></items></body><count><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>1</totalCount></count></response>""".encode()
 
 
 class G005AuditTests(unittest.TestCase):
@@ -366,12 +381,38 @@ class G005AuditTests(unittest.TestCase):
                         (before_exact.state_version, before_exact.current_revisions),
                         (after_exact.state_version, after_exact.current_revisions),
                     )
+        # An agent driving the CLI cannot compute map_id: it digests the *filled*
+        # map, so it only exists after the judgment fields are written. Prove the
+        # seal derives exactly what run_audit_scoring demands, starting from input
+        # whose map_id values are deliberately wrong.
+        unsealed = json.loads(json.dumps({
+            "schema_version": "feature-map-set-input-v1",
+            "finalist_set_hash": finalist_row["content_hash"],
+            "corpus_set_hash": corpus_row["content_hash"],
+            # Distinct stale ids, so this reaches the identity-binding check rather
+            # than tripping the duplicate-map_id check first.
+            "maps": [
+                {**item, "map_id": f"fm_stale{index:013d}"} for index, item in enumerate(maps)
+            ],
+        }))
+        with self.assertRaisesRegex(ValueError, "map identity does not bind frozen content"):
+            run_audit_scoring(
+                self.connection, run_root=self.root, run_id="run",
+                feature_input=unsealed, config=load_similarity_config(),
+            )
+        sealed = seal_feature_map_input(unsealed)
+        self.assertEqual(
+            [item["map_id"] for item in sealed["maps"]],
+            [feature_map_id(item["finalist_id"], item["feature_map"]) for item in maps],
+        )
+        # Sealing re-derives identity only; it must not touch a judgment field.
+        self.assertEqual(
+            [item["feature_map"] for item in sealed["maps"]],
+            [item["feature_map"] for item in unsealed["maps"]],
+        )
         scored = run_audit_scoring(
             self.connection, run_root=self.root, run_id="run",
-            feature_input={
-                "schema_version": "feature-map-set-input-v1", "finalist_set_hash": finalist_row["content_hash"],
-                "corpus_set_hash": corpus_row["content_hash"], "maps": maps,
-            },
+            feature_input=sealed,
             config=load_similarity_config(),
         )
         self.assertEqual(scored.state, RunState.DECISION_REQUIRED.value)

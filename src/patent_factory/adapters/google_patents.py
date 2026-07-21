@@ -18,7 +18,7 @@ from patent_factory.models import (
 )
 from patent_factory.provenance import digest, normalize
 
-from .base import TransportResponse, bounded_body, normalized_patent_number
+from .base import TransportResponse, bounded_body, canonical_date, normalized_patent_number
 
 SERPAPI_HOST = "serpapi.com"
 SERPAPI_SEARCH_URL = "https://serpapi.com/search"
@@ -327,7 +327,7 @@ class GooglePatentsAdapter:
                 canonical_url = _canonical_patent_url(_text(result.get("patent_link")), number)
                 # The priority date is legally distinct from the filing date and is
                 # never substituted for it; its absence is recorded as a limitation.
-                filing_date = _text(result.get("filing_date"))
+                filing_date = canonical_date(_text(result.get("filing_date")))
                 limitations = ["Normalized Google Patents metadata; not a patentability conclusion."]
                 if not filing_date and _text(result.get("priority_date")):
                     limitations.append("Source reported a priority date only; the filing date is unavailable.")

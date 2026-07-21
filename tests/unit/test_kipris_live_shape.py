@@ -33,6 +33,46 @@ class LiveResponseShapeTests(unittest.TestCase):
         self.assertEqual(len(result.records), 2)
         self.assertEqual(result.coverage["total_count"], 151001)
 
+    def test_legal_status_metadata_is_carried_without_disturbing_content_hash(self):
+        """#42 fields ride the dataclass; they must not touch either hash chain.
+
+        These pins moved exactly ONCE, deliberately, when #41's date
+        canonicalization landed (filing_date 20160523 -> 2016-05-23). That was a
+        declared hash change inside the input batch, with the golden regenerated
+        alongside it.
+
+        Adopting the #42 legal-status fields did NOT move them, which is the
+        point of keeping those fields out of `as_dict()`: verified by stashing
+        the change and re-parsing this fixture. If these values move again
+        without a declared batch, evidence_id churns and dedup, idempotency and
+        replay all break.
+        """
+        records = live_adapter().search(envelope()).records
+        self.assertEqual(
+            [record.content_hash for record in records],
+            [
+                "8bbc4f42532ed33787d86ad1b2b67c5250fac9373359d2ae5b9e71a928b6767b",
+                "d15d49665c93b4b98a4a4f77847c58748332c1cf97cf8662e03b2885a298dfe5",
+            ],
+        )
+        # Real recorded values, including a mutable status — the reason these
+        # fields are kept out of the hash in the first place.
+        self.assertEqual(records[0].legal_status_metadata(), {
+            "open_date": "2017-12-04", "publication_date": "2018-12-13",
+            "register_date": "2018-12-06", "register_number": "1019284170000",
+            "register_status": "소멸",
+        })
+        self.assertEqual(records[1].register_status, "등록")
+
+    def test_recorded_fixture_carries_two_distinct_register_statuses(self):
+        """Load-bearing for the status_variant coverage predicate.
+
+        Both records are required: one 소멸, one 등록. If a re-record or a
+        key-scrub drops either, status_variant silently loses its only witness.
+        """
+        records = live_adapter().search(envelope()).records
+        self.assertEqual({record.register_status for record in records}, {"소멸", "등록"})
+
     def test_recorded_fixture_really_has_count_outside_body(self):
         """Guards the fixture itself: if it is ever 'fixed' to the invented shape
         by nesting <count> in <body>, the regression oracle is lost."""

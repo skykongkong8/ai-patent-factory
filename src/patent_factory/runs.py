@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,7 +165,70 @@ def start_run(
     )
 
 
+def _current_artifact_rows(connection: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
+    return list(connection.execute(
+        "SELECT ar.* FROM artifact_revisions ar JOIN current_artifacts ca "
+        "ON ca.revision_id=ar.revision_id WHERE ar.run_id=? AND ar.stale=0 ORDER BY ca.kind",
+        (run_id,),
+    ))
+
+
+def run_status(connection: sqlite3.Connection, run_id: str) -> dict[str, Any]:
+    """Report run state and the hash of every current artifact.
+
+    Downstream inputs bind to artifact hashes (`audit_hash`, `finalist_set_hash`,
+    `corpus_set_hash`), so without this the only way to author them is to open the
+    run SQLite by hand.
+    """
+
+    normalized_run_id = normalize(run_id)
+    snapshot = StateStore(connection).snapshot(normalized_run_id)
+    return {
+        "artifacts": [{
+            "content_hash": row["content_hash"], "created_at": row["created_at"],
+            "kind": row["kind"], "revision_id": row["revision_id"],
+            "schema_version": row["schema_version"],
+        } for row in _current_artifact_rows(connection, normalized_run_id)],
+        "command": "run.status",
+        "run_id": normalized_run_id,
+        "state": snapshot.state.value,
+        "state_version": snapshot.state_version,
+        "status": "reported",
+    }
+
+
+def run_show(connection: sqlite3.Connection, run_id: str, kind: str) -> dict[str, Any]:
+    """Return the body of one current artifact.
+
+    `corpus_set` in particular is persisted but never exported, and a feature map
+    cannot be authored without the retained records it lists.
+    """
+
+    normalized_run_id, normalized_kind = normalize(run_id), normalize(kind)
+    StateStore(connection).snapshot(normalized_run_id)
+    row = connection.execute(
+        "SELECT ar.* FROM artifact_revisions ar JOIN current_artifacts ca "
+        "ON ca.revision_id=ar.revision_id WHERE ar.run_id=? AND ca.kind=? AND ar.stale=0",
+        (normalized_run_id, normalized_kind),
+    ).fetchone()
+    if row is None:
+        available = sorted({item["kind"] for item in _current_artifact_rows(connection, normalized_run_id)})
+        raise StateError(f"run has no current {normalized_kind}; available: {', '.join(available) or 'none'}")
+    payload = {
+        "command": "run.show",
+        "content": json.loads(row["content_json"]),
+        "content_hash": row["content_hash"],
+        "kind": row["kind"],
+        "revision_id": row["revision_id"],
+        "run_id": normalized_run_id,
+        "schema_version": row["schema_version"],
+        "status": "reported",
+    }
+    assert_canaries_absent(payload, credential_canaries(), boundary="run_show")
+    return payload
+
+
 __all__ = [
     "PROFILE_CONTEXT_VERSION", "RUN_START_VERSION", "PreparedRunProfile", "RunStart",
-    "prepare_run_profile", "start_run",
+    "prepare_run_profile", "run_show", "run_status", "start_run",
 ]
