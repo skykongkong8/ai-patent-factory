@@ -780,8 +780,8 @@ class StateStore:
             gate_kind = GateKind(envelope["kind"])
             if action not in GATE_ACTIONS[gate_kind]:
                 raise GateMismatchError(f"action is not allowed for {gate_kind.value}")
-            if gate_kind in {GateKind.COVERAGE, GateKind.EXCESSIVE_SIMILARITY}:
-                raise GateMismatchError("coverage and excessive decisions require an atomic resolution artifact")
+            if gate_kind in {GateKind.COVERAGE, GateKind.EXCESSIVE_SIMILARITY, GateKind.POST_AUDIT_CHECKPOINT}:
+                raise GateMismatchError("coverage, excessive, and checkpoint decisions require an atomic resolution artifact")
             target = gate_action_target(gate_kind, action, RunState(envelope["return_state"]))
             now = utc_now()
             decision_id = "gd_" + digest({"gate_id":gate_id,"action":action,"actor":actor,"subject":subject_revision_hash,"scope":envelope["approval_scope_hash"],"at":now})[:20]

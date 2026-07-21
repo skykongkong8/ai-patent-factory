@@ -181,8 +181,8 @@ def _decision_check(
         if "excessive_gate_resolution" in report["bindings"] or "checkpoint_gate_resolution" in report["bindings"]:
             raise ValueError("validation.decision_coverage: unexpected decision binding")
         return
-    # Mirror report.py's own dispatch (report.py:1220): a checkpoint resolution
-    # binds under "checkpoint_gate_resolution", a legacy excessive one under
+    # Mirror report.py's own binding dispatch: a checkpoint resolution binds
+    # under "checkpoint_gate_resolution", a legacy excessive one under
     # "excessive_gate_resolution" — never both for the same current audit.
     binding_key = "checkpoint_gate_resolution" if decision.get("gate_kind") == "post_audit_checkpoint" else "excessive_gate_resolution"
     if report["bindings"].get(binding_key) != decision_row["content_hash"]:

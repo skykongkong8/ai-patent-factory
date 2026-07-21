@@ -519,9 +519,9 @@ def run_audit_scoring(
     if feature_revision.content_hash != feature_hash:
         raise StateError("feature-map revision hash drifted after audit validation")
     operation_hash = digest(audit_payload)
+    audit_hash = operation_hash
     dependencies = (finalist_row["revision_id"], corpus_row["revision_id"], feature_revision.revision_id, config_row["revision_id"])
     publishing, exports = _publishing_state(connection, run_root)
-    audit_hash = digest(audit_payload)
     if gate_kind is GateKind.POST_AUDIT_CHECKPOINT:
         # Every current finalist rides in the scope — not just the breaching
         # subset — because the checkpoint is raised on clean AND breaching

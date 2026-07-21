@@ -637,9 +637,10 @@ def _bound_decision(
     ``excessive_similarity`` resolution to match (RF#1) — ``affected`` alone
     cannot tell a legacy excessive run from a checkpoint-breaching run, so the
     discriminator is which gate kind actually produced a resolution bound to
-    this audit_hash. Checkpoint resolutions match on
-    ``content.subject_revision_hash`` (every resolution carries it); legacy
-    excessive resolutions match on ``content.audit_hash`` (only they carry it).
+    this audit_hash — both kinds carry ``audit_hash``, so hash presence must
+    never be used to tell them apart. Checkpoint resolutions are matched on
+    ``content.subject_revision_hash`` + ``content.gate_kind``; legacy excessive
+    resolutions on ``content.audit_hash``.
     """
     checkpoint_matches = []
     for row in connection.execute(
