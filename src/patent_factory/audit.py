@@ -494,12 +494,10 @@ def run_audit_scoring(
         "dependencies": feature_dependencies,
         "schema_version": "feature-map-set-v1",
     })
-    if any(item["outcome"] == "decision_required" for item in results):
-        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.EXCESSIVE_SIMILARITY
-    elif any(item["outcome"] == "coverage_insufficient" for item in results):
+    if any(item["outcome"] == "coverage_insufficient" for item in results):
         target, gate_kind = RunState.COVERAGE_INSUFFICIENT, GateKind.COVERAGE
     else:
-        target, gate_kind = RunState.AUDIT_APPROVED, None
+        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.POST_AUDIT_CHECKPOINT
     audit_payload = {
         "corpus_set_hash": corpus_row["content_hash"], "feature_map_set_hash": feature_hash,
         "finalist_set_hash": finalist_row["content_hash"], "results": results,

@@ -84,7 +84,7 @@ ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.RESEARCH_COMPLETE: frozenset({RunState.DOMAIN_PIVOT_REQUIRED, RunState.IDEATION_RUNNING}),
     RunState.RESEARCH_INCOMPLETE: frozenset({RunState.CREDENTIAL_REQUIRED, RunState.RESEARCH_RUNNING, RunState.DOMAIN_PIVOT_REQUIRED, RunState.IDEATION_RUNNING, RunState.INSUFFICIENT_EVIDENCE}),
     RunState.DOMAIN_PIVOT_REQUIRED: frozenset({RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING, RunState.RESEARCH_COMPLETE, RunState.RESEARCH_INCOMPLETE, RunState.IDEATION_RUNNING, RunState.STOPPED}),
-    RunState.IDEATION_RUNNING: frozenset({RunState.CANDIDATES_READY, RunState.INSUFFICIENT_EVIDENCE, RunState.DOMAIN_PIVOT_REQUIRED}),
+    RunState.IDEATION_RUNNING: frozenset({RunState.IDEATION_RUNNING, RunState.CANDIDATES_READY, RunState.INSUFFICIENT_EVIDENCE, RunState.DOMAIN_PIVOT_REQUIRED}),
     RunState.CANDIDATES_READY: frozenset({RunState.FINALISTS_READY, RunState.DOMAIN_PIVOT_REQUIRED, RunState.INSUFFICIENT_EVIDENCE}),
     RunState.INSUFFICIENT_EVIDENCE: frozenset({RunState.RESEARCH_RUNNING, RunState.STOPPED}),
     RunState.FINALISTS_READY: frozenset({RunState.AUDIT_RUNNING, RunState.CREDENTIAL_REQUIRED}),
@@ -108,6 +108,7 @@ GATE_STATES = {
     GateKind.DOMAIN_PIVOT: RunState.DOMAIN_PIVOT_REQUIRED,
     GateKind.COVERAGE: RunState.COVERAGE_INSUFFICIENT,
     GateKind.EXCESSIVE_SIMILARITY: RunState.DECISION_REQUIRED,
+    GateKind.POST_AUDIT_CHECKPOINT: RunState.DECISION_REQUIRED,
 }
 
 GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
@@ -117,6 +118,7 @@ GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
     GateKind.DOMAIN_PIVOT: frozenset({"approve", "reject", "stop"}),
     GateKind.COVERAGE: frozenset({"expand", "retry", "stop"}),
     GateKind.EXCESSIVE_SIMILARITY: frozenset({"retain_with_warning", "refine", "replace", "stop"}),
+    GateKind.POST_AUDIT_CHECKPOINT: frozenset({"approve", "re_ideate", "re_research", "stop"}),
 }
 
 AUTHORIZING_GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
@@ -126,6 +128,7 @@ AUTHORIZING_GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
     GateKind.DOMAIN_PIVOT: frozenset({"approve"}),
     GateKind.COVERAGE: frozenset(),
     GateKind.EXCESSIVE_SIMILARITY: frozenset(),
+    GateKind.POST_AUDIT_CHECKPOINT: frozenset(),
 }
 
 
@@ -141,6 +144,9 @@ def gate_action_target(kind: GateKind, action: str, return_state: RunState) -> R
         (GateKind.EXCESSIVE_SIMILARITY, "retain_with_warning"): RunState.AUDIT_APPROVED,
         (GateKind.EXCESSIVE_SIMILARITY, "refine"): RunState.IDEATION_RUNNING,
         (GateKind.EXCESSIVE_SIMILARITY, "replace"): RunState.RESEARCH_RUNNING,
+        (GateKind.POST_AUDIT_CHECKPOINT, "approve"): RunState.AUDIT_APPROVED,
+        (GateKind.POST_AUDIT_CHECKPOINT, "re_ideate"): RunState.IDEATION_RUNNING,
+        (GateKind.POST_AUDIT_CHECKPOINT, "re_research"): RunState.RESEARCH_RUNNING,
     }.get((kind, action), return_state)
 
 GATE_STATE_SET = frozenset(GATE_STATES.values())
