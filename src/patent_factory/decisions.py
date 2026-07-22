@@ -299,6 +299,9 @@ def _resolution(
             "r_hi": item["r_hi"], "r_obs": item["r_obs"],
         } for item in audit["results"]]
         affected = sorted(result["finalist_id"] for result in audit["results"] if result["outcome"] == "decision_required")
+        coverage_insufficient_ids = sorted(
+            result["finalist_id"] for result in audit["results"] if result["outcome"] == "coverage_insufficient"
+        )
         if (
             audit.get("corpus_set_hash") != corpus_row["content_hash"]
             or scope.get("corpus_set_hash") != corpus_row["content_hash"]
@@ -329,6 +332,21 @@ def _resolution(
                 raise ValueError("decision.decisions: stop cannot include finalist decisions")
             resolved = []
         elif action == "approve":
+            if coverage_insufficient_ids:
+                # Blocker #1: decision_required takes gate-routing precedence
+                # over coverage_insufficient (audit.py), so a batch can carry
+                # both outcomes. `affected` only lists decision_required
+                # finalists, so approving the breach alone used to strand a
+                # coverage_insufficient rider at AUDIT_APPROVED with no path
+                # to /draft (report.py rejects any non-exact-approved audit)
+                # and no path back (ALLOWED_TRANSITIONS forbids re-deciding).
+                # Reject here, while re_ideate/re_research are still reachable.
+                raise ValueError(
+                    "decision.action: approve cannot proceed while "
+                    f"{', '.join(coverage_insufficient_ids)} remain coverage_insufficient — "
+                    "resolve with re_research (broaden the corpus) or re_ideate "
+                    "(replace the finalist) before approving"
+                )
             if not affected:
                 if entries:
                     raise ValueError("decision.decisions: a clean approve cannot include finalist decisions")

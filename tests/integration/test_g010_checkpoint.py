@@ -337,6 +337,35 @@ class CheckpointBreachingApproveTests(CheckpointFixture):
         self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 0)
 
 
+class CheckpointMixedBatchApproveTests(CheckpointFixture):
+    """Review finding #1: a coverage_insufficient rider inside a
+    decision_required batch must reject `approve`, not strand the run."""
+
+    def test_approve_rejects_a_batch_carrying_a_coverage_insufficient_finalist(self):
+        # decision_required takes gate-routing precedence over
+        # coverage_insufficient (audit.py), so "unavailable" features on the
+        # third finalist produce a coverage_insufficient result that rides
+        # along in the same POST_AUDIT_CHECKPOINT batch as the "matched"
+        # breach — exactly the shape review finding #1 reproduced.
+        self._run_audit(["matched", "different", "unavailable"])
+        gate_id = self._pending_gate_id()
+        envelope = inspect_gate(self.connection, "run", gate_id)
+        affected = envelope["approval_scope"]["affected_finalist_ids"]
+        self.assertEqual(len(affected), 1)
+        decisions = [
+            {"action": "retain_with_warning", "finalist_id": finalist_id, "reason": "retained despite the flagged similarity"}
+            for finalist_id in affected
+        ]
+        request = self._decide_input(gate_id, action="approve", decisions=decisions)
+        with self.assertRaisesRegex(ValueError, "coverage_insufficient"):
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        # The run must still be decidable afterward (re_ideate stays open).
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 0)
+        reideate = self._decide_input(gate_id, action="re_ideate")
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=reideate)
+        self.assertEqual(resolved.next_state, RunState.IDEATION_RUNNING.value)
+
+
 class CheckpointReIdeateTests(CheckpointFixture):
     def test_re_ideate_completes_and_stales_old_artifacts_with_a_new_content_hash(self):
         self._run_audit(["matched", "different", "different"])
