@@ -327,6 +327,16 @@ def _resolution(
             "finalist_id": item["finalist_id"],
             "interesting": _text(item["interesting"], f"decision.feedback.{item['finalist_id']}.interesting"),
         } for item in sorted(feedback, key=lambda value: value["finalist_id"])]
+        # Blocker #2: this prose becomes durable, hash-bound Section 9
+        # content that can never be re-authored once persisted (unlike
+        # report-input text). Screen it at gate decide, while the operator
+        # can still fix it — run_review's later scan is too late.
+        from .validation import _scan_prohibited_language
+
+        _scan_prohibited_language(payload["reason"], "ko")
+        for item in resolved_feedback:
+            _scan_prohibited_language(item["interesting"], "ko")
+            _scan_prohibited_language(item["boring"], "ko")
         if action == "stop":
             if entries:
                 raise ValueError("decision.decisions: stop cannot include finalist decisions")
@@ -362,12 +372,14 @@ def _resolution(
                 resolved = []
                 for item in sorted(entries, key=lambda value: value["finalist_id"]):
                     finalist_id = item["finalist_id"]
+                    reason_text = _text(item["reason"], f"decision.decisions.{finalist_id}.reason")
+                    _scan_prohibited_language(reason_text, "ko")
                     resolved.append({
                         "action": "retain_with_warning", "candidate_id": finalist_map[finalist_id]["candidate_id"],
                         "corpus_hash": corpus_map[finalist_id]["corpus_hash"],
                         "feature_map_id": feature_map[finalist_id]["map_id"],
                         "finalist_hash": digest(finalist_map[finalist_id]), "finalist_id": finalist_id,
-                        "reason": _text(item["reason"], f"decision.decisions.{finalist_id}.reason"),
+                        "reason": reason_text,
                         "warning": "Retained despite excessive provisional similarity risk within the retrieved corpus.",
                     })
         else:

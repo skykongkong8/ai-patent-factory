@@ -131,8 +131,20 @@ def _identifier_check(report: Mapping[str, Any]) -> None:
                 raise ValueError("validation.identifiers: source URL must be safe HTTPS")
 
 
-def _legal_language_check(report: Mapping[str, Any]) -> None:
-    policy = load_report_policy(report.get("language", "ko"))
+def _scan_prohibited_language(text: str, language: str) -> None:
+    """Reject any sentence in ``text`` that reads as an unqualified legal conclusion.
+
+    Extracted from ``_legal_language_check`` (which now just calls this on
+    ``report["markdown"]``) so the identical deterministic, sentence-local
+    policy scan can also run on hand-authored checkpoint decision prose
+    (``gate decide``'s top-level ``reason``, every ``feedback[].interesting``/
+    ``.boring``, and approve-path ``decisions[].reason``) — text that becomes
+    durable Section 9 content but, unlike ``report-input`` text, can never be
+    re-authored once persisted. ``prohibited_unqualified_phrases`` is frozen
+    identical across both language policies, so any supported ``language``
+    scans the same phrase list.
+    """
+    policy = load_report_policy(language)
     dangerous = (
         re.compile(r"특허(?:를\s*받을\s*수\s*있|\s*가능(?:하|성))", re.IGNORECASE),
         re.compile(r"(?:신규성|진보성).{0,16}(?:있|충족|인정)", re.IGNORECASE),
@@ -152,13 +164,17 @@ def _legal_language_check(report: Mapping[str, Any]) -> None:
         "법적 결론을 제공하지", "법적 판단이 아니", "not a legal", "cannot conclude", "does not conclude",
         "not legal advice", "no legal conclusion", "not legal determination", "question",
     )
-    sentences = [item.strip() for item in re.split(r"(?<=[.!?。])\s+|\n+", report["markdown"]) if item.strip()]
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?。])\s+|\n+", text) if item.strip()]
     frozen_phrases = tuple(item.casefold() for item in policy["prohibited_unqualified_phrases"])
     for sentence in sentences:
         normalized = re.sub(r"\s+", " ", sentence).casefold()
         risky = any(pattern.search(sentence) for pattern in dangerous) or any(item in normalized for item in frozen_phrases)
         if risky and not any(item.casefold() in normalized for item in qualifiers):
             raise ValueError(f"validation.legal_language: unqualified legal conclusion: {sentence[:120]}")
+
+
+def _legal_language_check(report: Mapping[str, Any]) -> None:
+    _scan_prohibited_language(report["markdown"], report.get("language", "ko"))
 
 
 def _narrative_language_check(report: Mapping[str, Any]) -> None:

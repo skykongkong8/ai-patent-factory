@@ -366,6 +366,41 @@ class CheckpointMixedBatchApproveTests(CheckpointFixture):
         self.assertEqual(resolved.next_state, RunState.IDEATION_RUNNING.value)
 
 
+class CheckpointLegalLanguageScreenTests(CheckpointFixture):
+    """Review finding #2: checkpoint prose can never be re-authored once
+    persisted, so the legal-language screen must run at `gate decide`."""
+
+    def test_offending_reason_is_rejected_at_decide_and_gate_stays_pending(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        offending = self._decide_input(gate_id, action="approve", reason="이 기술은 특허 가능하다")
+        with self.assertRaisesRegex(ValueError, "validation.legal_language"):
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=offending)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 0)
+        envelope = inspect_gate(self.connection, "run", gate_id)
+        self.assertEqual(envelope["status"], "pending")
+        corrected = self._decide_input(gate_id, action="approve", reason="clean audit reviewed; approving for draft")
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=corrected)
+        self.assertEqual(resolved.next_state, RunState.AUDIT_APPROVED.value)
+
+    def test_offending_feedback_interesting_is_rejected_at_decide(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        _row, finalists = self._finalists()
+        feedback = [
+            {
+                "boring": "nothing stood out",
+                "finalist_id": item["finalist_id"],
+                "interesting": "특허 가능하다" if index == 0 else "worth pursuing further",
+            }
+            for index, item in enumerate(finalists)
+        ]
+        offending = self._decide_input(gate_id, action="approve", feedback=feedback)
+        with self.assertRaisesRegex(ValueError, "validation.legal_language"):
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=offending)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 0)
+
+
 class CheckpointReIdeateTests(CheckpointFixture):
     def test_re_ideate_completes_and_stales_old_artifacts_with_a_new_content_hash(self):
         self._run_audit(["matched", "different", "different"])
