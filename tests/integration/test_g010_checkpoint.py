@@ -18,7 +18,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from patent_factory import report as report_module
 from patent_factory.adapters.base import TransportResponse
 from patent_factory.adapters.kipris import KiprisAdapter
 from patent_factory.adapters.manual_web import ManualWebAdapter
@@ -37,6 +39,7 @@ from patent_factory.research import (
 )
 from patent_factory.scaffold import count_todos, gate_decision_dossier, scaffold_gate_decision_input
 from patent_factory.state import StateError, StateStore
+from patent_factory.validation import _decision_check
 from tests.integration.test_g004_ideation_and_shortlist import (
     candidate, candidate_input, ready_profile, shortlist_input,
 )
@@ -773,6 +776,43 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         # publish that followed the original re_research resolution — a live
         # verb must be allowed again (RC5's cycle-back path).
         self._live_batch()
+
+
+class CheckpointValidationCoverageTests(CheckpointFixture):
+    """Review finding #13: `validate` must actually check that the
+    checkpoint's action/reason/feedback appear in Section 9 — not just the
+    (empty, on a clean approve) `decisions[]` list."""
+
+    def test_renderer_regression_dropping_feedback_lines_fails_decision_coverage(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="approve")
+        resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        # A real renderer regression: the feedback line template drops
+        # `interesting`/`boring` content, exactly as report.py:853-858 would
+        # if a future change forgot to interpolate them.
+        with patch.dict(
+            report_module.LEXICON["en"],
+            {"checkpoint_feedback_line": "  - {finalist_id}: feedback recorded"},
+        ):
+            report = publish_report(
+                self.connection, run_root=self.run_root, run_id="run", report_input=self._draft_input(),
+            )
+        body = report.artifact.content["sections"][8]["body"]
+        self.assertNotIn("interesting", body)
+        self.assertIn("Checkpoint decision: approve", body)  # action/reason still present
+        with self.assertRaisesRegex(ValueError, "validation.decision_coverage"):
+            _decision_check(self.connection, "run", report.artifact.content)
+
+    def test_correctly_rendered_report_passes_decision_coverage(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="approve")
+        resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        report = publish_report(
+            self.connection, run_root=self.run_root, run_id="run", report_input=self._draft_input(),
+        )
+        _decision_check(self.connection, "run", report.artifact.content)  # must not raise
 
 
 class CheckpointStopTests(CheckpointFixture):

@@ -200,7 +200,8 @@ def _decision_check(
     # Mirror report.py's own binding dispatch: a checkpoint resolution binds
     # under "checkpoint_gate_resolution", a legacy excessive one under
     # "excessive_gate_resolution" — never both for the same current audit.
-    binding_key = "checkpoint_gate_resolution" if decision.get("gate_kind") == "post_audit_checkpoint" else "excessive_gate_resolution"
+    is_checkpoint = decision.get("gate_kind") == "post_audit_checkpoint"
+    binding_key = "checkpoint_gate_resolution" if is_checkpoint else "excessive_gate_resolution"
     if report["bindings"].get(binding_key) != decision_row["content_hash"]:
         raise ValueError("validation.decision_coverage: report omits current decision")
     section = report["sections"][8]["body"]
@@ -209,6 +210,18 @@ def _decision_check(
             raise ValueError("validation.decision_coverage: report omits finalist decision")
         if item.get("warning") and item["warning"] not in section:
             raise ValueError("validation.decision_coverage: report omits retain warning")
+    if is_checkpoint:
+        # Finding #13: `decisions[]` is EMPTY on a clean checkpoint approve —
+        # the normal path — so the loop above asserts nothing there. The
+        # top-level `action`/`reason` and every per-finalist `feedback` pair
+        # are still durable, hash-bound human judgement a renderer
+        # regression could silently drop from Section 9 while every other
+        # check (including `_narrative_language_check`) still passes.
+        if decision["action"] not in section or decision["reason"] not in section:
+            raise ValueError("validation.decision_coverage: report omits the checkpoint action or reason")
+        for item in decision.get("feedback", []):
+            if item["interesting"] not in section or item["boring"] not in section:
+                raise ValueError("validation.decision_coverage: report omits per-finalist feedback")
 
 
 def _semantic_check(
