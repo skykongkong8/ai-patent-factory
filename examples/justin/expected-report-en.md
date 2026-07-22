@@ -29,7 +29,7 @@ The output of this tool is invention-organizing support material and is not lega
 - Search dates: 2026-07-19
 - Query strategy: on-device inference kv-cache (manual_import)
 - Query record count: 1
-- Evidence record count: 2
+- Evidence record count (research-stage scope): 2
 - Known limitations: none recorded
 - Final audit failure records: 0
 
