@@ -35,19 +35,28 @@ available as an escape hatch.
 ## The pipeline
 
 ```
-  /setup   →   /research   →   /ideate   →  /shortlist  →   /audit   →   /draft   →   /review
-    │             │              │              │              │            │            │
-    ▼             ▼              ▼              ▼              ▼            ▼            ▼
-  build         gather        propose ≥3     pick 3         score        render       independent
-  inventor      bounded       evidence-      finalists      similarity   Korean       reviewer pass,
-  profile       KIPRIS +      bound          on 3 axes      risk vs      11-section   validate, and
-  facts         local         candidates     each          KIPRIS       report       guarded share
-                evidence                                     corpus
+  /setup  →  /research  →  /ideate  →  /shortlist  →  /audit  →  /checkpoint  →  /draft  →  /review
+    │           │             │             │             │            │             │           │
+    ▼           ▼             ▼             ▼             ▼            ▼             ▼           ▼
+  build       gather        propose       pick 3        score        review        render      independent
+  inventor    bounded       ≥3 evidence-  finalists     similarity   dossier,      Korean      reviewer pass,
+  profile     KIPRIS +      bound         on 3 axes     risk vs      decide        11-section  validate, and
+  facts       local         candidates    each          KIPRIS       (4 actions,   report      guarded share
+              evidence                                   corpus       see below)
 ```
 
 - Run **`init` once first** (below) to create your private roots.
 - **`/research`** also performs the one-time `run start` that binds your profile
   into a fresh run.
+- **`/checkpoint`** is a hard stop after *every* `audit score` — clean or
+  breaching. It never auto-approves: present the full per-finalist dossier and
+  have the user pick exactly one of **approve** (→ `/draft`), **re_ideate** (→
+  `/ideate`, with feedback), **re_research** (→ `/research`, offline second
+  pass only — live is tracked in
+  [issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)), or
+  **stop**. This is an accepted breaking change: `audit score` now exits 8
+  (`decision_required`) even on a clean run, never 0. See
+  [`.claude/commands/checkpoint.md`](.claude/commands/checkpoint.md).
 - **`/review`** also covers deterministic `validate` and the guarded external
   `share`.
 - At every stage, a `*_required` / `insufficient_evidence` / `coverage_insufficient`
@@ -92,7 +101,9 @@ except the READMEs is git-ignored.
 4. **`/ideate`** → **`/shortlist`** — propose evidence-bound candidates, then pick
    three defensible finalists.
 5. **`/audit`** — score each finalist's similarity risk against a KIPRIS corpus.
-6. **`/draft`** → **`/review`** — render the Korean 11-section report, then run an
+6. **`/checkpoint`** — review the per-finalist dossier and resolve the always-raised
+   post-audit gate: `approve`, `re_ideate`, `re_research`, or `stop`.
+7. **`/draft`** → **`/review`** — render the Korean 11-section report, then run an
    independent review, `validate`, and (optionally) a guarded `share`.
 
 Each command tells you exactly which input it needs, where to put it, and which
@@ -107,12 +118,13 @@ command comes next. You don't call Python directly for any of this.
 | `/ideate` | Candidates | Validate and persist ≥3 evidence-bound candidate proposals. |
 | `/shortlist` | Finalists | Persist 3 finalists (each scored on 3 independent axes) or explicit insufficient evidence. |
 | `/audit` | Similarity | Retrieve finalist-specific KIPRIS corpora and score `simrisk-v1.0.0` risk. |
+| `/checkpoint` | Human decision | Explain every finalist's dossier and resolve the always-raised `post_audit_checkpoint` gate (approve/re_ideate/re_research/stop). |
 | `/draft` | Report | Render the private 11-section report (English default, Korean optional) with citation/decision bindings. |
 | `/review` | Review + release | Independent reviewer pass, deterministic `validate`, and guarded external `share`. |
 
 Cross-cutting CLI verbs the commands use for you: `scaffold
-{candidate|shortlist|audit-query|report}` (emit a hash-bound draft input with
-every binding pre-filled and the judgment fields left as `TODO(agent)`),
+{candidate|shortlist|audit-query|gate-decision|report}` (emit a hash-bound draft
+input with every binding pre-filled and the judgment fields left as `TODO(agent)`),
 `gate inspect` / `gate decide` (handle one exact gate) and `delete-run` (safely
 remove one run). All are documented in [SETUP.md](SETUP.md). A committed golden
 end-to-end scenario lives in [`examples/justin/`](examples/justin/README.md).
@@ -129,8 +141,8 @@ workspace/            # generated state + exports (git-ignored except README)
   requests/           #   the versioned *-input-v1.json you author for each stage
   runs/<RUN>/         #   per-run DB + research/report exports
 .claude/
-  commands/           # the 7 slash commands above
-  skills/             # profile · research · ideation · patent-review workflows
+  commands/           # the 8 slash commands above
+  skills/             # profile · research · ideation · checkpoint · patent-review workflows
 SETUP.md              # install + full raw-CLI reference (the escape hatch)
 CLAUDE.md, AGENTS.md  # the agent contract (authority, gates, privacy, no legal calls)
 schemas/, templates/  # JSON Schemas for each input; the Korean report template
@@ -152,9 +164,10 @@ leans on — adapted for a patent workflow where correctness matters more than s
   applies.
 - **Gates stop for a human.** `*_required`, `coverage_insufficient`,
   `decision_required`, `insufficient_evidence`, `revision_required`, `stopped`, and
-  `error` are hard stops. Resolving one needs a *user-authored*
-  `gate-decision-input-v1` and the core-issued `decision_id` — Claude cannot invent
-  approval, scope, or reasons.
+  `error` are hard stops. Resolving one needs a *user-authored* `gate-decision-input-v1`
+  (`gate-decision-input-v2` for the post-audit checkpoint, which adds per-finalist
+  feedback and, on `re_research`, a bounded plan) and the core-issued `decision_id` —
+  Claude cannot invent approval, scope, or reasons.
 - **Drafter ≠ reviewer.** The report is drafted and then reviewed in a separate
   pass with a different identity before deterministic `validate` can complete it.
 - **Privacy is explicit.** Running the local CLI does not authorize sending your

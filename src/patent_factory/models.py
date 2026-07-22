@@ -47,6 +47,7 @@ class GateKind(StrEnum):
     DOMAIN_PIVOT = "domain_pivot"
     COVERAGE = "coverage"
     EXCESSIVE_SIMILARITY = "excessive_similarity"
+    POST_AUDIT_CHECKPOINT = "post_audit_checkpoint"
 
 
 class AdapterFailureKind(StrEnum):

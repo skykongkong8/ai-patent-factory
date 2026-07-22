@@ -196,6 +196,108 @@ def scaffold_audit_query_input(
     }
 
 
+def scaffold_gate_decision_input(
+    connection: sqlite3.Connection, *, run_id: str, gate_id: str,
+) -> dict[str, Any]:
+    """Draft a pre-filled ``gate-decision-input-v2`` for one pending checkpoint gate.
+
+    Bindings (``gate_id``, ``subject_revision_hash``, ``approval_scope``, and
+    every finalist_id/action combination the composition rule fixes) are
+    clerical and pre-filled from the current gate exactly as ``gate inspect``
+    reports it. Judgment fields — the top-level ``action``, ``reason``, every
+    per-finalist ``feedback`` interesting/boring, the breach ``decisions``
+    reasons, and the ``plan`` — are left as ``TODO(agent)`` markers: `gate
+    decide` rejects any of them left unedited (core sentinel check, not this
+    scaffold).
+    """
+    from .decisions import inspect_gate
+    from .models import GateKind
+
+    envelope = inspect_gate(connection, run_id, gate_id)
+    if envelope["kind"] != GateKind.POST_AUDIT_CHECKPOINT.value:
+        raise ScaffoldError("scaffold gate-decision only drafts a post_audit_checkpoint gate")
+    if envelope["status"] != "pending":
+        # Finding #8: only the gate KIND was checked above, never its
+        # STATUS. Re-running the /checkpoint step-3 scaffold after the gate
+        # was already decided — a documented scenario ("re-runnable in a
+        # fresh session") — used to write a fresh 10-TODO draft with exit 0,
+        # wasting a full re-elicitation before `gate decide` finally refused
+        # the closed gate. Fail here instead, at the scaffold.
+        raise ScaffoldError(f"scaffold gate-decision: gate is {envelope['status']}, not pending")
+    scope = envelope["approval_scope"]
+    affected = scope.get("affected_finalist_ids") or []
+    bindings = scope.get("finalist_bindings") or []
+    return {
+        "action": TODO + "one of: approve, re_ideate, re_research, stop",
+        "actor": TODO + "actor identity",
+        "approval_scope": scope,
+        "decisions": [
+            # Only used when action=approve and breaches exist: exactly one
+            # retain_with_warning entry per breaching finalist (the composition
+            # rule rejects any other shape). Clear this list for every other
+            # action, including approve on a clean audit.
+            {
+                "action": "retain_with_warning",
+                "finalist_id": finalist_id,
+                "reason": TODO + "why this finalist is retained despite the excessive-similarity flag",
+            }
+            for finalist_id in affected
+        ],
+        "feedback": [
+            {
+                "boring": TODO + "what felt less compelling about this finalist",
+                "finalist_id": item["finalist_id"],
+                "interesting": TODO + "what felt worth pursuing about this finalist",
+            }
+            for item in bindings
+        ],
+        "gate_id": gate_id,
+        # Finding #7: the "clear to {} for every other action" guidance used
+        # to live only in a Python `#` comment, which `json.dumps` never
+        # serializes — so an agent following `.claude/commands/checkpoint.md`
+        # verbatim ("complete every TODO(agent) field") had no in-file
+        # signal that `plan` must become `{}` on the most common path
+        # (`approve`). The instruction now lives IN the TODO string itself,
+        # which does end up in the emitted JSON.
+        "plan": {
+            "needed_research": [
+                TODO + "ONLY if action=re_research: what to search for on an offline second "
+                "pass (fixture/normalize-web/manual only). For every OTHER action (including "
+                "approve), replace this entire \"plan\" object with {} — do not leave this key."
+            ],
+        },
+        "reason": TODO + "why this decision was made",
+        "schema_version": "gate-decision-input-v2",
+        "subject_revision_hash": envelope["subject_revision_hash"],
+    }
+
+
+def gate_decision_dossier(scope: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Flat per-finalist audit verdict for presenting the checkpoint dossier.
+
+    ``approval_scope.finalist_bindings`` already carries every field
+    (verbatim, hash-bound); this re-projects them so an agent building the
+    ``/checkpoint`` dossier does not have to reach into the nested scope blob
+    by hand. ``coverage``/``upper_bound_reference_id`` matter most on a
+    ``coverage_insufficient`` finalist: a null ``closest_reference_id`` there
+    is not "nothing found" — it means the closest OBSERVED reference stayed
+    below the excessive threshold, while ``upper_bound_reference_id`` names
+    the real reference (at ``coverage``) that keeps coverage too thin to
+    clear (review finding #6). This is CLI-response-only (returned via the
+    `scaffold` command's `extras`, never written into the decision-input
+    draft file), since `gate-decision-input-v2` rejects any extra top-level
+    key.
+    """
+    return [{
+        "closest_reference_id": item.get("closest_reference_id"),
+        "coverage": item.get("coverage"),
+        "finalist_id": item["finalist_id"],
+        "outcome": item["outcome"],
+        "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+        "upper_bound_reference_id": item.get("upper_bound_reference_id"),
+    } for item in (scope.get("finalist_bindings") or [])]
+
+
 def scaffold_report_input(
     profile_connection: sqlite3.Connection,
     *,
@@ -242,8 +344,15 @@ def evidence_binding_table(connection: sqlite3.Connection, run_id: str) -> list[
 
 
 def count_todos(value: Any) -> int:
+    # Shares its detection rule with core's `_reject_todo_marker`
+    # (`decisions.contains_todo_marker`) — a `startswith(TODO)` check here
+    # used to disagree with core's substring match, so an edited field that
+    # still MENTIONED "TODO(agent)" anywhere reported 0 here but was
+    # rejected there anyway (finding #15).
     if isinstance(value, str):
-        return 1 if value.startswith(TODO) else 0
+        from .decisions import contains_todo_marker
+
+        return 1 if contains_todo_marker(value) else 0
     if isinstance(value, Mapping):
         return sum(count_todos(item) for item in value.values())
     if isinstance(value, list):
@@ -428,7 +537,7 @@ def seal_feature_map_input(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
-    "ScaffoldError", "TODO", "count_todos", "evidence_binding_table",
-    "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_report_input",
-    "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
+    "ScaffoldError", "TODO", "count_todos", "evidence_binding_table", "gate_decision_dossier",
+    "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_gate_decision_input",
+    "scaffold_report_input", "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
 ]

@@ -494,12 +494,17 @@ def run_audit_scoring(
         "dependencies": feature_dependencies,
         "schema_version": "feature-map-set-v1",
     })
+    # decision_required keeps precedence over coverage_insufficient (the original
+    # excessive-vs-coverage ordering): a batch with both outcomes present still
+    # stops at the checkpoint, not COVERAGE, so a coverage-insufficient finalist
+    # can ride along inside a checkpoint batch (see the nullable-field handling
+    # below). Only when NO finalist is decision_required does coverage win.
     if any(item["outcome"] == "decision_required" for item in results):
-        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.EXCESSIVE_SIMILARITY
+        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.POST_AUDIT_CHECKPOINT
     elif any(item["outcome"] == "coverage_insufficient" for item in results):
         target, gate_kind = RunState.COVERAGE_INSUFFICIENT, GateKind.COVERAGE
     else:
-        target, gate_kind = RunState.AUDIT_APPROVED, None
+        target, gate_kind = RunState.DECISION_REQUIRED, GateKind.POST_AUDIT_CHECKPOINT
     audit_payload = {
         "corpus_set_hash": corpus_row["content_hash"], "feature_map_set_hash": feature_hash,
         "finalist_set_hash": finalist_row["content_hash"], "results": results,
@@ -514,11 +519,43 @@ def run_audit_scoring(
     if feature_revision.content_hash != feature_hash:
         raise StateError("feature-map revision hash drifted after audit validation")
     operation_hash = digest(audit_payload)
+    audit_hash = operation_hash
     dependencies = (finalist_row["revision_id"], corpus_row["revision_id"], feature_revision.revision_id, config_row["revision_id"])
     publishing, exports = _publishing_state(connection, run_root)
-    if gate_kind:
+    if gate_kind is GateKind.POST_AUDIT_CHECKPOINT:
+        # Every current finalist rides in the scope — not just the breaching
+        # subset — because the checkpoint is raised on clean AND breaching
+        # audits alike, and the dossier needs each finalist's verdict either
+        # way. coverage_insufficient finalists (possible alongside
+        # decision_required ones, per the precedence above) do NOT generally
+        # carry a null closest_reference_id/upper_bound_reference_id: those
+        # fields are null only in summarize_candidate's `not scores` early
+        # return (similarity.py) — an empty retained corpus for that
+        # finalist. On the ordinary coverage_insufficient path (thin
+        # coverage, not an empty corpus) both are real evidence ids, and the
+        # scope simply passes them through as-is (plus `coverage` itself)
+        # for the dossier to render — see review finding #5/#6.
         scope = {
-            "audit_hash": digest(audit_payload), "outcome": target.value,
+            "audit_hash": audit_hash, "outcome": target.value,
+            "affected_finalist_ids": sorted(
+                item["finalist_id"] for item in results if item["outcome"] == "decision_required"
+            ),
+            "finalist_bindings": [{
+                "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
+                "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+                "coverage": item["coverage"],
+                "finalist_hash": digest(finalists[item["finalist_id"]]), "finalist_id": item["finalist_id"],
+                "map_id": maps[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
+                "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+                "upper_bound_reference_id": item["upper_bound_reference_id"],
+            } for item in results],
+            "corpus_set_hash": corpus_row["content_hash"],
+            "feature_map_set_hash": feature_hash, "finalist_set_hash": finalist_row["content_hash"],
+            "scorer_config_hash": config_row["content_hash"],
+        }
+    else:
+        scope = {
+            "audit_hash": audit_hash, "outcome": target.value,
             "affected_finalist_ids": [item["finalist_id"] for item in results if item["outcome"] == target.value],
             "decision_bindings": [{
                 "corpus_hash": item["corpus_hash"], "finalist_hash": digest(finalists[item["finalist_id"]]),
@@ -528,19 +565,11 @@ def run_audit_scoring(
             "feature_map_set_hash": feature_hash, "finalist_set_hash": finalist_row["content_hash"],
             "scorer_config_hash": config_row["content_hash"],
         }
-        finished, _export, gate = publishing.publish_gate_transition(
-            run_id, gate_kind, actor="audit-cli", reason="final similarity audit requires a decision",
-            operation="audit.finalize", idempotency_key=operation_hash, approval_scope=scope,
-            artifact_kind="audit_batch", artifact_content=audit_payload,
-            artifact_schema_version="audit-batch-v1", dependencies=dependencies,
-            export_directory=exports,
-        )
-        return AuditRun(run_id, target.value, finished.artifact.revision_id, gate.gate_id, finished.replayed)
-    finished, _export = publishing.publish_transition(
-        run_id, target, actor="audit-cli", reason="final similarity audit approved",
-        operation="audit.finalize", idempotency_key=operation_hash,
+    finished, _export, gate = publishing.publish_gate_transition(
+        run_id, gate_kind, actor="audit-cli", reason="final similarity audit requires a decision",
+        operation="audit.finalize", idempotency_key=operation_hash, approval_scope=scope,
         artifact_kind="audit_batch", artifact_content=audit_payload,
         artifact_schema_version="audit-batch-v1", dependencies=dependencies,
         export_directory=exports,
     )
-    return AuditRun(run_id, target.value, finished.artifact.revision_id, None, finished.replayed)
+    return AuditRun(run_id, target.value, finished.artifact.revision_id, gate.gate_id, finished.replayed)

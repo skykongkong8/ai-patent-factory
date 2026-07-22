@@ -32,10 +32,12 @@ python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_
 ```
 
 Call `gate decide` only when the user has authored a `gate-decision-input-v1` file
-for the exact current subject and scope. The agent does not create the approval,
-decision ID, approval scope, or the user's reason on their behalf. Resume only with
-the exact `decision_id` returned by the core and the same input as the original
-command.
+for the exact current subject and scope — or `gate-decision-input-v2` for the
+always-raised `post_audit_checkpoint` gate after every `audit score` (adds
+per-finalist `feedback` and, on `re_research`, a bounded `plan`; see
+`/checkpoint`). The agent does not create the approval, decision ID, approval
+scope, or the user's reason on their behalf. Resume only with the exact
+`decision_id` returned by the core and the same input as the original command.
 
 ## Privacy, external transfer, and legal boundary
 

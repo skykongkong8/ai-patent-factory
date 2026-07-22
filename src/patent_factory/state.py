@@ -84,7 +84,7 @@ ALLOWED_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
     RunState.RESEARCH_COMPLETE: frozenset({RunState.DOMAIN_PIVOT_REQUIRED, RunState.IDEATION_RUNNING}),
     RunState.RESEARCH_INCOMPLETE: frozenset({RunState.CREDENTIAL_REQUIRED, RunState.RESEARCH_RUNNING, RunState.DOMAIN_PIVOT_REQUIRED, RunState.IDEATION_RUNNING, RunState.INSUFFICIENT_EVIDENCE}),
     RunState.DOMAIN_PIVOT_REQUIRED: frozenset({RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING, RunState.RESEARCH_COMPLETE, RunState.RESEARCH_INCOMPLETE, RunState.IDEATION_RUNNING, RunState.STOPPED}),
-    RunState.IDEATION_RUNNING: frozenset({RunState.CANDIDATES_READY, RunState.INSUFFICIENT_EVIDENCE, RunState.DOMAIN_PIVOT_REQUIRED}),
+    RunState.IDEATION_RUNNING: frozenset({RunState.IDEATION_RUNNING, RunState.CANDIDATES_READY, RunState.INSUFFICIENT_EVIDENCE, RunState.DOMAIN_PIVOT_REQUIRED}),
     RunState.CANDIDATES_READY: frozenset({RunState.FINALISTS_READY, RunState.DOMAIN_PIVOT_REQUIRED, RunState.INSUFFICIENT_EVIDENCE}),
     RunState.INSUFFICIENT_EVIDENCE: frozenset({RunState.RESEARCH_RUNNING, RunState.STOPPED}),
     RunState.FINALISTS_READY: frozenset({RunState.AUDIT_RUNNING, RunState.CREDENTIAL_REQUIRED}),
@@ -108,6 +108,7 @@ GATE_STATES = {
     GateKind.DOMAIN_PIVOT: RunState.DOMAIN_PIVOT_REQUIRED,
     GateKind.COVERAGE: RunState.COVERAGE_INSUFFICIENT,
     GateKind.EXCESSIVE_SIMILARITY: RunState.DECISION_REQUIRED,
+    GateKind.POST_AUDIT_CHECKPOINT: RunState.DECISION_REQUIRED,
 }
 
 GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
@@ -117,6 +118,7 @@ GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
     GateKind.DOMAIN_PIVOT: frozenset({"approve", "reject", "stop"}),
     GateKind.COVERAGE: frozenset({"expand", "retry", "stop"}),
     GateKind.EXCESSIVE_SIMILARITY: frozenset({"retain_with_warning", "refine", "replace", "stop"}),
+    GateKind.POST_AUDIT_CHECKPOINT: frozenset({"approve", "re_ideate", "re_research", "stop"}),
 }
 
 AUTHORIZING_GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
@@ -126,6 +128,7 @@ AUTHORIZING_GATE_ACTIONS: dict[GateKind, frozenset[str]] = {
     GateKind.DOMAIN_PIVOT: frozenset({"approve"}),
     GateKind.COVERAGE: frozenset(),
     GateKind.EXCESSIVE_SIMILARITY: frozenset(),
+    GateKind.POST_AUDIT_CHECKPOINT: frozenset(),
 }
 
 
@@ -141,6 +144,9 @@ def gate_action_target(kind: GateKind, action: str, return_state: RunState) -> R
         (GateKind.EXCESSIVE_SIMILARITY, "retain_with_warning"): RunState.AUDIT_APPROVED,
         (GateKind.EXCESSIVE_SIMILARITY, "refine"): RunState.IDEATION_RUNNING,
         (GateKind.EXCESSIVE_SIMILARITY, "replace"): RunState.RESEARCH_RUNNING,
+        (GateKind.POST_AUDIT_CHECKPOINT, "approve"): RunState.AUDIT_APPROVED,
+        (GateKind.POST_AUDIT_CHECKPOINT, "re_ideate"): RunState.IDEATION_RUNNING,
+        (GateKind.POST_AUDIT_CHECKPOINT, "re_research"): RunState.RESEARCH_RUNNING,
     }.get((kind, action), return_state)
 
 GATE_STATE_SET = frozenset(GATE_STATES.values())
@@ -361,7 +367,7 @@ class StateStore:
             if edge is None:
                 raise StateError("completion artifacts are missing required dependency edges")
         for kind, expected_hash in report.get("bindings", {}).items():
-            if kind == "excessive_gate_resolution":
+            if kind in ("excessive_gate_resolution", "checkpoint_gate_resolution"):
                 row = self.connection.execute(
                     "SELECT 1 FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND content_hash=? AND stale=0",
                     (run_id, expected_hash),
@@ -774,8 +780,8 @@ class StateStore:
             gate_kind = GateKind(envelope["kind"])
             if action not in GATE_ACTIONS[gate_kind]:
                 raise GateMismatchError(f"action is not allowed for {gate_kind.value}")
-            if gate_kind in {GateKind.COVERAGE, GateKind.EXCESSIVE_SIMILARITY}:
-                raise GateMismatchError("coverage and excessive decisions require an atomic resolution artifact")
+            if gate_kind in {GateKind.COVERAGE, GateKind.EXCESSIVE_SIMILARITY, GateKind.POST_AUDIT_CHECKPOINT}:
+                raise GateMismatchError("coverage, excessive, and checkpoint decisions require an atomic resolution artifact")
             target = gate_action_target(gate_kind, action, RunState(envelope["return_state"]))
             now = utc_now()
             decision_id = "gd_" + digest({"gate_id":gate_id,"action":action,"actor":actor,"subject":subject_revision_hash,"scope":envelope["approval_scope_hash"],"at":now})[:20]

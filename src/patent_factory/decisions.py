@@ -92,6 +92,64 @@ def _text(value: Any, path: str) -> str:
     return item
 
 
+_TODO_MARKER = "TODO(agent)"
+
+
+def contains_todo_marker(value: str) -> bool:
+    """The one detection rule shared with ``scaffold.count_todos`` (finding #15).
+
+    A SUBSTRING match on ``TODO(agent)`` anywhere in the text — not just a
+    ``str.startswith`` check on the exact stub prefix — because a partially
+    edited field can carry the marker anywhere, not only at position 0.
+    ``scaffold.count_todos`` used to check ``startswith`` while this function
+    checked substring containment: the two disagreed on a real user sentence
+    like "cleared the TODO(agent) placeholders and approved", which
+    ``count_todos`` reported as clean (0) while `gate decide` rejected it
+    anyway, with no indication the trigger was a substring of their own prose.
+    """
+    return _TODO_MARKER in value
+
+
+def _reject_todo_marker(value: Any, path: str) -> None:
+    """Reject any leftover scaffold placeholder (core-side, not scaffold-side).
+
+    ``scaffold gate-decision`` stubs every judgment field with a ``TODO(agent)``
+    marker (scaffold.TODO); ``count_todos`` only counts them client-side. An
+    unedited draft must fail here, in ``resolve_gate``, or AC-9's "user-authored"
+    guarantee would be a convention instead of an invariant.
+    """
+    if isinstance(value, str):
+        if contains_todo_marker(value):
+            raise ValueError(
+                f"{path}: unedited TODO(agent) marker must be resolved before deciding "
+                '(substring match on "TODO(agent)" anywhere in the text triggered this — '
+                "remove the literal marker text from your prose, even if the field itself was edited)"
+            )
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            _reject_todo_marker(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_todo_marker(item, f"{path}[{index}]")
+
+
+def _is_bounded_plan(plan: Mapping[str, Any]) -> bool:
+    """A plan is "bounded" only if at least one of its values carries real
+    content — not merely a non-empty outer dict.
+
+    A bare truthiness test (``if not plan``) accepts ``{"needed_research": []}``
+    (what deleting the TODO entry but leaving the key produces) as bounded,
+    since the OUTER dict has one key — even though it names no research at
+    all, and would be persisted with a durable, hash-bound ``plan_hash``
+    scoping nothing. Checking that at least one VALUE is truthy generalizes
+    across both callers that gate on plan boundedness: checkpoint
+    re_research (conventionally ``{"needed_research": [...]}``) and COVERAGE
+    expand/retry (no fixed key convention beyond ``{"type": "object"}`` —
+    e.g. ``{"query_budget": 3, ...}``) — finding #14's COVERAGE-twin.
+    """
+    return isinstance(plan, Mapping) and any(bool(value) for value in plan.values())
+
+
 def _durable_resolution_replay(
     connection: sqlite3.Connection, *, run_id: str, gate_id: str,
     envelope: sqlite3.Row, decision_input: Mapping[str, Any],
@@ -223,7 +281,11 @@ def _resolution(
         else:
             if action not in {"retain_with_warning", "refine", "replace"}:
                 raise GateMismatchError("excessive decision action is invalid")
-            if any(not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"} for item in entries):
+            if any(
+                not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"}
+                or not isinstance(item.get("finalist_id"), str)
+                for item in entries
+            ):
                 raise ValueError("decision.decisions: exact finalist decision fields required")
             ids = [item["finalist_id"] for item in entries]
             if len(ids) != len(set(ids)) or sorted(ids) != affected:
@@ -257,12 +319,167 @@ def _resolution(
             "scorer_config_hash": config_row["content_hash"],
         })
         dependencies.extend((finalist_row["revision_id"], corpus_row["revision_id"], feature_row["revision_id"], config_row["revision_id"]))
+    elif kind is GateKind.POST_AUDIT_CHECKPOINT:
+        audit_row, audit = _artifact(connection, run_id, "audit_batch")
+        finalist_row, finalists = _artifact(connection, run_id, "finalist_set")
+        corpus_row, corpora = _artifact(connection, run_id, "corpus_set")
+        feature_row, features = _artifact(connection, run_id, "feature_map_set")
+        config_row, _config = _artifact(connection, run_id, "scorer_config")
+        if audit_row["content_hash"] != envelope["subject_revision_hash"]:
+            raise GateMismatchError("checkpoint decision does not bind the current audit")
+        scope = json.loads(envelope["approval_scope_json"])
+        finalist_map = {item["finalist_id"]: item for item in finalists["finalists"]}
+        corpus_map = {item["finalist_id"]: item for item in corpora["corpora"]}
+        feature_map = {item["finalist_id"]: item for item in features["maps"]}
+        current_bindings = [{
+            "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
+            "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+            "coverage": item["coverage"],
+            "finalist_hash": digest(finalist_map[item["finalist_id"]]), "finalist_id": item["finalist_id"],
+            "map_id": feature_map[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
+            "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+            "upper_bound_reference_id": item["upper_bound_reference_id"],
+        } for item in audit["results"]]
+        affected = sorted(result["finalist_id"] for result in audit["results"] if result["outcome"] == "decision_required")
+        coverage_insufficient_ids = sorted(
+            result["finalist_id"] for result in audit["results"] if result["outcome"] == "coverage_insufficient"
+        )
+        if (
+            audit.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("corpus_set_hash") != corpus_row["content_hash"]
+            or scope.get("finalist_set_hash") != finalist_row["content_hash"]
+            or scope.get("feature_map_set_hash") != feature_row["content_hash"]
+            or scope.get("scorer_config_hash") != config_row["content_hash"]
+            or scope.get("finalist_bindings") != current_bindings
+            or scope.get("affected_finalist_ids") != affected
+        ):
+            raise GateMismatchError("checkpoint decision bindings are stale")
+        all_finalist_ids = sorted(finalist_map)
+        feedback = request.get("feedback", [])
+        if not isinstance(feedback, list) or any(
+            not isinstance(item, Mapping) or set(item) != {"boring", "finalist_id", "interesting"}
+            # Finding #11: finalist_id feeds set()/sorted() below — an
+            # unhashable (list) or mixed-type (int alongside str) value must
+            # be rejected here as an enveloped ValueError, not surface as a
+            # raw TypeError with no failure_code (cli.py's catch tuple has no
+            # TypeError member, deliberately: RC4 — folding it in would mask
+            # genuine internal defects as user-input errors).
+            or not isinstance(item.get("finalist_id"), str)
+            for item in feedback
+        ):
+            raise ValueError("decision.feedback: exact per-finalist fields required")
+        feedback_ids = [item["finalist_id"] for item in feedback]
+        if len(feedback_ids) != len(set(feedback_ids)) or sorted(feedback_ids) != all_finalist_ids:
+            raise ValueError("decision.feedback: exactly one entry per current finalist required")
+        resolved_feedback = [{
+            "boring": _text(item["boring"], f"decision.feedback.{item['finalist_id']}.boring"),
+            "finalist_id": item["finalist_id"],
+            "interesting": _text(item["interesting"], f"decision.feedback.{item['finalist_id']}.interesting"),
+        } for item in sorted(feedback, key=lambda value: value["finalist_id"])]
+        # Blocker #2: this prose becomes durable, hash-bound Section 9
+        # content that can never be re-authored once persisted (unlike
+        # report-input text). Screen it at gate decide, while the operator
+        # can still fix it — run_review's later scan is too late.
+        from .validation import _scan_prohibited_language
+
+        _scan_prohibited_language(payload["reason"], "ko")
+        for item in resolved_feedback:
+            _scan_prohibited_language(item["interesting"], "ko")
+            _scan_prohibited_language(item["boring"], "ko")
+        # Phase-4 validation (quality finding #2): explicit local whitelist,
+        # matching the EXCESSIVE_SIMILARITY branch's own defense-in-depth
+        # idiom. `action` is already constrained by the top-level
+        # `GATE_ACTIONS[kind]` check above, but this branch's dispatch
+        # (stop / approve / else-for-re_ideate-or-re_research) otherwise
+        # relies on that external, module-level lookup alone — a future
+        # change to GATE_ACTIONS[POST_AUDIT_CHECKPOINT] would silently fall
+        # into the `else` and build a transient re_ideate/re_research-shaped
+        # payload for an action this branch never meant to accept.
+        if action not in {"approve", "re_ideate", "re_research", "stop"}:
+            raise ValueError(
+                "decision.action: checkpoint action must be one of "
+                "approve, re_ideate, re_research, stop"
+            )
+        if action == "stop":
+            if entries:
+                raise ValueError("decision.decisions: stop cannot include finalist decisions")
+            resolved = []
+        elif action == "approve":
+            if coverage_insufficient_ids:
+                # Blocker #1: decision_required takes gate-routing precedence
+                # over coverage_insufficient (audit.py), so a batch can carry
+                # both outcomes. `affected` only lists decision_required
+                # finalists, so approving the breach alone used to strand a
+                # coverage_insufficient rider at AUDIT_APPROVED with no path
+                # to /draft (report.py rejects any non-exact-approved audit)
+                # and no path back (ALLOWED_TRANSITIONS forbids re-deciding).
+                # Reject here, while re_ideate/re_research are still reachable.
+                raise ValueError(
+                    "decision.action: approve cannot proceed while "
+                    f"{', '.join(coverage_insufficient_ids)} remain coverage_insufficient — "
+                    "resolve with re_research (broaden the corpus) or re_ideate "
+                    "(replace the finalist) before approving"
+                )
+            if not affected:
+                if entries:
+                    raise ValueError("decision.decisions: a clean approve cannot include finalist decisions")
+                resolved = []
+            else:
+                if any(
+                    not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"}
+                    or not isinstance(item.get("finalist_id"), str)
+                    for item in entries
+                ):
+                    raise ValueError("decision.decisions: exact finalist decision fields required")
+                ids = [item["finalist_id"] for item in entries]
+                if len(ids) != len(set(ids)) or sorted(ids) != affected:
+                    raise ValueError("decision.decisions: exactly one current decision per breaching finalist required")
+                if any(item["action"] != "retain_with_warning" for item in entries):
+                    raise ValueError("decision.decisions: approve requires retain_with_warning for every breaching finalist")
+                resolved = []
+                for item in sorted(entries, key=lambda value: value["finalist_id"]):
+                    finalist_id = item["finalist_id"]
+                    reason_text = _text(item["reason"], f"decision.decisions.{finalist_id}.reason")
+                    _scan_prohibited_language(reason_text, "ko")
+                    resolved.append({
+                        "action": "retain_with_warning", "candidate_id": finalist_map[finalist_id]["candidate_id"],
+                        "corpus_hash": corpus_map[finalist_id]["corpus_hash"],
+                        "feature_map_id": feature_map[finalist_id]["map_id"],
+                        "finalist_hash": digest(finalist_map[finalist_id]), "finalist_id": finalist_id,
+                        "reason": reason_text,
+                        "warning": "Retained despite excessive provisional similarity risk within the retrieved corpus.",
+                    })
+        else:
+            # re_ideate / re_research: the fate for every finalist (including
+            # breaching ones) is carried by feedback[], never by decisions[].
+            if entries:
+                raise ValueError("decision.decisions: this action must not include finalist decisions")
+            resolved = []
+        if action == "re_research":
+            if not _is_bounded_plan(plan):
+                raise ValueError("decision.plan: re_research requires a bounded plan")
+            payload.update({"plan": dict(plan), "plan_hash": digest(plan)})
+        else:
+            if plan:
+                raise ValueError("decision.plan: only re_research accepts a plan")
+            payload["plan"] = {}
+        payload.update({
+            "audit_hash": audit_row["content_hash"], "decisions": resolved,
+            "corpus_set_hash": corpus_row["content_hash"], "feedback": resolved_feedback,
+            "feature_map_set_hash": feature_row["content_hash"],
+            "finalist_set_hash": finalist_row["content_hash"],
+            "scorer_config_hash": config_row["content_hash"],
+        })
+        dependencies.extend((finalist_row["revision_id"], corpus_row["revision_id"], feature_row["revision_id"], config_row["revision_id"]))
     elif kind is GateKind.COVERAGE:
         if entries:
             raise ValueError("decision.decisions: coverage uses one branch action")
         if action not in {"expand", "retry", "stop"}:
             raise GateMismatchError("coverage decision action is invalid")
-        if action != "stop" and not plan:
+        # COVERAGE-twin of finding #14: the checkpoint re_research branch had
+        # the identical bare-truthiness bug (`{"needed_research": []}` sailing
+        # through as "bounded"); this branch shares the same fix.
+        if action != "stop" and not _is_bounded_plan(plan):
             raise ValueError("decision.plan: expand or retry requires a bounded plan")
         payload.update({"decisions": [], "plan": dict(plan), "plan_hash": digest(plan)})
     else:
@@ -279,13 +496,31 @@ def resolve_gate(
 ) -> DecisionRun:
     canaries = credential_canaries()
     assert_canaries_absent(decision_input, canaries, boundary="decision_input")
-    required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
-    if not isinstance(decision_input, Mapping) or set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
+    if not isinstance(decision_input, Mapping) or "gate_id" not in decision_input:
         raise ValueError("decision: exact gate-decision-input-v1 fields required")
     gate_id = _text(decision_input["gate_id"], "decision.gate_id")
     envelope = connection.execute("SELECT * FROM gate_envelopes WHERE gate_id=? AND run_id=?", (gate_id, run_id)).fetchone()
     if envelope is None:
         raise GateMismatchError("gate is unavailable")
+    # Choice C1: dispatch the exact input-schema version on the gate's OWN
+    # kind, not on caller-supplied shape — a v1 payload can never satisfy a
+    # checkpoint gate and a v2 payload can never satisfy any other gate (R8).
+    if GateKind(envelope["kind"]) is GateKind.POST_AUDIT_CHECKPOINT:
+        required = {
+            "action", "actor", "approval_scope", "decisions", "feedback",
+            "gate_id", "plan", "reason", "schema_version", "subject_revision_hash",
+        }
+        if set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v2":
+            raise ValueError("decision: exact gate-decision-input-v2 fields required")
+        # Core sentinel rejection (RF#5): count_todos only runs scaffold-side
+        # (scaffold.py), so an unedited draft must be rejected here or AC-9's
+        # "user-authored" guarantee is a convention, not an invariant.
+        for field in ("action", "actor", "reason", "feedback", "plan", "decisions"):
+            _reject_todo_marker(decision_input.get(field), f"decision.{field}")
+    else:
+        required = {"action", "actor", "approval_scope", "decisions", "gate_id", "plan", "reason", "schema_version", "subject_revision_hash"}
+        if set(decision_input) != required or decision_input.get("schema_version") != "gate-decision-input-v1":
+            raise ValueError("decision: exact gate-decision-input-v1 fields required")
     if decision_input["subject_revision_hash"] != envelope["subject_revision_hash"] or decision_input["approval_scope"] != json.loads(envelope["approval_scope_json"]):
         raise GateMismatchError("decision does not match current subject and scope")
     replay = _durable_resolution_replay(

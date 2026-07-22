@@ -141,7 +141,10 @@ All similarity figures are provisional research-aid indicators within the retrie
 
 ## 9 User Decisions at Similarity Checkpoints
 
-Not applicable: no excessive-similarity user checkpoint arose in the current audit.
+- Checkpoint decision: approve — reviewed the clean audit dossier; approving to draft
+  - fi_62a630e9d3d7cff02523: interesting fi_62a630e9d3d7cff02523 mechanism is worth pursuing further / boring fi_62a630e9d3d7cff02523 felt like a narrower variant of the others
+  - fi_a631380355a1934798ee: interesting fi_a631380355a1934798ee mechanism is worth pursuing further / boring fi_a631380355a1934798ee felt like a narrower variant of the others
+  - fi_da6c5e41b86c6781f406: interesting fi_da6c5e41b86c6781f406 mechanism is worth pursuing further / boring fi_da6c5e41b86c6781f406 felt like a narrower variant of the others
 
 ## 10 Patent-Attorney Handoff Questions and Follow-Up Investigations
 

@@ -15,9 +15,9 @@ from .provenance import digest, normalize
 from .report import (
     CITATION_RE,
     HEDGED_LABELS,
+    _bound_decision,
     _current_artifact,
     _evidence_map,
-    _excessive_decision,
     _report_payload,
     _report_state,
     load_report_policy,
@@ -63,13 +63,16 @@ def _binding_check(
         row, _content = _current_artifact(connection, run_id, kind)
         if bindings.get(kind) != row["content_hash"]:
             raise ValueError(f"validation.artifact_bindings: stale {kind}")
-    if "excessive_gate_resolution" in bindings:
-        row = connection.execute(
-            "SELECT * FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND content_hash=? AND stale=0",
-            (run_id, bindings["excessive_gate_resolution"]),
-        ).fetchone()
-        if row is None:
-            raise ValueError("validation.artifact_bindings: stale excessive decision")
+    for binding_key, label in (
+        ("excessive_gate_resolution", "excessive"), ("checkpoint_gate_resolution", "checkpoint"),
+    ):
+        if binding_key in bindings:
+            row = connection.execute(
+                "SELECT * FROM artifact_revisions WHERE run_id=? AND kind='gate_resolution' AND content_hash=? AND stale=0",
+                (run_id, bindings[binding_key]),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"validation.artifact_bindings: stale {label} decision")
 
 
 def _citation_check(
@@ -128,8 +131,20 @@ def _identifier_check(report: Mapping[str, Any]) -> None:
                 raise ValueError("validation.identifiers: source URL must be safe HTTPS")
 
 
-def _legal_language_check(report: Mapping[str, Any]) -> None:
-    policy = load_report_policy(report.get("language", "ko"))
+def _scan_prohibited_language(text: str, language: str) -> None:
+    """Reject any sentence in ``text`` that reads as an unqualified legal conclusion.
+
+    Extracted from ``_legal_language_check`` (which now just calls this on
+    ``report["markdown"]``) so the identical deterministic, sentence-local
+    policy scan can also run on hand-authored checkpoint decision prose
+    (``gate decide``'s top-level ``reason``, every ``feedback[].interesting``/
+    ``.boring``, and approve-path ``decisions[].reason``) — text that becomes
+    durable Section 9 content but, unlike ``report-input`` text, can never be
+    re-authored once persisted. ``prohibited_unqualified_phrases`` is frozen
+    identical across both language policies, so any supported ``language``
+    scans the same phrase list.
+    """
+    policy = load_report_policy(language)
     dangerous = (
         re.compile(r"특허(?:를\s*받을\s*수\s*있|\s*가능(?:하|성))", re.IGNORECASE),
         re.compile(r"(?:신규성|진보성).{0,16}(?:있|충족|인정)", re.IGNORECASE),
@@ -149,13 +164,17 @@ def _legal_language_check(report: Mapping[str, Any]) -> None:
         "법적 결론을 제공하지", "법적 판단이 아니", "not a legal", "cannot conclude", "does not conclude",
         "not legal advice", "no legal conclusion", "not legal determination", "question",
     )
-    sentences = [item.strip() for item in re.split(r"(?<=[.!?。])\s+|\n+", report["markdown"]) if item.strip()]
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?。])\s+|\n+", text) if item.strip()]
     frozen_phrases = tuple(item.casefold() for item in policy["prohibited_unqualified_phrases"])
     for sentence in sentences:
         normalized = re.sub(r"\s+", " ", sentence).casefold()
         risky = any(pattern.search(sentence) for pattern in dangerous) or any(item in normalized for item in frozen_phrases)
         if risky and not any(item.casefold() in normalized for item in qualifiers):
             raise ValueError(f"validation.legal_language: unqualified legal conclusion: {sentence[:120]}")
+
+
+def _legal_language_check(report: Mapping[str, Any]) -> None:
+    _scan_prohibited_language(report["markdown"], report.get("language", "ko"))
 
 
 def _narrative_language_check(report: Mapping[str, Any]) -> None:
@@ -173,12 +192,17 @@ def _decision_check(
     connection: sqlite3.Connection, run_id: str, report: Mapping[str, Any],
 ) -> None:
     audit_row, audit = _current_artifact(connection, run_id, "audit_batch")
-    decision_row, decision = _excessive_decision(connection, run_id, audit_row["content_hash"], audit)
+    decision_row, decision = _bound_decision(connection, run_id, audit_row["content_hash"], audit)
     if decision_row is None:
-        if "excessive_gate_resolution" in report["bindings"]:
+        if "excessive_gate_resolution" in report["bindings"] or "checkpoint_gate_resolution" in report["bindings"]:
             raise ValueError("validation.decision_coverage: unexpected decision binding")
         return
-    if report["bindings"].get("excessive_gate_resolution") != decision_row["content_hash"]:
+    # Mirror report.py's own binding dispatch: a checkpoint resolution binds
+    # under "checkpoint_gate_resolution", a legacy excessive one under
+    # "excessive_gate_resolution" — never both for the same current audit.
+    is_checkpoint = decision.get("gate_kind") == "post_audit_checkpoint"
+    binding_key = "checkpoint_gate_resolution" if is_checkpoint else "excessive_gate_resolution"
+    if report["bindings"].get(binding_key) != decision_row["content_hash"]:
         raise ValueError("validation.decision_coverage: report omits current decision")
     section = report["sections"][8]["body"]
     for item in decision["decisions"]:
@@ -186,6 +210,18 @@ def _decision_check(
             raise ValueError("validation.decision_coverage: report omits finalist decision")
         if item.get("warning") and item["warning"] not in section:
             raise ValueError("validation.decision_coverage: report omits retain warning")
+    if is_checkpoint:
+        # Finding #13: `decisions[]` is EMPTY on a clean checkpoint approve —
+        # the normal path — so the loop above asserts nothing there. The
+        # top-level `action`/`reason` and every per-finalist `feedback` pair
+        # are still durable, hash-bound human judgement a renderer
+        # regression could silently drop from Section 9 while every other
+        # check (including `_narrative_language_check`) still passes.
+        if decision["action"] not in section or decision["reason"] not in section:
+            raise ValueError("validation.decision_coverage: report omits the checkpoint action or reason")
+        for item in decision.get("feedback", []):
+            if item["interesting"] not in section or item["boring"] not in section:
+                raise ValueError("validation.decision_coverage: report omits per-finalist feedback")
 
 
 def _semantic_check(

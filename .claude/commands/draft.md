@@ -2,11 +2,19 @@
 description: Render the private 11-section report (English default, Korean optional) with citation and decision bindings.
 ---
 
-# /draft — render the report (step 6)
+# /draft — render the report (step 7)
 
 Render the private 11-section report in English (default) or Korean. Follow `CLAUDE.md`, `AGENTS.md`, and
 `.claude/skills/ideation/SKILL.md`. Pass only a `report-input-v1` bound to the current
 approved artifact hash.
+
+## Precondition
+
+The run must already be `audit_approved` — the post-audit checkpoint resolved with
+`approve` (see **`/checkpoint`**). If the last `audit score` returned
+`decision_required` and no checkpoint decision has been made yet, go to **`/checkpoint`**
+first; `draft` stops on a stale or unresolved audit/decision, it does not raise or
+resolve the gate itself.
 
 ## Where you provide input
 

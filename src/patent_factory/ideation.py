@@ -387,7 +387,10 @@ class IdeationRun:
         return {
             "artifact_ids": [self.artifact.revision_id], "candidate_ids": list(self.candidate_ids),
             "command": "ideate", "next_state": self.next_state, "prior_state": self.prior_state,
-            "replayed": self.replayed, "run_id": self.run_id, "status": "candidates_ready",
+            # `status` reports the actual next_state (the DecisionRun
+            # convention, decisions.py:41), never a hardcoded success label —
+            # a stale idempotency replay must be able to say so (finding #3).
+            "replayed": self.replayed, "run_id": self.run_id, "status": self.next_state,
             "transition_event_ids": list(self.event_ids),
         }
 
@@ -658,6 +661,19 @@ def run_ideation(
     )
     if finished.artifact is None:
         raise RuntimeError("ideation finish did not publish its candidate set")
+    if finished.replayed and finished.snapshot.state is not RunState.CANDIDATES_READY:
+        # Finding #3: a byte-identical `ideate` after `re_ideate` hits the
+        # idempotency match on the ORIGINAL (pre-checkpoint) publish, but
+        # `TransitionResult.snapshot` reflects the run's actual CURRENT state
+        # — which the newly-added IDEATION_RUNNING self-loop lets stay at
+        # ideation_running, since this replay never re-runs the transition.
+        # Returning success here would tell the operator candidates are
+        # ready over a run that is, in fact, still stalled.
+        raise StateError(
+            "ideate replay matched a prior publish but the run has not reached "
+            f"candidates_ready (currently {finished.snapshot.state.value}) — "
+            "resubmit a revised candidate_input, not the byte-identical prior one"
+        )
     return IdeationRun(
         run_id, prior.state.value, finished.snapshot.state.value, finished.artifact,
         tuple(candidate.candidate_id for candidate in ordered),

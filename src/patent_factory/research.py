@@ -143,6 +143,57 @@ class CredentialRequiredError(RuntimeError):
         self.gate = gate
 
 
+class LiveResearchReentryRefusedError(RuntimeError):
+    """A live (credential-requiring) research verb was refused on a stale re_research re-entry."""
+
+    code = "live_research_reentry_refused_issue_48"
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(
+            f"run {run_id}: live research verbs are refused on a research_running state "
+            "entered via a re_research checkpoint resolution — this second pass is "
+            "offline-only (fixture/normalize-web/manual), deferred to issue #48"
+        )
+        self.run_id = run_id
+
+
+def refuse_stale_re_research_reentry(connection: sqlite3.Connection, run_id: str) -> None:
+    """Refuse a live research verb iff the run's current research_running state was
+    entered via a `re_research` checkpoint resolution with no research since (finding #12).
+
+    `SETUP.md`, `research/SKILL.md`, and `checkpoint.md` all describe the
+    second in-run research pass as offline-only (issue #48 defers live
+    support), but nothing enforced it: `run_research`'s offline path and the
+    live kipris/serpapi paths accept `RunState.RESEARCH_RUNNING` identically.
+
+    Discriminator (RC5), anchored to concrete persisted events rather than a
+    fragile clock comparison alone: refuse iff the latest `gate_decisions`
+    row for this run with `action='re_research'` exists AND no
+    `transition_events` row with `next_state='research_complete'` has a
+    LATER `created_at` than that resolution's (both are written from the
+    same `now` value inside `publish_gate_resolution`'s one transaction, so
+    the anchor and its own transition_event always agree). This keeps a
+    legitimate first-pass retry allowed (no re_research resolution exists at
+    all), refuses the second pass immediately after `re_research`, and
+    allows a later cycle-back (re_research -> offline publish -> a
+    subsequent COVERAGE-expand re-enters research_running by a different
+    route) since a research_complete transition now exists after the anchor.
+    """
+    anchor = connection.execute(
+        "SELECT created_at FROM gate_decisions WHERE run_id=? AND action='re_research' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (run_id,),
+    ).fetchone()
+    if anchor is None:
+        return
+    published_since = connection.execute(
+        "SELECT 1 FROM transition_events WHERE run_id=? AND next_state=? AND created_at>? LIMIT 1",
+        (run_id, RunState.RESEARCH_COMPLETE.value, anchor["created_at"]),
+    ).fetchone()
+    if published_since is None:
+        raise LiveResearchReentryRefusedError(run_id)
+
+
 @dataclass(frozen=True)
 class ResearchBatchRun:
     run_id: str
@@ -643,6 +694,14 @@ def run_research(
         raise ValueError("credential-requiring adapter must declare its credential name")
     request_revision = None
     if requires_credential:
+        if prior.state is RunState.RESEARCH_RUNNING:
+            # Phase-4 validation (guard symmetry): this single-query entry
+            # point is generic over ANY credential-requiring adapter, not
+            # only the CLI's own kipris/serpapi callers — the CLI-level
+            # SerpAPI preflight is one caller, not the only one. Guarding
+            # here too makes `run_research` self-protecting regardless of
+            # caller, matching `run_research_batch`'s identical guard.
+            refuse_stale_re_research_reentry(connection, run_id)
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
@@ -833,6 +892,8 @@ def run_research_batch(
         raise ValueError("credential-requiring adapter must declare its credential name")
     request_revision = None
     if requires_credential:
+        if prior.state is RunState.RESEARCH_RUNNING:
+            refuse_stale_re_research_reentry(connection, run_id)
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",

@@ -78,13 +78,31 @@ python3 -m patent_factory audit score --run workspace/runs/RUN --run-id RUN --fe
 
 Use a separate KIPRIS query group per finalist. Leave the `simrisk-v1.0.0` computation to
 the core. On `coverage_insufficient` or `decision_required`, do not proceed to draft.
-Whether `R_hi < 75` auto-approves is decided only by the core.
+`audit score` now always stops at a `post_audit_checkpoint` gate — clean or breaching —
+so `decision_required` (exit 8) is the normal outcome of every audit score call, not
+only a breaching one. There is no more core auto-approval on a clean, low-risk audit;
+whether `R_hi < 75` is what made a given finalist's own `outcome` clean is still decided
+only by the core, but the batch always stops at the checkpoint either way.
 
 ## Exact gate inspection / decision
 
 ```bash
 python3 -m patent_factory gate inspect --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID
 python3 -m patent_factory gate decide --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID --input workspace/requests/gate-decision-input-v1.json
+```
+
+Legacy gate kinds (`credential`, `coverage`, `domain_pivot`, `sensitive_disclosure`, and
+any pre-existing `excessive_similarity` gate) take `gate-decision-input-v1`. The
+always-raised `post_audit_checkpoint` gate requires `gate-decision-input-v2` instead
+(adds per-finalist `feedback`, and — only for `re_research` — a bounded `plan`); a v1
+payload is rejected outright for that gate kind, and vice versa. Scaffold a pre-filled
+draft first:
+
+```bash
+python3 -m patent_factory scaffold gate-decision --run workspace/runs/RUN --run-id RUN \
+  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+python3 -m patent_factory gate decide --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID \
+  --input workspace/requests/gate-decision-input-v2.json
 ```
 
 After a decision, resume the suspended operation only with the exact `decision_id` the

@@ -23,6 +23,7 @@ from patent_factory.research import (
     CredentialRequiredError,
     ResearchBudget,
     plan_keyword_queries,
+    refuse_stale_re_research_reentry,
     run_research_batch,
 )
 from patent_factory.state import StateStore
@@ -203,6 +204,15 @@ class ResearchBatchTests(unittest.TestCase):
         )
         self.assertTrue(replayed.replayed)
         self.assertEqual(len(configured_calls), 3)
+
+    def test_fresh_run_with_no_re_research_history_is_never_refused(self):
+        # Finding #12, path 1: a run that has never had a re_research gate
+        # resolution must never be refused — this is the legitimate
+        # first-pass (or in-flight retry) research_running case.
+        refuse_stale_re_research_reentry(self.connection, "run")  # must not raise
+        adapter = WordAdapter({"센서": success(), "감지기": success(), "sensor": success()})
+        result = self.batch(adapter, plan())
+        self.assertEqual(result.next_state, "research_complete")
 
     def test_auth_rejection_mid_batch_suspends_with_running_return_state(self):
         rejected = b"<response><successYN>N</successYN><resultCode>30</resultCode></response>"

@@ -3,10 +3,14 @@
 Closes the end-to-end gap called out in issue #22: previous suites exercised each
 stage against synthesized upstream state; this test drives
 init → profile → run start → research (normalize-web + manual) → scaffold/ideate
-→ scaffold/shortlist → scaffold/audit retrieve → audit score → scaffold/draft(en)
-→ review → validate, asserting the final English report byte-matches the
-committed golden. Set JUSTIN_GOLDEN_REGENERATE=1 to refresh the golden after an
-intentional renderer change.
+→ scaffold/shortlist → scaffold/audit retrieve → audit score → gate inspect →
+scaffold/gate-decision → gate decide (post-audit checkpoint, approve) →
+scaffold/draft(en) → review → validate, asserting the final English report
+byte-matches the committed golden. `audit score` now always stops at the
+always-raised `post_audit_checkpoint` gate (exit 8), clean or breaching — an
+accepted breaking change (see README.md/SETUP.md) — so this journey authors and
+decides an `approve` checkpoint before draft. Set JUSTIN_GOLDEN_REGENERATE=1 to
+refresh the golden after an intentional renderer change.
 """
 from __future__ import annotations
 
@@ -230,11 +234,55 @@ class JustinFullJourneyTests(unittest.TestCase):
             "finalist_set_hash": finalist_row["content_hash"],
             "corpus_set_hash": corpus_row["content_hash"], "maps": maps,
         }, ensure_ascii=False), encoding="utf-8")
-        payload = self.step(
+        # `audit score` now always raises the post_audit_checkpoint gate — clean
+        # or breaching (D6, accepted breaking change) — so a clean run exits 8
+        # with status=decision_required rather than 0.
+        result = run_cli(
             "audit", "score", "--run", run_rel, "--run-id", "justin",
             "--feature-input", feature_path, "--workspace-root", ws_rel,
         )
-        self.assertNotIn(payload["status"], {"decision_required", "coverage_insufficient"})
+        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "decision_required")
+        gate_id = payload["gate_id"]
+
+        # 8b. Post-audit checkpoint: inspect the pending gate, scaffold a v2
+        # draft (every hash/ID binding pre-filled, judgment fields TODO(agent)),
+        # author the decision, and approve — every checkpoint decision is
+        # user-authored, never auto-decided (AC-9).
+        inspected = self.step(
+            "gate", "inspect", "--run", run_rel, "--run-id", "justin",
+            "--gate-id", gate_id, "--workspace-root", ws_rel,
+        )
+        self.assertEqual(inspected["kind"], "post_audit_checkpoint")
+        gate_decision_path = ws_rel / "requests" / "gate-decision-input-v2.json"
+        self.step(
+            "scaffold", "gate-decision", "--run", run_rel, "--run-id", "justin",
+            "--gate-id", gate_id, "--out", gate_decision_path, "--workspace-root", ws_rel,
+        )
+        draft = json.loads((ROOT / gate_decision_path).read_text(encoding="utf-8"))
+        decided = dict(draft)
+        decided["action"] = "approve"
+        decided["actor"] = "inventor"
+        decided["reason"] = "reviewed the clean audit dossier; approving to draft"
+        decided["decisions"] = []
+        decided["plan"] = {}
+        decided["feedback"] = [
+            {
+                "boring": f"{item['finalist_id']} felt like a narrower variant of the others",
+                "finalist_id": item["finalist_id"],
+                "interesting": f"{item['finalist_id']} mechanism is worth pursuing further",
+            }
+            for item in draft["feedback"]
+        ]
+        (ROOT / gate_decision_path).write_text(
+            json.dumps(decided, ensure_ascii=False, sort_keys=True), encoding="utf-8",
+        )
+        payload = self.step(
+            "gate", "decide", "--run", run_rel, "--run-id", "justin", "--gate-id", gate_id,
+            "--input", gate_decision_path, "--workspace-root", ws_rel,
+        )
+        self.assertEqual(payload["next_state"], "audit_approved")
 
         # 9. English report: scaffold → fill → draft.
         report_path = ws_rel / "requests" / "report-input-v2.json"

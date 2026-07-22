@@ -16,7 +16,9 @@ and the coverage threshold is 0.80. Marking the `mechanism` (0.30) and
 `transformations` (0.20) feature decisions `unavailable` drops q_features to
 0.50, so Q = 0.25 + 0.30 + 0.15 = 0.70 < 0.80 while r_hi stays far below the
 0.75 excessive threshold, i.e. coverage_insufficient rather than
-decision_required.
+decision_required. The rescore that drives the run forward again is NOT starved,
+so it stops at the always-raised post-audit checkpoint (exit 8) and reaches
+`audit_approved` only through a user-authored `approve` decision.
 
 Every assertion below records what the shipped core actually does; nothing here
 is a plan.
@@ -222,6 +224,9 @@ class CoverageExpandReentryTests(unittest.TestCase):
 
         With starve=True two feature decisions are `unavailable`, which is what
         pushes Q under the coverage threshold and raises the COVERAGE gate.
+        With starve=False the batch is clean, so it stops at the always-raised
+        post-audit checkpoint (exit 8) instead of reaching `audit_approved`
+        directly.
         """
         ws_rel = self.rel(self.workspace)
         with connect_database(self.run_root / "factory.sqlite3") as connection:
@@ -269,7 +274,43 @@ class CoverageExpandReentryTests(unittest.TestCase):
         return self.step(
             "audit", "score", "--run", self.run_rel, "--run-id", RUN_ID,
             "--feature-input", feature_path, "--workspace-root", ws_rel,
-            allowed=frozenset({0, 7}),
+            allowed=frozenset({0, 7, 8}),
+        )
+
+    def approve_checkpoint(self, gate_id: str) -> dict:
+        """Resolve the post-audit checkpoint with a user-authored `approve`."""
+        ws_rel = self.rel(self.workspace)
+        gate = self.step(
+            "gate", "inspect", "--run", self.run_rel, "--run-id", RUN_ID,
+            "--gate-id", gate_id, "--workspace-root", ws_rel,
+        )
+        self.assertEqual(gate["kind"], "post_audit_checkpoint")
+        decision_path = ws_rel / "requests" / "gate-decision-input-v2.json"
+        self.step(
+            "scaffold", "gate-decision", "--run", self.run_rel, "--run-id", RUN_ID,
+            "--gate-id", gate_id, "--out", decision_path, "--workspace-root", ws_rel,
+        )
+        draft = json.loads((ROOT / decision_path).read_text(encoding="utf-8"))
+        decided = dict(draft)
+        decided["action"] = "approve"
+        decided["actor"] = "inventor"
+        decided["reason"] = "reviewed the rescored dossier; approving to draft"
+        decided["decisions"] = []
+        decided["plan"] = {}
+        decided["feedback"] = [
+            {
+                "boring": f"{item['finalist_id']} felt like a narrower variant of the others",
+                "finalist_id": item["finalist_id"],
+                "interesting": f"{item['finalist_id']} mechanism is worth pursuing further",
+            }
+            for item in draft["feedback"]
+        ]
+        (ROOT / decision_path).write_text(
+            json.dumps(decided, ensure_ascii=False, sort_keys=True), encoding="utf-8",
+        )
+        return self.step(
+            "gate", "decide", "--run", self.run_rel, "--run-id", RUN_ID,
+            "--gate-id", gate_id, "--input", decision_path, "--workspace-root", ws_rel,
         )
 
     # ------------------------------- the probe -------------------------------
@@ -449,9 +490,15 @@ class CoverageExpandReentryTests(unittest.TestCase):
         redone.append("scaffold audit-query + audit retrieve")
         rescored = self.audit_score(starve=False)
         redone.append("feature maps + audit score")
+        # The rescored batch is clean, but `audit score` always raises the
+        # post-audit checkpoint now, so getting forward again also costs one
+        # user-authored checkpoint decision.
+        self.assertEqual(rescored["status"], "decision_required")
+        approved = self.approve_checkpoint(rescored["gate_id"])
+        redone.append("scaffold gate-decision + gate decide (checkpoint approve)")
         self.observations["assert_4_stages_redone"] = redone
-        self.observations["assert_4_final_status"] = rescored["status"]
-        self.assertEqual(rescored["status"], "audit_approved")
+        self.observations["assert_4_final_status"] = approved["next_state"]
+        self.assertEqual(approved["next_state"], "audit_approved")
 
         # ---- ASSERTION 5 (read side): nothing downstream carries plan_hash ---
         with connect_database(self.run_root / "factory.sqlite3") as connection:

@@ -60,7 +60,25 @@ permits zero network requests. Only a user-provided current `gate-decision-input
 resolve the exact gate; this skill does not authorize credentials, paid services,
 hosted-model egress, or a broader data scope.
 
+## Re-entry after `/checkpoint`
+
+A `re_research` checkpoint decision re-enters this stage for one offline second pass —
+`fixture` / `normalize-web` + `manual` only, never `research kipris` / `research
+serpapi` (a code-level guard now refuses both on a `research_running` state entered
+via this route; live is deferred to
+[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)). Read the
+decided `plan.needed_research` via
+`run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
+or the durable `<run>/decision-exports/ar_<revision_id>.json` file once the first
+`research` publish after the decision has invalidated it (`run show`'s `ar.stale=0`
+filter can no longer find it then; the exported file is unaffected since staleness
+only touches `artifact_revisions`/`current_artifacts` rows). Target the offline import
+at those terms. See `.claude/skills/checkpoint/SKILL.md`.
+
 ## Next
 
-After `/research` reaches `research_complete`, continue with `/ideate`. After `/audit`
-scoring is approved by the core, continue with `/draft`.
+After `/research` reaches `research_complete`, continue with `/ideate`. After
+`/audit` scoring, every batch — clean or breaching — stops at the always-raised
+`post_audit_checkpoint` gate; continue with `/checkpoint`, which resolves to `/draft`
+(`approve`), back to `/ideate` (`re_ideate`), back to this stage (`re_research`), or a
+stop.

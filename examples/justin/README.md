@@ -4,9 +4,13 @@ A redacted, fully public mock inventor ("Justin", an on-device AI researcher)
 used as the living integration scenario proposed in issue #23. The e2e journey
 test (`tests/e2e/test_full_journey.py`) drives the REAL CLI from `init` through
 `profile → run start → research normalize-web + manual → scaffold/ideate →
-scaffold/shortlist → scaffold/audit retrieve → audit score → scaffold/draft (en)
-→ review → validate` and asserts the rendered English report byte-matches
-`expected-report-en.md`.
+scaffold/shortlist → scaffold/audit retrieve → audit score → gate inspect →
+scaffold/gate-decision → gate decide (post-audit checkpoint, approve) →
+scaffold/draft (en) → review → validate` and asserts the rendered English report
+byte-matches `expected-report-en.md`. `audit score` now always stops at the
+always-raised `post_audit_checkpoint` gate — clean or breaching (an accepted
+breaking change; see `README.md`/`SETUP.md`) — so the journey authors and
+approves a checkpoint decision before `/draft`.
 
 Regenerate the golden after an intentional renderer change:
 
@@ -28,4 +32,7 @@ Assets:
   over retrieved prior art, and real KIPRIS-reported legal-status tokens
   (공개/등록/소멸/…) rendered verbatim with observation dates. This is what the
   pipeline actually produces; it carries the standard research-aid disclaimers
-  and asserts no patentability or novelty conclusion.
+  and asserts no patentability or novelty conclusion. It predates the
+  post-audit checkpoint (`/checkpoint`) feature, so its Section 9 still reads
+  "Not applicable" — a run captured today would show a checkpoint decision
+  there instead, as `expected-report-en.md` now does.

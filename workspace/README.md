@@ -324,6 +324,69 @@ Author this only when a gate stops the pipeline. Copy `gate_id`,
 > ```json
 > {"action": "retain_with_warning", "finalist_id": "<affected finalist_id>", "reason": "reviewed provisional similarity risk and accept it"}
 > ```
+>
+> This `gate-decision-input-v1` shape is for the gate kinds that predate the
+> checkpoint (`credential`, `coverage`, `domain_pivot`, `sensitive_disclosure`,
+> and any `excessive_similarity` gate raised before this feature — kept valid
+> for replay). A **`post_audit_checkpoint`** gate rejects v1 outright and
+> requires `gate-decision-input-v2` instead — see below.
+
+### `gate-decision-input-v2.json` → `gate decide` (post-audit checkpoint only)
+
+Every `audit score` now raises a `post_audit_checkpoint` gate — clean or
+breaching. Start from `scaffold gate-decision` (every hash/ID binding pre-filled
+from the pending gate; every judgment field left `TODO(agent)`):
+
+```bash
+python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
+  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+```
+
+You author `action` (`approve` / `re_ideate` / `re_research` / `stop`), `actor`,
+`reason`, per-finalist `feedback` (`{finalist_id, interesting, boring}` for **all
+three** current finalists, on every action), and — only for `re_research` — a
+bounded `plan`. `gate decide`'s core validation rejects any decision that still
+has a `TODO(agent)` marker anywhere in it.
+
+```json
+{
+  "schema_version": "gate-decision-input-v2",
+  "gate_id": "<from the stop>",
+  "subject_revision_hash": "<from the stop>",
+  "approval_scope": "<from the gate, verbatim>",
+  "action": "approve",
+  "actor": "user",
+  "reason": "reviewed the dossier; approving for draft",
+  "decisions": [],
+  "feedback": [
+    {"finalist_id": "<finalist_id from the gate>", "interesting": "worth pursuing further", "boring": "felt like a narrower variant"}
+  ],
+  "plan": {}
+}
+```
+
+`decisions` follows the same "only what you decide, the core derives the rest"
+rule as v1, with one extra composition rule: it is **only ever non-empty on
+`approve`**, and only when the gate's `approval_scope.affected_finalist_ids` is
+non-empty (a breaching audit) — one `{"action": "retain_with_warning",
+"finalist_id": "<affected finalist_id>", "reason": "..."}` entry per breaching
+finalist, exactly like the legacy `excessive_similarity` shape above. Every other
+action (`re_ideate` / `re_research` / `stop`), and `approve` on a clean audit,
+keeps `decisions: []` — the per-finalist signal for those cases lives only in
+`feedback`.
+
+On `re_research`, `plan` must be a non-empty bounded object (what additional
+research is needed — offline query terms / needed-research notes); every other
+action must leave it `{}`:
+
+```json
+{"plan": {"needed_research": ["broader prior-art sweep for the sensor mechanism"]}}
+```
+
+`re_research` re-enters research for exactly one **offline** second pass
+(`research fixture` / `research normalize-web` + `research manual`); live
+`research kipris` / `research serpapi` on this pass is deferred to
+[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48).
 
 ### `external-report-share-v1.json` → `/review` (share)
 

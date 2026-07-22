@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from patent_factory.database import connect_database
+from patent_factory.provenance import digest
 
 from tests.integration.test_g003_research_cli import FIXED_TIME, ROOT, prepare_run, run_cli
 
@@ -67,6 +68,40 @@ class SerpApiCliTests(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertTrue(all(row["source_type"] == "google_patent" for row in rows))
             self.assertTrue(all(row["source_locator"].startswith("gpatent:") for row in rows))
+
+    def test_cli_serpapi_refuses_a_stale_re_research_reentry_before_any_network(self):
+        # Review finding #12: the CLI-level preflight (cli.py:1000-1003)
+        # whitelists `prior.state is RunState.RESEARCH_RUNNING` — a run that
+        # reached research_running via `gate decide --action re_research`
+        # must be refused here, not silently accepted like a legitimate
+        # first-pass retry.
+        run_root = self.workspace / "serp-reentry"
+        prepare_run(run_root, "serp-reentry")
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            connection.execute(
+                "INSERT INTO gate_envelopes VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "ge_fixture_reentry", "serp-reentry", "post_audit_checkpoint",
+                    "decision_required", "research_ready", "audit.finalize:fixture",
+                    "0" * 64, "{}", digest({}), "research_ready", FIXED_TIME, "decided",
+                ),
+            )
+            connection.execute(
+                "INSERT INTO gate_decisions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "gd_fixture_reentry", "ge_fixture_reentry", "serp-reentry", "re_research",
+                    "inventor", "0" * 64, digest({}), "audit.finalize:fixture", "research_running",
+                    "offline expansion requested", FIXED_TIME, 0, None, None, None,
+                ),
+            )
+            connection.execute("UPDATE runs SET state='research_running' WHERE run_id=?", ("serp-reentry",))
+        # Neither fixture flag is supplied (both-or-neither is enforced
+        # earlier) and SERPAPI_API_KEY is unset, so if the refusal did NOT
+        # fire first, the very next step would be a real network call.
+        result = run_cli(*self.common(run_root, "serp-reentry"))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["failure_code"], "live_research_reentry_refused_issue_48")
 
     def test_success_replay_spends_no_second_search(self):
         run_root = self.workspace / "serp-replay"

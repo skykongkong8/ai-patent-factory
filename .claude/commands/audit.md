@@ -43,12 +43,19 @@ the exact same request with `--decision-id` after the user decides the gate.
 
 2. Report the stdout JSON `status`/`next_state` and coverage verbatim. The scorer is
    `simrisk-v1.0.0`; do not recompute scores, corpus, feature maps, or labels.
-3. On success, suggest the next step — **`/draft`** to render the report.
+3. `audit score` now always stops at a `post_audit_checkpoint` gate — clean or
+   breaching (exit 8, `status: decision_required`; accepted breaking change: a clean
+   audit no longer exits 0). Suggest the next step — **`/checkpoint`** to review the
+   dossier and resolve the gate. This is not a failure; it is the normal exit of every
+   audit.
 
 ## Stop conditions (do not bypass)
 
 - Stop immediately on `credential_required`, `coverage_insufficient`,
-  `decision_required`, any other `*_required`, `stopped`, or `error`.
-- Auto-approval happens only in the core, when coverage is sufficient and `R_hi < 75`.
-  Do not make the retain/refine/replace/research/stop decision for the user, and do not
-  zero-fill incomplete coverage.
+  `decision_required`, any other `*_required`, `stopped`, or `error`. `decision_required`
+  is expected on every `audit score` call, not only a breaching one — hand off to
+  **`/checkpoint`**, never straight to `/draft`.
+- There is no more core auto-approval on a clean, low-risk audit: every audit — even
+  `R_hi < 75` with full coverage — now stops at the checkpoint for the user to
+  `approve`/`re_ideate`/`re_research`/`stop`. Do not make that decision for the user,
+  and do not zero-fill incomplete coverage.

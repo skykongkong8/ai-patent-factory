@@ -9,6 +9,7 @@ from patent_factory.database import InjectedFailure, connect_database
 from patent_factory.decisions import resolve_gate
 from patent_factory.models import GateKind, RunState
 from patent_factory.provenance import digest
+from patent_factory.report import _bound_decision, _excessive_decision
 from patent_factory.state import StateStore
 
 try:
@@ -245,6 +246,16 @@ class G006DecisionTests(unittest.TestCase):
         self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
         self._validate_schema(self._decision_content(resolved.artifact_revision_id))
 
+    def test_coverage_expand_rejects_a_vacuous_plan_the_coverage_twin_of_14(self):
+        # Finding #14's COVERAGE-twin: this branch had the identical bare
+        # truthiness bug as checkpoint re_research — a dict whose only
+        # values are falsy (here 0/"") is non-empty but names no real
+        # research budget or strategy.
+        gate, _audit, scope = self._coverage()
+        request = self._input(gate, scope, "expand", plan={"query_budget": 0, "strategy": ""})
+        with self.assertRaisesRegex(ValueError, "bounded plan"):
+            resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=request)
+
     def test_stop_is_terminal_without_partial_finalist_choices(self):
         gate, _audit, scope = self._excessive()
         resolved = resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=self._input(gate, scope, "stop"))
@@ -314,6 +325,34 @@ class G006DecisionTests(unittest.TestCase):
         self.assertEqual(sorted(item[0] for item in outcomes), ["blocked", "success"])
         self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 1)
         self.assertEqual(self.connection.execute("SELECT count(*) FROM artifact_revisions WHERE kind='gate_resolution'").fetchone()[0], 1)
+
+    def test_legacy_excessive_resolution_still_dispatches_through_the_report_binder_and_rejects_v2(self):
+        """AC-7 + R8: post_audit_checkpoint landing must not disturb legacy replay.
+
+        The report binder now dispatches on the gate KIND bound to audit_hash
+        (report._bound_decision), not on `affected` (RF#1). This proves a
+        persisted excessive_similarity resolution is still reached through
+        that dispatch unchanged, and that a v2 payload can never resolve a
+        legacy excessive gate (R8's second half; the first half — a v1
+        payload rejected by a checkpoint gate — is covered in
+        test_g010_checkpoint.py, which has a real checkpoint gate to submit
+        it to).
+        """
+        gate, audit, scope = self._excessive()
+        entries = [{"action": "retain_with_warning", "finalist_id": item, "reason": "retain with explicit risk"} for item in ("fi_1", "fi_2")]
+        request = self._input(gate, scope, "retain_with_warning", entries)
+        resolved = resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=request)
+        direct_row, direct_content = _excessive_decision(self.connection, "run", audit.content_hash, audit.content)
+        dispatched_row, dispatched_content = _bound_decision(self.connection, "run", audit.content_hash, audit.content)
+        self.assertEqual(dispatched_row["revision_id"], direct_row["revision_id"])
+        self.assertEqual(dispatched_content, direct_content)
+        self.assertEqual(dispatched_content["gate_kind"], "excessive_similarity")
+        v2_payload = dict(request)
+        v2_payload["schema_version"] = "gate-decision-input-v2"
+        v2_payload["feedback"] = [{"boring": "x", "finalist_id": "fi_1", "interesting": "y"}]
+        with self.assertRaisesRegex(ValueError, "exact gate-decision-input-v1"):
+            resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=v2_payload)
+        self.assertTrue(resolved.decision_id)
 
     def test_non_audit_gate_kinds_publish_exact_authorizations_without_target_choice(self):
         cases = (
