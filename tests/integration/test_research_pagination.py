@@ -351,6 +351,32 @@ class ResearchPaginationTests(unittest.TestCase):
         self.assertTrue(result.executions[0].replayed)
         self.assertEqual(result.as_dict()["page_count"], 1)
 
+    def test_run_research_batch_self_enforces_the_request_ceiling_bypassing_the_cli(self):
+        """Security LOW (Phase-4 review): `ResearchBudget.validate(effective_
+        pages=...)` (finding #3's cross-field guard) only runs for callers
+        that plan their queries through a `ResearchBudget` and remember to
+        pass `effective_pages` to it — `_research_kipris` does, but nothing
+        stops a future non-CLI caller from building `PlannedQuery` objects
+        directly and calling `run_research_batch` with a large
+        `effective_pages` that never passed through that check at all.
+        `run_research_batch` must enforce the same ceiling itself, at the
+        egress boundary, before the paging loop can issue a single request —
+        not merely rely on the CLI having validated it upstream.
+        """
+
+        transport = OffsetHonouringTransport(total=1000)
+        adapter = KiprisAdapter("k", transport=transport, credential_required=False)
+        queries = self.plan()  # one planned term; 1 * 101 > MAX_BATCH_REQUESTS (100)
+
+        with self.assertRaisesRegex(ValueError, "must not exceed 100"):
+            self.batch(adapter, queries, effective_pages=101)
+
+        self.assertEqual(transport.requests, [])
+        self.assertEqual(
+            self.connection.execute("SELECT COUNT(*) AS n FROM research_operations").fetchone()["n"],
+            0,
+        )
+
 
 class ApprovalScopeBoundsTests(unittest.TestCase):
     """RC2: `effective_pages` sits outside the hashed surface on purpose, so it

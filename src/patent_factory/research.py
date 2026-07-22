@@ -16,6 +16,19 @@ from .privacy import assert_canaries_absent, credential_canaries
 from .retrieval import execute_paginated
 from .state import StateStore, workspace_export_directories
 
+# The frozen page_cap fossil's value (ResearchBudget.page_cap, QueryEnvelope.
+# page_cap below). Named here — rather than left as a bare `5` wherever an
+# `effective_pages` derivation needs "the paging-on page count" — so cli.py's
+# `--paging` wiring cannot silently drift from the value the fossil is frozen
+# at (PR #49 review, Architect minor finding).
+FROZEN_PAGE_CAP = 5
+
+# The cross-field live-request ceiling (PR #49 review finding #3): shared by
+# `ResearchBudget.validate()`'s `max_calls * effective_pages` check and
+# `run_research_batch`'s own self-enforcement of the same ceiling at the
+# egress boundary, so the two cannot drift apart either.
+MAX_BATCH_REQUESTS = 100
+
 
 @dataclass(frozen=True)
 class ResearchBudget:
@@ -31,9 +44,9 @@ class ResearchBudget:
     # longer a live control: how many pages actually run is `effective_pages`,
     # a plain parameter threaded through `run_research_batch` /
     # `retrieval.execute_paginated`, derived from the unhashed CLI `--paging`
-    # flag (`effective_pages = 5 if paging else 1`) and never written back into
-    # this field or any envelope.
-    page_cap: int = 5
+    # flag (`effective_pages = FROZEN_PAGE_CAP if paging else 1`) and never
+    # written back into this field or any envelope.
+    page_cap: int = FROZEN_PAGE_CAP
     byte_budget: int = 1_000_000
 
     def validate(self, *, effective_pages: int = 1) -> None:
@@ -53,10 +66,14 @@ class ResearchBudget:
         # this budget (it is derived from `--paging`, outside the hashed
         # surface), so callers that know it — `_research_kipris` is the only
         # one today — must pass it explicitly; the default of 1 makes this a
-        # no-op for every caller that does not page.
-        if self.max_calls * effective_pages > 100:
+        # no-op for every caller that does not page. This is a *planning-time*
+        # convenience check; `run_research_batch` enforces the same ceiling
+        # again at the egress boundary itself (see MAX_BATCH_REQUESTS there),
+        # since not every caller constructs its queries through a
+        # `ResearchBudget` in the first place.
+        if self.max_calls * effective_pages > MAX_BATCH_REQUESTS:
             raise ValueError(
-                "research_budget: max_calls * effective_pages must not exceed 100 "
+                f"research_budget: max_calls * effective_pages must not exceed {MAX_BATCH_REQUESTS} "
                 f"(max_calls={self.max_calls}, effective_pages={effective_pages})"
             )
 
@@ -938,8 +955,22 @@ def run_research_batch(
 
     if not queries:
         raise ValueError("research batch requires at least one planned query")
-    if len(queries) > 100:
-        raise ValueError("research batch exceeds the maximum of 100 planned queries")
+    if len(queries) > MAX_BATCH_REQUESTS:
+        raise ValueError(f"research batch exceeds the maximum of {MAX_BATCH_REQUESTS} planned queries")
+    # Self-enforced at the egress boundary, not just relied on from
+    # `ResearchBudget.validate(effective_pages=...)` (PR #49 review, Security
+    # LOW finding): that check only runs for callers that plan their queries
+    # through a `ResearchBudget` and remember to pass `effective_pages` to it
+    # — `_research_kipris` does today, but nothing stops a future non-CLI
+    # caller from building `PlannedQuery` objects directly and handing this
+    # executor a large `effective_pages` with no such check ever having run.
+    # This is the same ceiling, checked again here, before the paging loop
+    # below can issue a single request.
+    if len(queries) * effective_pages > MAX_BATCH_REQUESTS:
+        raise ValueError(
+            f"research batch: planned queries * effective_pages must not exceed "
+            f"{MAX_BATCH_REQUESTS} (planned={len(queries)}, effective_pages={effective_pages})"
+        )
     if not normalize(idempotency_key):
         raise ValueError("idempotency_key: required")
     prepare = getattr(adapter, "prepare_envelope", None)

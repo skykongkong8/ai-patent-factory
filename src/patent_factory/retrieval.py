@@ -103,6 +103,15 @@ def execute_paginated(
     pages_allowed = effective_pages
     if approved_effective_pages is not None:
         pages_allowed = min(pages_allowed, approved_effective_pages)
+    # Defense in depth, beyond this function's own clamp above: every
+    # envelope's `page_cap` is the frozen fossil (always 5 — see
+    # `ResearchBudget.page_cap`/`FROZEN_PAGE_CAP` in research.py), and
+    # `KiprisAdapter.search` derives `next_cursor` as `None` once
+    # `page >= envelope.page_cap` (`kipris.py`: `page < envelope.page_cap and
+    # page*rows < total`). So even an `effective_pages`/`pages_allowed` far
+    # above 5 — a caller bug, a bad approval scope, whatever reached here —
+    # cannot pull more than 5 live pages out of the real adapter; the `if not
+    # row["next_cursor"]: break` below would stop the loop at page 5 first.
     # Fixed once, from the caller's whole-query budget — never from `remaining`.
     page_size = min(_DEFAULT_PAGE_SIZE, ceiling)
     executions: list["ResearchExecution"] = []

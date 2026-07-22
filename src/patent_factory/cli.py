@@ -30,8 +30,9 @@ from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview
 from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
-    CredentialRequiredError, PlannedQuery, ResearchBudget, plan_bibliography_queries,
-    plan_keyword_queries, refuse_stale_re_research_reentry, run_research, run_research_batch,
+    FROZEN_PAGE_CAP, CredentialRequiredError, PlannedQuery, ResearchBudget,
+    plan_bibliography_queries, plan_keyword_queries, refuse_stale_re_research_reentry,
+    run_research, run_research_batch,
 )
 from .report import publish_report
 from .review import run_review
@@ -596,11 +597,13 @@ def _research_kipris(
     args: argparse.Namespace, *, started_at: str, run_root: Path, database_path: Path,
 ) -> tuple[dict[str, Any], int]:
     # `page_cap` is a frozen replay-compat fossil (ResearchBudget.page_cap,
-    # research.py) — always its default of 5, never taken from a CLI flag, so
-    # every envelope's hashed `request_body()` stays byte-identical to a
-    # pre-paging run. The live paging control is the unhashed `--paging` flag,
-    # threaded through as the plain `effective_pages` parameter.
-    effective_pages = 5 if args.paging else 1
+    # research.py) — always its default of FROZEN_PAGE_CAP, never taken from a
+    # CLI flag, so every envelope's hashed `request_body()` stays
+    # byte-identical to a pre-paging run. The live paging control is the
+    # unhashed `--paging` flag, threaded through as the plain `effective_pages`
+    # parameter. Tied to the same constant the fossil is frozen at (rather
+    # than a bare `5`) so the two cannot silently drift apart.
+    effective_pages = FROZEN_PAGE_CAP if args.paging else 1
     if args.paging and args.result_budget <= 30:
         # PR #49 review finding #8: a page is min(30, --result-budget) rows, so
         # at --result-budget <= 30 the first page already exhausts the budget
