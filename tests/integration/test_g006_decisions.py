@@ -246,6 +246,16 @@ class G006DecisionTests(unittest.TestCase):
         self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
         self._validate_schema(self._decision_content(resolved.artifact_revision_id))
 
+    def test_coverage_expand_rejects_a_vacuous_plan_the_coverage_twin_of_14(self):
+        # Finding #14's COVERAGE-twin: this branch had the identical bare
+        # truthiness bug as checkpoint re_research — a dict whose only
+        # values are falsy (here 0/"") is non-empty but names no real
+        # research budget or strategy.
+        gate, _audit, scope = self._coverage()
+        request = self._input(gate, scope, "expand", plan={"query_budget": 0, "strategy": ""})
+        with self.assertRaisesRegex(ValueError, "bounded plan"):
+            resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=request)
+
     def test_stop_is_terminal_without_partial_finalist_choices(self):
         gate, _audit, scope = self._excessive()
         resolved = resolve_gate(self.connection, run_root=self.root, run_id="run", decision_input=self._input(gate, scope, "stop"))

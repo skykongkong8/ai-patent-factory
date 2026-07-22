@@ -453,6 +453,80 @@ class CheckpointFinalistBindingsLockstepTests(CheckpointFixture):
         self.assertNotIn("dossier", draft)
 
 
+class CheckpointRobustnessTests(CheckpointFixture):
+    """Review findings #11 (type validation), #14 (vacuous plan), and #15
+    (TODO-marker detection consistency)."""
+
+    def test_int_finalist_id_in_feedback_raises_enveloped_value_error_not_type_error(self):
+        # Reproduced by the review: a mixed-type feedback list used to hit a
+        # raw `sorted()` TypeError ('<' not supported between str and int)
+        # instead of an enveloped ValueError with a failure_code.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        _row, finalists = self._finalists()
+        feedback = [
+            {
+                "boring": "x", "interesting": "y",
+                "finalist_id": 3 if index == 0 else item["finalist_id"],
+            }
+            for index, item in enumerate(finalists)
+        ]
+        request = self._decide_input(gate_id, action="approve", feedback=feedback)
+        with self.assertRaises(ValueError) as caught:
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertNotIsInstance(caught.exception, TypeError)
+
+    def test_list_finalist_id_in_feedback_raises_enveloped_value_error_not_type_error(self):
+        # Reproduced by the review: an unhashable finalist_id used to hit a
+        # raw `set()` TypeError ('unhashable type: list').
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        _row, finalists = self._finalists()
+        feedback = [
+            {
+                "boring": "x", "interesting": "y",
+                "finalist_id": [] if index == 0 else item["finalist_id"],
+            }
+            for index, item in enumerate(finalists)
+        ]
+        request = self._decide_input(gate_id, action="approve", feedback=feedback)
+        with self.assertRaises(ValueError) as caught:
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertNotIsInstance(caught.exception, TypeError)
+
+    def test_int_finalist_id_in_breaching_decisions_raises_value_error(self):
+        self._run_audit(["matched", "different", "different"])
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(
+            gate_id, action="approve",
+            decisions=[{"action": "retain_with_warning", "finalist_id": 12345, "reason": "retained"}],
+        )
+        with self.assertRaises(ValueError) as caught:
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertNotIsInstance(caught.exception, TypeError)
+
+    def test_vacuous_needed_research_plan_is_rejected_not_persisted_as_bounded(self):
+        # Finding #14: `{"needed_research": []}` is truthy as a dict but
+        # names no research at all — a bare truthiness test used to accept
+        # it and persist a plan_hash that scopes nothing.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="re_research", plan={"needed_research": []})
+        with self.assertRaisesRegex(ValueError, "bounded plan"):
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+
+    def test_todo_substring_in_edited_reason_is_rejected_and_count_todos_agrees(self):
+        # Finding #15: the review's exact example — a legitimate sentence
+        # that happens to mention "TODO(agent)" as a phrase.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        offending_reason = "cleared the TODO(agent) placeholders and approved"
+        self.assertEqual(count_todos(offending_reason), 1, "count_todos must agree with core's substring rule")
+        request = self._decide_input(gate_id, action="approve", reason=offending_reason)
+        with self.assertRaisesRegex(ValueError, "substring match"):
+            resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+
+
 class CheckpointReIdeateTests(CheckpointFixture):
     def test_re_ideate_completes_and_stales_old_artifacts_with_a_new_content_hash(self):
         self._run_audit(["matched", "different", "different"])

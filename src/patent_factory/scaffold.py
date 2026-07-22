@@ -326,8 +326,15 @@ def evidence_binding_table(connection: sqlite3.Connection, run_id: str) -> list[
 
 
 def count_todos(value: Any) -> int:
+    # Shares its detection rule with core's `_reject_todo_marker`
+    # (`decisions.contains_todo_marker`) — a `startswith(TODO)` check here
+    # used to disagree with core's substring match, so an edited field that
+    # still MENTIONED "TODO(agent)" anywhere reported 0 here but was
+    # rejected there anyway (finding #15).
     if isinstance(value, str):
-        return 1 if value.startswith(TODO) else 0
+        from .decisions import contains_todo_marker
+
+        return 1 if contains_todo_marker(value) else 0
     if isinstance(value, Mapping):
         return sum(count_todos(item) for item in value.values())
     if isinstance(value, list):

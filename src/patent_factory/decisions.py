@@ -95,6 +95,21 @@ def _text(value: Any, path: str) -> str:
 _TODO_MARKER = "TODO(agent)"
 
 
+def contains_todo_marker(value: str) -> bool:
+    """The one detection rule shared with ``scaffold.count_todos`` (finding #15).
+
+    A SUBSTRING match on ``TODO(agent)`` anywhere in the text — not just a
+    ``str.startswith`` check on the exact stub prefix — because a partially
+    edited field can carry the marker anywhere, not only at position 0.
+    ``scaffold.count_todos`` used to check ``startswith`` while this function
+    checked substring containment: the two disagreed on a real user sentence
+    like "cleared the TODO(agent) placeholders and approved", which
+    ``count_todos`` reported as clean (0) while `gate decide` rejected it
+    anyway, with no indication the trigger was a substring of their own prose.
+    """
+    return _TODO_MARKER in value
+
+
 def _reject_todo_marker(value: Any, path: str) -> None:
     """Reject any leftover scaffold placeholder (core-side, not scaffold-side).
 
@@ -104,14 +119,35 @@ def _reject_todo_marker(value: Any, path: str) -> None:
     guarantee would be a convention instead of an invariant.
     """
     if isinstance(value, str):
-        if _TODO_MARKER in value:
-            raise ValueError(f"{path}: unedited TODO(agent) marker must be resolved before deciding")
+        if contains_todo_marker(value):
+            raise ValueError(
+                f"{path}: unedited TODO(agent) marker must be resolved before deciding "
+                '(substring match on "TODO(agent)" anywhere in the text triggered this — '
+                "remove the literal marker text from your prose, even if the field itself was edited)"
+            )
     elif isinstance(value, Mapping):
         for key, item in value.items():
             _reject_todo_marker(item, f"{path}.{key}")
     elif isinstance(value, list):
         for index, item in enumerate(value):
             _reject_todo_marker(item, f"{path}[{index}]")
+
+
+def _is_bounded_plan(plan: Mapping[str, Any]) -> bool:
+    """A plan is "bounded" only if at least one of its values carries real
+    content — not merely a non-empty outer dict.
+
+    A bare truthiness test (``if not plan``) accepts ``{"needed_research": []}``
+    (what deleting the TODO entry but leaving the key produces) as bounded,
+    since the OUTER dict has one key — even though it names no research at
+    all, and would be persisted with a durable, hash-bound ``plan_hash``
+    scoping nothing. Checking that at least one VALUE is truthy generalizes
+    across both callers that gate on plan boundedness: checkpoint
+    re_research (conventionally ``{"needed_research": [...]}``) and COVERAGE
+    expand/retry (no fixed key convention beyond ``{"type": "object"}`` —
+    e.g. ``{"query_budget": 3, ...}``) — finding #14's COVERAGE-twin.
+    """
+    return isinstance(plan, Mapping) and any(bool(value) for value in plan.values())
 
 
 def _durable_resolution_replay(
@@ -245,7 +281,11 @@ def _resolution(
         else:
             if action not in {"retain_with_warning", "refine", "replace"}:
                 raise GateMismatchError("excessive decision action is invalid")
-            if any(not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"} for item in entries):
+            if any(
+                not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"}
+                or not isinstance(item.get("finalist_id"), str)
+                for item in entries
+            ):
                 raise ValueError("decision.decisions: exact finalist decision fields required")
             ids = [item["finalist_id"] for item in entries]
             if len(ids) != len(set(ids)) or sorted(ids) != affected:
@@ -318,6 +358,13 @@ def _resolution(
         feedback = request.get("feedback", [])
         if not isinstance(feedback, list) or any(
             not isinstance(item, Mapping) or set(item) != {"boring", "finalist_id", "interesting"}
+            # Finding #11: finalist_id feeds set()/sorted() below — an
+            # unhashable (list) or mixed-type (int alongside str) value must
+            # be rejected here as an enveloped ValueError, not surface as a
+            # raw TypeError with no failure_code (cli.py's catch tuple has no
+            # TypeError member, deliberately: RC4 — folding it in would mask
+            # genuine internal defects as user-input errors).
+            or not isinstance(item.get("finalist_id"), str)
             for item in feedback
         ):
             raise ValueError("decision.feedback: exact per-finalist fields required")
@@ -364,7 +411,11 @@ def _resolution(
                     raise ValueError("decision.decisions: a clean approve cannot include finalist decisions")
                 resolved = []
             else:
-                if any(not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"} for item in entries):
+                if any(
+                    not isinstance(item, Mapping) or set(item) != {"action", "finalist_id", "reason"}
+                    or not isinstance(item.get("finalist_id"), str)
+                    for item in entries
+                ):
                     raise ValueError("decision.decisions: exact finalist decision fields required")
                 ids = [item["finalist_id"] for item in entries]
                 if len(ids) != len(set(ids)) or sorted(ids) != affected:
@@ -391,7 +442,7 @@ def _resolution(
                 raise ValueError("decision.decisions: this action must not include finalist decisions")
             resolved = []
         if action == "re_research":
-            if not plan:
+            if not _is_bounded_plan(plan):
                 raise ValueError("decision.plan: re_research requires a bounded plan")
             payload.update({"plan": dict(plan), "plan_hash": digest(plan)})
         else:
@@ -411,7 +462,10 @@ def _resolution(
             raise ValueError("decision.decisions: coverage uses one branch action")
         if action not in {"expand", "retry", "stop"}:
             raise GateMismatchError("coverage decision action is invalid")
-        if action != "stop" and not plan:
+        # COVERAGE-twin of finding #14: the checkpoint re_research branch had
+        # the identical bare-truthiness bug (`{"needed_research": []}` sailing
+        # through as "bounded"); this branch shares the same fix.
+        if action != "stop" and not _is_bounded_plan(plan):
             raise ValueError("decision.plan: expand or retry requires a bounded plan")
         payload.update({"decisions": [], "plan": dict(plan), "plan_hash": digest(plan)})
     else:
