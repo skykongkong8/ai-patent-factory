@@ -140,7 +140,7 @@ LEXICON: dict[str, dict[str, str]] = {
         "diff_fallback": "근거 범위에서 확인 필요",
         "differentiated_line": "- 차별화 특징: {differentiated}",
         "effects_line": "- 기대 기술 효과 [창의적 제안]: {effects} {tokens}",
-        "evidence_count_line": "- 증거 기록 수: {count}",
+        "evidence_count_line": "- 증거 기록 수 (조사 단계 기준): {count}",
         "feature_weights_line": "- 특징 가중치: {weights}",
         "fit_line": "- 사용자·도메인 적합성 [프로필 기반 추론]: {domain} {tokens}",
         "followup_heading": "### 권고 후속 조사",
@@ -223,7 +223,7 @@ LEXICON: dict[str, dict[str, str]] = {
         "diff_fallback": "requires confirmation within the evidence scope",
         "differentiated_line": "- Differentiating features: {differentiated}",
         "effects_line": "- Expected technical effects [creative suggestion]: {effects} {tokens}",
-        "evidence_count_line": "- Evidence record count: {count}",
+        "evidence_count_line": "- Evidence record count (research-stage scope): {count}",
         "feature_weights_line": "- Feature weights: {weights}",
         "fit_line": "- User/domain fit [profile-based inference]: {domain} {tokens}",
         "followup_heading": "### Recommended follow-up investigations",
@@ -777,11 +777,42 @@ def _section_bodies(
         for item in research.get("adapter_events", []) if isinstance(item, Mapping) and item.get("retrieved_at")
     })
     query_strategy = []
+    _query_strategy_seen: set[tuple[str, str]] = set()
     for item in research.get("queries", []):
         if not isinstance(item, Mapping):
             continue
         plan = json.loads(item["plan_json"]) if isinstance(item.get("plan_json"), str) else item.get("plan_json", {})
-        query_strategy.append(str(plan.get("query") or plan.get("original_query") or plan.get("normalized_query") or item.get("query_id", "")))
+        # `plan_json` is `PlannedQuery.as_dict()` (research.py), which emits
+        # `{depth, origin_query, term, term_kind}` — never `query`,
+        # `original_query`, or `normalized_query`. Reading those three keys meant
+        # this line always fell through to `query_id`, so "Research Scope and
+        # Method" reported the search method as a list of opaque `qu_…` digests
+        # and no reader could tell what was actually searched.
+        #
+        # `term_kind` is rendered alongside the term because it is the only place
+        # the expansion strategy becomes visible: the planner flattens every kind
+        # (origin, synonym_ko, synonym_en, classification, applicant, inventor)
+        # into the same free-text `word=` projection, so the wire request cannot
+        # distinguish them and the persisted plan is the sole surviving record of
+        # which kind a term came from.
+        term = normalize(str(plan.get("term") or plan.get("origin_query") or ""))
+        kind = normalize(str(plan.get("term_kind") or ""))
+        # Deduped by (term, term_kind): a term that produced more than one
+        # `research_queries` row (e.g. one row per adapter retry or, once paging
+        # ships, one row per page) is still one searched term, and printing it
+        # once per row was unreadable at scale (review: a 12-term batch would
+        # render as a 60-item list). Rows lacking a parseable term keep falling
+        # back to their query_id, deduped the same way so repeats of that
+        # fallback also collapse.
+        key = (term, kind) if term else (str(item.get("query_id", "")), "")
+        if key in _query_strategy_seen:
+            continue
+        _query_strategy_seen.add(key)
+        if term:
+            query_strategy.append(f"{term} ({kind})" if kind else term)
+        else:
+            query_strategy.append(str(item.get("query_id", "")))
+    strategy_terms = [item for item in query_strategy if item]
     appendix = []
     for evidence_id in cited_ids:
         item = evidence[evidence_id]
@@ -817,9 +848,27 @@ def _section_bodies(
         "\n".join([
             lex["adapters_line"].format(adapters=", ".join(adapters) or lex["none_recorded"]),
             lex["search_dates_line"].format(dates=", ".join(search_dates) or lex["none_recorded"]),
-            lex["query_strategy_line"].format(strategy=", ".join(item for item in query_strategy if item) or lex["query_strategy_fallback"]),
-            lex["query_count_line"].format(count=len(research.get("queries", []))),
-            lex["evidence_count_line"].format(count=len(evidence)),
+            lex["query_strategy_line"].format(strategy=", ".join(strategy_terms) or lex["query_strategy_fallback"]),
+            # Denominator matches what is actually printed above: the deduped,
+            # non-empty strategy entries, not the raw `research_queries` row
+            # count (which over-counts once the same term produces more than
+            # one row).
+            lex["query_count_line"].format(count=len(strategy_terms)),
+            # The research-stage count, not the run-wide one. `evidence` is
+            # `_evidence_map`, which unions the audit-corpus projection with a
+            # full re-read of `evidence_records` (every row the run ever
+            # retrieved, audit included). Rendering its length under "Research
+            # Scope and Method" overstated the research stage by every record the
+            # audit later pulled — 563 against 154 in the shipped sample.
+            # `research["evidence"]` is the research bundle's own frozen
+            # evidence list, published before the audit runs — and, since
+            # `ResearchStore.manifest` stage-scopes its reads (excludes
+            # `term_kind` values starting `audit_`, research.py `manifest()`),
+            # it stays the honest research-stage denominator even after a
+            # COVERAGE-expand re-entry re-reads the run. The label says so
+            # explicitly so it cannot be misread as contradicting §5/§11, which
+            # count the whole run.
+            lex["evidence_count_line"].format(count=len(research.get("evidence", []))),
             lex["limitations_line"].format(limitations=", ".join(item for item in limitations if item) or lex["no_separate_record"]),
             lex["audit_failures_line"].format(count=len(corpus_failures)),
         ]),
