@@ -31,7 +31,10 @@ from patent_factory.ideation import run_ideation
 from patent_factory.models import QueryEnvelope, RunState
 from patent_factory.provenance import digest
 from patent_factory.report import publish_report
-from patent_factory.research import run_research
+from patent_factory.research import (
+    LiveResearchReentryRefusedError, ResearchBudget, plan_keyword_queries,
+    refuse_stale_re_research_reentry, run_research, run_research_batch,
+)
 from patent_factory.scaffold import count_todos, gate_decision_dossier, scaffold_gate_decision_input
 from patent_factory.state import StateError, StateStore
 from tests.integration.test_g004_ideation_and_shortlist import (
@@ -655,6 +658,121 @@ class CheckpointReResearchTests(CheckpointFixture):
         request = self._decide_input(gate_id, action="re_research", plan={})
         with self.assertRaises(ValueError):
             resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+
+
+class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
+    """Review finding #12: live research verbs must refuse a second in-run
+    research pass entered via `re_research` — SETUP.md/checkpoint.md/
+    research SKILL.md all describe this route as offline-only (issue #48),
+    but nothing previously enforced it."""
+
+    def _live_batch(self):
+        queries = plan_keyword_queries(
+            run_id="run", origin_query="센서", korean_synonyms=("감지기",),
+            english_synonyms=("sensor",), budget=ResearchBudget(max_calls=3),
+        )
+        adapter = KiprisAdapter(
+            "unused-secret",
+            transport=lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("live transport must never be reached once refused")
+            ),
+        )
+        return run_research_batch(
+            self.connection, run_root=self.run_root, run_id="run", adapter=adapter,
+            queries=queries, idempotency_key="live-reentry-check", retrieved_at=RETRIEVED_AT,
+        )
+
+    def test_post_checkpoint_second_pass_refused_with_failure_code_naming_issue_48(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(
+            gate_id, action="re_research",
+            plan={"needed_research": ["broader prior-art sweep for the sensor mechanism"]},
+        )
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
+
+        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
+            refuse_stale_re_research_reentry(self.connection, "run")
+        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+
+        # Wiring check: the live batch entry point itself refuses, before
+        # any transport call (the stub transport asserts if reached).
+        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
+            self._live_batch()
+        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+
+    def test_cycle_back_after_offline_publish_then_coverage_expand_is_allowed_again(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(
+            gate_id, action="re_research",
+            plan={"needed_research": ["broader prior-art sweep for the sensor mechanism"]},
+        )
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
+        with self.assertRaises(LiveResearchReentryRefusedError):
+            refuse_stale_re_research_reentry(self.connection, "run")
+
+        # Offline second pass (manual import — the one route this second
+        # pass is actually allowed through today).
+        record = {
+            "canonical_url": "https://example.test/cycle-back",
+            "identifier": "cycle-back-1", "title": "Cycle-back reference",
+            "content_hash": digest("cycle back unique content"),
+            "language": "en", "provenance": "reviewed_import",
+        }
+        envelope = QueryEnvelope(
+            run_id="run", adapter="manual_web", adapter_version="import-v1", capability="import",
+            allowed_scheme="https", allowed_host="example.test", deadline_seconds=1,
+            page=1, page_cap=1, result_budget=10, byte_budget=10_000, retry_budget=0,
+            retry_ownership="research_runner",
+            query_projection={"content_type": "application/json", "records": [record]},
+        )
+        second_pass = run_research(
+            self.connection, run_root=self.run_root, run_id="run",
+            adapter=ManualWebAdapter(("example.test",)), query=envelope,
+            idempotency_key="live-reentry-cycle-back-pass2", retrieved_at=RETRIEVED_AT,
+        )
+        self.assertEqual(second_pass.next_state, RunState.RESEARCH_COMPLETE.value)
+        # A research_complete transition now exists after the re_research
+        # anchor — a live verb is no longer refused (it would still need a
+        # research_running state to test against; the discriminator itself
+        # already reads as satisfied).
+        refuse_stale_re_research_reentry(self.connection, "run")  # must not raise
+
+        reauthored = {
+            "schema_version": "candidate-input-v1",
+            "candidates": [candidate(f"후보 {index}-cov", self.evidence, self.span) for index in range(3)],
+        }
+        ideation = run_ideation(
+            self.connection, profile_connection=self.profile_connection, run_root=self.run_root,
+            run_id="run", profile=self.profile, candidate_input=reauthored, config=load_evaluation_config(),
+        )
+        run_shortlist(
+            self.connection, run_root=self.run_root, run_id="run",
+            shortlist_input=shortlist_input(ideation.candidate_ids, self.evidence, self.span),
+            config=load_evaluation_config(),
+        )
+        # All-"unavailable" drives every finalist to coverage_insufficient
+        # with none decision_required, routing to the COVERAGE gate.
+        scored = self._run_audit(["unavailable"] * 3)
+        self.assertEqual(scored.state, RunState.COVERAGE_INSUFFICIENT.value)
+        coverage_gate_id = self._pending_gate_id()
+        coverage_envelope = inspect_gate(self.connection, "run", coverage_gate_id)
+        expand_input = {
+            "action": "expand", "actor": "inventor", "approval_scope": coverage_envelope["approval_scope"],
+            "decisions": [], "gate_id": coverage_gate_id,
+            "plan": {"needed_research": ["expand the retrieved corpus"]},
+            "reason": "expanding thin coverage", "schema_version": "gate-decision-input-v1",
+            "subject_revision_hash": coverage_envelope["subject_revision_hash"],
+        }
+        expanded = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=expand_input)
+        self.assertEqual(expanded.next_state, RunState.RESEARCH_RUNNING.value)
+        # Re-entered research_running via COVERAGE-expand, AFTER the offline
+        # publish that followed the original re_research resolution — a live
+        # verb must be allowed again (RC5's cycle-back path).
+        self._live_batch()
 
 
 class CheckpointStopTests(CheckpointFixture):

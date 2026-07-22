@@ -31,7 +31,7 @@ from .privacy import assert_canaries_absent, credential_canaries, delete_run, en
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
     CredentialRequiredError, PlannedQuery, ResearchBudget, plan_bibliography_queries,
-    plan_keyword_queries, run_research, run_research_batch,
+    plan_keyword_queries, refuse_stale_re_research_reentry, run_research, run_research_batch,
 )
 from .report import publish_report
 from .review import run_review
@@ -1007,6 +1007,12 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             )
         if stored is None and not research_permitted:
             raise CliError(f"research is not permitted from run state {prior.state.value}")
+        # Finding #12: a fresh (non-replayed) attempt on a research_running
+        # state entered via `re_research` is refused here, before any
+        # network egress or quota preflight — the second in-run research
+        # pass is offline-only (issue #48).
+        if stored is None and prior.state is RunState.RESEARCH_RUNNING:
+            refuse_stale_re_research_reentry(connection, run_id)
 
         # Free quota preflight: account.json does not consume a search. Replays of
         # a stored result never touch the network at all.
