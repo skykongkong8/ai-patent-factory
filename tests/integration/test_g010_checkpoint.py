@@ -30,7 +30,7 @@ from patent_factory.database import connect_database
 from patent_factory.decisions import inspect_gate, resolve_gate
 from patent_factory.evaluation import run_shortlist
 from patent_factory.ideation import run_ideation
-from patent_factory.models import QueryEnvelope, RunState
+from patent_factory.models import GateKind, QueryEnvelope, RunState
 from patent_factory.provenance import digest
 from patent_factory.report import publish_report
 from patent_factory.research import (
@@ -40,7 +40,7 @@ from patent_factory.research import (
 from patent_factory.scaffold import (
     ScaffoldError, count_todos, gate_decision_dossier, scaffold_gate_decision_input,
 )
-from patent_factory.state import StateError, StateStore
+from patent_factory.state import GATE_ACTIONS, StateError, StateStore
 from patent_factory.validation import _decision_check
 from tests.integration.test_g004_ideation_and_shortlist import (
     candidate, candidate_input, ready_profile, shortlist_input,
@@ -687,6 +687,42 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
             queries=queries, idempotency_key="live-reentry-check", retrieved_at=RETRIEVED_AT,
         )
 
+    def _live_single_query(self):
+        # `run_research` (singular) is generic over any credential-requiring
+        # adapter — not only the CLI's own kipris/serpapi callers — so it
+        # must be self-protecting too (Phase-4 validation: guard symmetry).
+        envelope = QueryEnvelope(
+            run_id="run", adapter="kipris", adapter_version="plus-xml-v1", capability="word_search",
+            allowed_scheme="https", allowed_host="plus.kipris.or.kr", deadline_seconds=10,
+            page=1, page_cap=1, result_budget=10, byte_budget=1_000_000, retry_budget=0,
+            retry_ownership="research_runner",
+            query_projection={"word": "센서", "year": 0, "patent": True, "utility": True, "num_of_rows": 10},
+        )
+        adapter = KiprisAdapter(
+            "unused-secret",
+            transport=lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("live transport must never be reached once refused")
+            ),
+        )
+        return run_research(
+            self.connection, run_root=self.run_root, run_id="run", adapter=adapter,
+            query=envelope, idempotency_key="live-reentry-single-query-check", retrieved_at=RETRIEVED_AT,
+        )
+
+    def test_post_checkpoint_second_pass_refused_via_run_research_single_query_entry_point(self):
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(
+            gate_id, action="re_research",
+            plan={"needed_research": ["broader prior-art sweep for the sensor mechanism"]},
+        )
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
+
+        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
+            self._live_single_query()
+        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+
     def test_post_checkpoint_second_pass_refused_with_failure_code_naming_issue_48(self):
         self._run_audit(["different"] * 3)
         gate_id = self._pending_gate_id()
@@ -827,6 +863,24 @@ class CheckpointStopTests(CheckpointFixture):
 
 
 class CheckpointSentinelAndSchemaTests(CheckpointFixture):
+    def test_checkpoint_action_whitelist_defends_against_a_future_gate_actions_widening(self):
+        # Phase-4 validation (quality finding #2): `action` is already
+        # constrained by state.GATE_ACTIONS[kind] before _resolution's kind
+        # dispatch even begins, so this local whitelist is unreachable
+        # TODAY — but the checkpoint branch's dispatch (stop / approve /
+        # else-for-re_ideate-or-re_research) would otherwise rely SOLELY on
+        # that external, module-level lookup. Widen GATE_ACTIONS to
+        # simulate a hypothetical future action and prove the local check
+        # is load-bearing: it must still reject, not silently build a
+        # re_ideate/re_research-shaped payload for the new action.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="bogus_action")
+        widened = frozenset(GATE_ACTIONS[GateKind.POST_AUDIT_CHECKPOINT] | {"bogus_action"})
+        with patch.dict(GATE_ACTIONS, {GateKind.POST_AUDIT_CHECKPOINT: widened}):
+            with self.assertRaisesRegex(ValueError, "checkpoint action must be one of"):
+                resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+
     def test_unedited_scaffold_is_rejected_and_a_completed_one_resolves(self):
         self._run_audit(["different"] * 3)
         gate_id = self._pending_gate_id()

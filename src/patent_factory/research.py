@@ -694,6 +694,14 @@ def run_research(
         raise ValueError("credential-requiring adapter must declare its credential name")
     request_revision = None
     if requires_credential:
+        if prior.state is RunState.RESEARCH_RUNNING:
+            # Phase-4 validation (guard symmetry): this single-query entry
+            # point is generic over ANY credential-requiring adapter, not
+            # only the CLI's own kipris/serpapi callers — the CLI-level
+            # SerpAPI preflight is one caller, not the only one. Guarding
+            # here too makes `run_research` self-protecting regardless of
+            # caller, matching `run_research_batch`'s identical guard.
+            refuse_stale_re_research_reentry(connection, run_id)
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",

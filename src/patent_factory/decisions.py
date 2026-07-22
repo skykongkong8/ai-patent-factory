@@ -386,6 +386,20 @@ def _resolution(
         for item in resolved_feedback:
             _scan_prohibited_language(item["interesting"], "ko")
             _scan_prohibited_language(item["boring"], "ko")
+        # Phase-4 validation (quality finding #2): explicit local whitelist,
+        # matching the EXCESSIVE_SIMILARITY branch's own defense-in-depth
+        # idiom. `action` is already constrained by the top-level
+        # `GATE_ACTIONS[kind]` check above, but this branch's dispatch
+        # (stop / approve / else-for-re_ideate-or-re_research) otherwise
+        # relies on that external, module-level lookup alone — a future
+        # change to GATE_ACTIONS[POST_AUDIT_CHECKPOINT] would silently fall
+        # into the `else` and build a transient re_ideate/re_research-shaped
+        # payload for an action this branch never meant to accept.
+        if action not in {"approve", "re_ideate", "re_research", "stop"}:
+            raise ValueError(
+                "decision.action: checkpoint action must be one of "
+                "approve, re_ideate, re_research, stop"
+            )
         if action == "stop":
             if entries:
                 raise ValueError("decision.decisions: stop cannot include finalist decisions")
