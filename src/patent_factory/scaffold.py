@@ -216,6 +216,14 @@ def scaffold_gate_decision_input(
     envelope = inspect_gate(connection, run_id, gate_id)
     if envelope["kind"] != GateKind.POST_AUDIT_CHECKPOINT.value:
         raise ScaffoldError("scaffold gate-decision only drafts a post_audit_checkpoint gate")
+    if envelope["status"] != "pending":
+        # Finding #8: only the gate KIND was checked above, never its
+        # STATUS. Re-running the /checkpoint step-3 scaffold after the gate
+        # was already decided — a documented scenario ("re-runnable in a
+        # fresh session") — used to write a fresh 10-TODO draft with exit 0,
+        # wasting a full re-elicitation before `gate decide` finally refused
+        # the closed gate. Fail here instead, at the scaffold.
+        raise ScaffoldError(f"scaffold gate-decision: gate is {envelope['status']}, not pending")
     scope = envelope["approval_scope"]
     affected = scope.get("affected_finalist_ids") or []
     bindings = scope.get("finalist_bindings") or []
@@ -244,9 +252,19 @@ def scaffold_gate_decision_input(
             for item in bindings
         ],
         "gate_id": gate_id,
+        # Finding #7: the "clear to {} for every other action" guidance used
+        # to live only in a Python `#` comment, which `json.dumps` never
+        # serializes — so an agent following `.claude/commands/checkpoint.md`
+        # verbatim ("complete every TODO(agent) field") had no in-file
+        # signal that `plan` must become `{}` on the most common path
+        # (`approve`). The instruction now lives IN the TODO string itself,
+        # which does end up in the emitted JSON.
         "plan": {
-            # Only used when action=re_research; clear to {} for every other action.
-            "needed_research": [TODO + "what to search for on an offline second pass (fixture/normalize-web/manual only)"],
+            "needed_research": [
+                TODO + "ONLY if action=re_research: what to search for on an offline second "
+                "pass (fixture/normalize-web/manual only). For every OTHER action (including "
+                "approve), replace this entire \"plan\" object with {} — do not leave this key."
+            ],
         },
         "reason": TODO + "why this decision was made",
         "schema_version": "gate-decision-input-v2",

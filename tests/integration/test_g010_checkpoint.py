@@ -37,7 +37,9 @@ from patent_factory.research import (
     LiveResearchReentryRefusedError, ResearchBudget, plan_keyword_queries,
     refuse_stale_re_research_reentry, run_research, run_research_batch,
 )
-from patent_factory.scaffold import count_todos, gate_decision_dossier, scaffold_gate_decision_input
+from patent_factory.scaffold import (
+    ScaffoldError, count_todos, gate_decision_dossier, scaffold_gate_decision_input,
+)
 from patent_factory.state import StateError, StateStore
 from patent_factory.validation import _decision_check
 from tests.integration.test_g004_ideation_and_shortlist import (
@@ -845,6 +847,29 @@ class CheckpointSentinelAndSchemaTests(CheckpointFixture):
         self.assertEqual(count_todos(completed), 0)
         resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=completed)
         self.assertEqual(resolved.next_state, RunState.AUDIT_APPROVED.value)
+
+    def test_plan_todo_carries_the_conditional_clearing_instruction_in_band(self):
+        # Finding #7: the "clear to {} for every other action" guidance must
+        # be readable INSIDE the emitted JSON's TODO string, not only in a
+        # Python `#` comment that json.dumps never serializes.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        draft = scaffold_gate_decision_input(self.connection, run_id="run", gate_id=gate_id)
+        placeholder = draft["plan"]["needed_research"][0]
+        self.assertIn("re_research", placeholder)
+        self.assertIn("{}", placeholder)
+        self.assertGreater(count_todos(draft), 0)
+
+    def test_scaffold_rejects_an_already_decided_gate(self):
+        # Finding #8: only the gate KIND was checked, never its STATUS.
+        # Re-scaffolding a decided gate must fail here, not after the user
+        # re-authors every judgment field.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="approve")
+        resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        with self.assertRaisesRegex(ScaffoldError, "not pending"):
+            scaffold_gate_decision_input(self.connection, run_id="run", gate_id=gate_id)
 
     def test_v1_payload_is_rejected_by_a_checkpoint_gate(self):
         self._run_audit(["different"] * 3)

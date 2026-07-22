@@ -64,10 +64,16 @@ hosted-model egress, or a broader data scope.
 
 A `re_research` checkpoint decision re-enters this stage for one offline second pass —
 `fixture` / `normalize-web` + `manual` only, never `research kipris` / `research
-serpapi` (live is deferred to
+serpapi` (a code-level guard now refuses both on a `research_running` state entered
+via this route; live is deferred to
 [issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)). Read the
-decided `plan.needed_research` from the decision-set export and target the offline
-import at those terms. See `.claude/skills/checkpoint/SKILL.md`.
+decided `plan.needed_research` via
+`run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
+or the durable `<run>/decision-exports/ar_<revision_id>.json` file once the first
+`research` publish after the decision has invalidated it (`run show`'s `ar.stale=0`
+filter can no longer find it then; the exported file is unaffected since staleness
+only touches `artifact_revisions`/`current_artifacts` rows). Target the offline import
+at those terms. See `.claude/skills/checkpoint/SKILL.md`.
 
 ## Next
 

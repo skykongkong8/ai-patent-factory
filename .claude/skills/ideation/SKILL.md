@@ -59,12 +59,18 @@ manifest.
 
 ## Re-entry after `/checkpoint`
 
-A `re_ideate` checkpoint decision re-enters this stage. Read the resolved decision-set
-export's per-finalist `feedback` (`interesting`/`boring`) before authoring the new
-`candidate-input-v1.json`: drop or deprioritize the "boring" directions, extend the
-"interesting" ones. Vary substance, not just wording — re-authoring byte-identical
-candidates does not error, it silently replays the stale ideation context instead of
-producing anything new. See `.claude/skills/checkpoint/SKILL.md`.
+A `re_ideate` checkpoint decision re-enters this stage. Read the resolved decision's
+per-finalist `feedback` (`interesting`/`boring`) before authoring the new
+`candidate-input-v1.json` — via
+`run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
+or the durable `<run>/decision-exports/ar_<revision_id>.json` file once the first
+`ideate` publish after the decision has invalidated it (`run show`'s `ar.stale=0`
+filter can no longer find it then, even in a fresh session; the exported file is
+unaffected since staleness only touches `artifact_revisions`/`current_artifacts` rows).
+Drop or deprioritize the "boring" directions, extend the "interesting" ones. Vary
+substance, not just wording — re-authoring byte-identical candidates does not error, it
+silently replays the stale ideation context instead of producing anything new. See
+`.claude/skills/checkpoint/SKILL.md`.
 
 ## Next
 

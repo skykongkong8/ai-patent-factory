@@ -527,9 +527,14 @@ def run_audit_scoring(
         # subset — because the checkpoint is raised on clean AND breaching
         # audits alike, and the dossier needs each finalist's verdict either
         # way. coverage_insufficient finalists (possible alongside
-        # decision_required ones, per the precedence above) carry null
-        # closest_reference_id/upper_bound_reference_id (similarity.py), which
-        # the scope simply passes through as-is for the dossier to render.
+        # decision_required ones, per the precedence above) do NOT generally
+        # carry a null closest_reference_id/upper_bound_reference_id: those
+        # fields are null only in summarize_candidate's `not scores` early
+        # return (similarity.py) — an empty retained corpus for that
+        # finalist. On the ordinary coverage_insufficient path (thin
+        # coverage, not an empty corpus) both are real evidence ids, and the
+        # scope simply passes them through as-is (plus `coverage` itself)
+        # for the dossier to render — see review finding #5/#6.
         scope = {
             "audit_hash": audit_hash, "outcome": target.value,
             "affected_finalist_ids": sorted(
