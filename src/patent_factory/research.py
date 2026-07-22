@@ -442,16 +442,48 @@ class ResearchStore:
         return execution
 
     def manifest(self, run_id: str) -> dict[str, Any]:
+        """Build the research stage's own manifest — never the whole run.
+
+        `audit.py` retrieves its similarity corpus through this same store
+        (`store.execute`, `audit.py:306-308`), tagging every query it plans with
+        a `term_kind` of `audit_{language}`. Those rows share this run_id and
+        land in the same tables, so an unfiltered read here would hand the
+        audit's own search terms and evidence back to the research stage on any
+        route that calls `manifest()` again after an audit has run (the
+        COVERAGE-expand re-entry). `term_kind` is only recorded on
+        `research_queries.plan_json` (`PlannedQuery.as_dict()`), so every other
+        table is scoped by joining back to the research-stage query_id set;
+        `evidence_records` has no query_id at all, so it is scoped through
+        `research_edges` — an evidence row is kept if ANY of its edges comes
+        from a research-stage query, since the same content-addressed record
+        can legitimately surface from both stages.
+        """
+
         def rows(sql: str) -> list[dict[str, Any]]:
             return [dict(row) for row in self.connection.execute(sql, (run_id,))]
 
+        all_queries = rows("SELECT * FROM research_queries WHERE run_id=? ORDER BY created_at,query_id")
+        research_query_ids = {
+            row["query_id"] for row in all_queries
+            if not str(json.loads(row["plan_json"]).get("term_kind", "")).startswith("audit_")
+        }
+
+        def scoped(sql: str) -> list[dict[str, Any]]:
+            return [row for row in rows(sql) if row["query_id"] in research_query_ids]
+
+        edges = scoped("SELECT * FROM research_edges WHERE run_id=? ORDER BY query_id,source_rank,evidence_id")
+        research_evidence_ids = {row["evidence_id"] for row in edges}
+
         return {
-            "adapter_events": rows("SELECT * FROM adapter_events WHERE run_id=? ORDER BY retrieved_at,event_id"),
-            "coverage_limitations": rows("SELECT * FROM coverage_limitations WHERE run_id=? ORDER BY created_at,limitation_id"),
-            "edges": rows("SELECT * FROM research_edges WHERE run_id=? ORDER BY query_id,source_rank,evidence_id"),
-            "evidence": rows("SELECT * FROM evidence_records WHERE run_id=? ORDER BY evidence_id"),
-            "observations": rows("SELECT * FROM retrieval_observations WHERE run_id=? ORDER BY retrieved_at,observation_id"),
-            "queries": rows("SELECT * FROM research_queries WHERE run_id=? ORDER BY created_at,query_id"),
+            "adapter_events": scoped("SELECT * FROM adapter_events WHERE run_id=? ORDER BY retrieved_at,event_id"),
+            "coverage_limitations": scoped("SELECT * FROM coverage_limitations WHERE run_id=? ORDER BY created_at,limitation_id"),
+            "edges": edges,
+            "evidence": [
+                row for row in rows("SELECT * FROM evidence_records WHERE run_id=? ORDER BY evidence_id")
+                if row["evidence_id"] in research_evidence_ids
+            ],
+            "observations": scoped("SELECT * FROM retrieval_observations WHERE run_id=? ORDER BY retrieved_at,observation_id"),
+            "queries": [row for row in all_queries if row["query_id"] in research_query_ids],
             "run_id": run_id,
         }
 

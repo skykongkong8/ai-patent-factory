@@ -352,7 +352,8 @@ class CoverageExpandReentryTests(unittest.TestCase):
         self.assertEqual(resolution["plan_hash"], digest(plan))
         self.observations["assert_5_plan_hash_bound"] = resolution["plan_hash"]
 
-        # ---- ASSERTION 2: the SECOND research publishes research_complete ----
+        # ---- ASSERTION 2: the SECOND research publishes research_complete,   ----
+        # ---- scoped to the research stage, not re-inflated by the audit ----
         second = self.import_web_evidence(
             EXPANSION_ROWS, name="second", query="kv-cache eviction precision switching",
         )
@@ -361,6 +362,43 @@ class CoverageExpandReentryTests(unittest.TestCase):
             "evidence_count": second.get("evidence_count"),
         }
         self.assertEqual(second["next_state"], "research_complete")
+        # `evidence_count` here is this single manual-import call's own new
+        # records (research.py ResearchRun.as_dict), not the bundle union — both
+        # EXPANSION_ROWS URLs are new, so both must land.
+        self.assertEqual(second["evidence_count"], len(EXPANSION_ROWS["rows"]))
+
+        # By this point `audit_retrieve` (above) has already written its own
+        # `audit_ko`/`audit_en`-tagged queries and evidence through the same
+        # ResearchStore the research stage uses (audit.py:306). Before J1
+        # (ResearchStore.manifest stage-scoping), the second research_bundle's
+        # unfiltered manifest() re-absorbed every one of those rows, so this is
+        # the regression test for that fix: the republished bundle must carry
+        # none of the audit stage's queries, edges, or evidence.
+        with connect_database(self.run_root / "factory.sqlite3") as connection:
+            bundle = json.loads(self.current(connection, "research_bundle")["content_json"])
+            audit_query_ids = {
+                row["query_id"] for row in connection.execute(
+                    "SELECT query_id,plan_json FROM research_queries WHERE run_id=?", (RUN_ID,),
+                )
+                if json.loads(row["plan_json"]).get("term_kind", "").startswith("audit_")
+            }
+        self.assertTrue(audit_query_ids, "audit_retrieve should have tagged its own queries audit_* by now")
+        bundle_term_kinds = sorted({
+            json.loads(item["plan_json"]).get("term_kind", "") for item in bundle["queries"]
+        })
+        self.observations["assert_2_republished_bundle_term_kinds"] = bundle_term_kinds
+        self.assertTrue(
+            all(not kind.startswith("audit_") for kind in bundle_term_kinds),
+            f"republished research_bundle leaked audit-stage term_kinds: {bundle_term_kinds}",
+        )
+        self.assertFalse(
+            {item["query_id"] for item in bundle["queries"]} & audit_query_ids,
+            "republished research_bundle retained an audit-tagged query",
+        )
+        self.assertFalse(
+            {item["query_id"] for item in bundle["edges"]} & audit_query_ids,
+            "republished research_bundle's edges retained an audit-tagged query",
+        )
 
         # ---- ASSERTION 3: downstream revisions are stale, pointers dropped ---
         with connect_database(self.run_root / "factory.sqlite3") as connection:
