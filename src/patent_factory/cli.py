@@ -30,8 +30,9 @@ from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview
 from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
-    CredentialRequiredError, PlannedQuery, ResearchBudget, plan_bibliography_queries,
-    plan_keyword_queries, refuse_stale_re_research_reentry, run_research, run_research_batch,
+    FROZEN_PAGE_CAP, CredentialRequiredError, PlannedQuery, ResearchBudget,
+    plan_bibliography_queries, plan_keyword_queries, refuse_stale_re_research_reentry,
+    run_research, run_research_batch,
 )
 from .report import publish_report
 from .review import run_review
@@ -258,7 +259,14 @@ def build_parser() -> argparse.ArgumentParser:
     kipris_live.add_argument("--max-calls", type=int, default=12)
     kipris_live.add_argument("--result-budget", type=int, default=30)
     kipris_live.add_argument("--byte-budget", type=int, default=1_000_000)
-    kipris_live.add_argument("--page-cap", type=int, default=5)
+    kipris_live.add_argument(
+        "--paging", action="store_true",
+        help="follow each planned term past its first page of results (default off: "
+             "one page per term, byte-identical to a run before paging existed). "
+             "Raising this multiplies credentialed live requests; results still stop "
+             "at --result-budget, and requires --result-budget above 30 to have any "
+             "effect",
+    )
     kipris_live.add_argument("--retry-budget", type=int, default=0)
     kipris_live.add_argument("--decision-id", help="current credential approval for this exact batch")
     kipris_live.add_argument("--idempotency-key")
@@ -588,12 +596,30 @@ def _credential_gate_payload(
 def _research_kipris(
     args: argparse.Namespace, *, started_at: str, run_root: Path, database_path: Path,
 ) -> tuple[dict[str, Any], int]:
+    # `page_cap` is a frozen replay-compat fossil (ResearchBudget.page_cap,
+    # research.py) — always its default of FROZEN_PAGE_CAP, never taken from a
+    # CLI flag, so every envelope's hashed `request_body()` stays
+    # byte-identical to a pre-paging run. The live paging control is the
+    # unhashed `--paging` flag, threaded through as the plain `effective_pages`
+    # parameter. Tied to the same constant the fossil is frozen at (rather
+    # than a bare `5`) so the two cannot silently drift apart.
+    effective_pages = FROZEN_PAGE_CAP if args.paging else 1
+    if args.paging and args.result_budget <= 30:
+        # PR #49 review finding #8: a page is min(30, --result-budget) rows, so
+        # at --result-budget <= 30 the first page already exhausts the budget
+        # and --paging silently does nothing — the exact defect it is meant to
+        # fix. Reject loudly instead of shipping another inert flag.
+        raise CliError(
+            "--paging has no effect at --result-budget <= 30 (a KIPRIS page is "
+            "min(30, --result-budget) rows, so the first page already exhausts "
+            "that budget). Raise --result-budget above 30 to fetch a second page."
+        )
     budget = ResearchBudget(
         max_depth=args.max_depth, max_calls=args.max_calls,
         per_adapter_results=args.result_budget, retry_budget=args.retry_budget,
-        page_cap=args.page_cap, byte_budget=args.byte_budget,
+        byte_budget=args.byte_budget,
     )
-    budget.validate()
+    budget.validate(effective_pages=effective_pages)
     if args.capability == "bibliography_summary":
         if not args.application_number:
             raise CliError("--capability bibliography_summary requires at least one --application-number")
@@ -633,6 +659,7 @@ def _research_kipris(
                 idempotency_key=idempotency_key,
                 retrieved_at=args.retrieved_at,
                 credential_decision_id=args.decision_id,
+                effective_pages=effective_pages,
             )
         except CredentialRequiredError as error:
             return _credential_gate_payload("research", error, normalize(args.run_id)), 5

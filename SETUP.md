@@ -145,15 +145,35 @@ python3 -m patent_factory research kipris \
 
 `research kipris` fans one origin query plus repeatable `--korean-synonym` /
 `--english-synonym` / `--discovered-term` / `--classification` / `--applicant` /
-`--inventor` expansions (bounded by `--max-calls`, default 12) through the live
-KIPRIS Plus adapter in a single research session. It requires
-`KIPRIS_PLUS_API_KEY` in the environment: a missing or rejected key suspends the
-exact batch behind a credential gate (`status: credential_required`, exit 5) —
-resolve it with `gate decide` and resume with the same command plus
-`--decision-id`. A non-auth source failure is recorded as a coverage limitation
-and the batch continues. One-time live verification:
-`python3 scripts/live_kipris_smoke.py --confirm-live` (offline-skips without the
-key; redacted output only).
+`--inventor` expansions through the live KIPRIS Plus adapter in a single
+research session. Every expansion kind is sent as the same free-text `word=`
+term — these are **query expansions, not fielded searches**; KIPRIS
+`getWordSearch` accepts no per-field parameter, so `--classification G06N
+3/04` is a text match, not an IPC lookup.
+
+By default each planned term fetches exactly one page (`--result-budget`,
+default 30, is a single KIPRIS page: `min(30, --result-budget)` rows), so the
+number of live requests equals the number of planned terms, bounded by
+`--max-calls` (default 12). `--paging` follows the service's own cursor past
+that first page, stopping at `--result-budget` or when no further page is
+reported; raising it multiplies credentialed live requests, so it is opt-in,
+and it does nothing at `--result-budget <= 30` (rejected loudly rather than
+shipped as a silent no-op — raise `--result-budget` above 30 to actually get a
+second page). With `--paging`, the true request ceiling is `--max-calls *
+5` (5 pages per term when paging is on), and `research_budget.validate()`
+enforces `max_calls * effective_pages <= 100`. `--byte-budget` bounds each
+individual request/page, not the whole paged sequence — a term that runs
+several pages can receive up to that many times `--byte-budget` in total. It
+requires `KIPRIS_PLUS_API_KEY` in the environment: a missing or rejected key
+suspends the exact batch behind a credential gate (`status:
+credential_required`, exit 5) — resolve it with `gate decide` and resume with
+the same command plus `--decision-id`; the approval scope shown at the gate
+includes `effective_pages`, `result_budget`, and the derived `max_requests`
+ceiling, so what is approved is what the wire can actually send, pages
+included. A non-auth source failure is recorded as a coverage limitation and
+the batch continues. One-time live verification: `python3
+scripts/live_kipris_smoke.py --confirm-live` (offline-skips without the key;
+redacted output only).
 
 Research performs only `research_ready → research_running →
 research_complete | research_incomplete`. Results and failures are written to the

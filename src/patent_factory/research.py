@@ -13,7 +13,21 @@ from .database import FaultInjector, immediate_transaction, inject_fault, utc_no
 from .models import AdapterResult, GateEnvelope, GateKind, QueryEnvelope, RunState
 from .provenance import canonical_json, digest, evidence_revision_id, normalize
 from .privacy import assert_canaries_absent, credential_canaries
+from .retrieval import execute_paginated
 from .state import StateStore, workspace_export_directories
+
+# The frozen page_cap fossil's value (ResearchBudget.page_cap, QueryEnvelope.
+# page_cap below). Named here — rather than left as a bare `5` wherever an
+# `effective_pages` derivation needs "the paging-on page count" — so cli.py's
+# `--paging` wiring cannot silently drift from the value the fossil is frozen
+# at (PR #49 review, Architect minor finding).
+FROZEN_PAGE_CAP = 5
+
+# The cross-field live-request ceiling (PR #49 review finding #3): shared by
+# `ResearchBudget.validate()`'s `max_calls * effective_pages` check and
+# `run_research_batch`'s own self-enforcement of the same ceiling at the
+# egress boundary, so the two cannot drift apart either.
+MAX_BATCH_REQUESTS = 100
 
 
 @dataclass(frozen=True)
@@ -22,10 +36,20 @@ class ResearchBudget:
     max_calls: int = 12
     per_adapter_results: int = 30
     retry_budget: int = 0
-    page_cap: int = 5
+    # Frozen replay-compat fossil (models.py: QueryEnvelope.page_cap). This
+    # field is hashed into every envelope's `request_body()`, so it must stay
+    # byte-identical to what shipped before paging existed — pre-upgrade runs
+    # replayed and suspended credential gates resumed at page_cap=5, and
+    # changing this default re-mints both (PR #49 review finding #2). It is no
+    # longer a live control: how many pages actually run is `effective_pages`,
+    # a plain parameter threaded through `run_research_batch` /
+    # `retrieval.execute_paginated`, derived from the unhashed CLI `--paging`
+    # flag (`effective_pages = FROZEN_PAGE_CAP if paging else 1`) and never
+    # written back into this field or any envelope.
+    page_cap: int = FROZEN_PAGE_CAP
     byte_budget: int = 1_000_000
 
-    def validate(self) -> None:
+    def validate(self, *, effective_pages: int = 1) -> None:
         if not 0 <= self.max_depth <= 3:
             raise ValueError("research_budget.max_depth: must be between 0 and 3")
         if not 1 <= self.max_calls <= 100:
@@ -36,6 +60,22 @@ class ResearchBudget:
             raise ValueError("research_budget.retry_budget: must be between 0 and 3")
         if not 1 <= self.page_cap <= 100 or not 1 <= self.byte_budget <= 10_000_000:
             raise ValueError("research_budget: page or byte budget is invalid")
+        # Cross-field ceiling on ACTUAL live requests (PR #49 review finding #3):
+        # `max_calls` alone bounds planned *terms*, but each term can now issue
+        # up to `effective_pages` requests. `effective_pages` is not a field on
+        # this budget (it is derived from `--paging`, outside the hashed
+        # surface), so callers that know it — `_research_kipris` is the only
+        # one today — must pass it explicitly; the default of 1 makes this a
+        # no-op for every caller that does not page. This is a *planning-time*
+        # convenience check; `run_research_batch` enforces the same ceiling
+        # again at the egress boundary itself (see MAX_BATCH_REQUESTS there),
+        # since not every caller constructs its queries through a
+        # `ResearchBudget` in the first place.
+        if self.max_calls * effective_pages > MAX_BATCH_REQUESTS:
+            raise ValueError(
+                f"research_budget: max_calls * effective_pages must not exceed {MAX_BATCH_REQUESTS} "
+                f"(max_calls={self.max_calls}, effective_pages={effective_pages})"
+            )
 
 
 @dataclass(frozen=True)
@@ -204,6 +244,10 @@ class ResearchBatchRun:
     artifact_revision_id: str
     transition_event_ids: tuple[str, ...]
     replayed: bool
+    # The number of planned *terms*, which stopped being len(executions) once one
+    # term could span several pages. Defaulted so the positional construction
+    # below stays valid; the caller always passes the real count.
+    planned_count: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         succeeded = sum(
@@ -224,7 +268,8 @@ class ResearchBatchRun:
             }),
             "manifest": self.bundle["manifest"],
             "next_state": self.next_state,
-            "planned_count": len(self.executions),
+            "page_count": len(self.executions),
+            "planned_count": self.planned_count or len(self.executions),
             "prior_state": self.prior_state,
             "queries": [
                 {
@@ -238,7 +283,10 @@ class ResearchBatchRun:
             "replayed": self.replayed,
             "run_id": self.run_id,
             "status": "complete" if self.next_state == RunState.RESEARCH_COMPLETE.value else "incomplete",
-            "succeeded_count": succeeded,
+            # Named _pages, not _count: this is an execution-unit count (one
+            # per page, like page_count), not a term-unit count (planned_count).
+            # Review finding #12: the two units silently mixed under one name.
+            "succeeded_pages": succeeded,
             "transition_event_ids": list(self.transition_event_ids),
         }
 
@@ -592,7 +640,20 @@ def _batch_credential_scope(
     *,
     auth_attempt: str,
     credential_name: str,
+    effective_pages: int,
+    result_budget: int,
 ) -> dict[str, Any]:
+    """The human-readable ceiling an operator approves at `gate decide`.
+
+    `effective_pages` and `result_budget` are egress-honesty fields (PR #49
+    review finding #4): pages 2+ do not exist as envelopes yet when this scope
+    is built (they are minted lazily inside `execute_paginated`, after the
+    decision is consumed), so `request_fingerprint`/`query_count` above only
+    ever describe page-1 shapes. Without an explicit ceiling here, an operator
+    approving `query_count: 12` at defaults would see nothing telling them the
+    approved batch could actually issue `12 * effective_pages` requests.
+    """
+
     first = envelopes[0]
     return {
         "adapter": normalize(first.adapter),
@@ -601,10 +662,13 @@ def _batch_credential_scope(
         "auth_attempt": auth_attempt,
         "capability": normalize(first.capability),
         "credential_name": credential_name,
+        "effective_pages": effective_pages,
+        "max_requests": len(envelopes) * effective_pages,
         "query_count": len(envelopes),
         "request_fingerprint": digest({
             "fingerprints": [envelope.request_fingerprint for envelope in envelopes],
         }),
+        "result_budget": result_budget,
     }
 
 
@@ -617,8 +681,28 @@ def _verify_and_consume_credential_decision(
     credential_operation: str,
     subject_revision_hash: str,
     idempotency_key: str,
-) -> None:
-    """Bind a user decision to the exact suspended request, consuming it once."""
+    effective_pages: int = 1,
+    result_budget: int | None = None,
+) -> dict[str, Any]:
+    """Bind a user decision to the exact suspended request, consuming it once.
+
+    Returns the approval scope so the caller can enforce it beyond this one
+    check (RC2 locus ii: `execute_paginated` re-applies these same ceilings
+    per page, independently of this function, because pages 2+ are minted
+    after this call returns).
+
+    `effective_pages` is deliberately outside the hashed `subject_revision_hash`
+    surface (it is never part of any `request_body()`), so hash equality alone
+    cannot see a resume-time paging escalation: an operator could approve a
+    batch at `--paging` off and resume the same decision with `--paging` on
+    without the page-1 envelopes — and therefore the hash — ever changing.
+    This is RC2 locus (i): reject the resuming request outright if its
+    declared `effective_pages`/`result_budget` exceed what was approved.
+    `result_budget` IS hashed (it is a `QueryEnvelope` field), so an increase
+    there is normally already caught by the `subject_revision_hash` mismatch
+    below; the explicit `<=` check is a second, independent path against that
+    same escalation, not a replacement for it.
+    """
 
     row = connection.execute(
         "SELECT ge.approval_scope_json,gd.stale,gd.subject_revision_hash,"
@@ -630,10 +714,14 @@ def _verify_and_consume_credential_decision(
     if row is None:
         raise RuntimeError("credential decision is unavailable")
     approval_scope = json.loads(row["approval_scope_json"])
+    approved_pages = approval_scope.get("effective_pages", 1)
+    approved_budget = approval_scope.get("result_budget")
     if (
         row["stale"]
         or row["subject_revision_hash"] != subject_revision_hash
         or row["suspended_operation"] != credential_operation
+        or effective_pages > approved_pages
+        or (result_budget is not None and approved_budget is not None and result_budget > approved_budget)
     ):
         raise RuntimeError("credential decision does not match the current request")
     if row["used_at"]:
@@ -651,6 +739,7 @@ def _verify_and_consume_credential_decision(
             subject_revision_hash=subject_revision_hash,
             approval_scope=approval_scope,
         )
+    return approval_scope
 
 
 def run_research(
@@ -847,6 +936,7 @@ def run_research_batch(
     retrieved_at: str | None = None,
     credential_decision_id: str | None = None,
     fault_at: FaultInjector = None,
+    effective_pages: int = 1,
 ) -> ResearchBatchRun:
     """Execute a bounded batch of planned queries in one research session.
 
@@ -856,12 +946,31 @@ def run_research_batch(
     non-auth source failure is recorded as an adapter event and coverage
     limitation and the batch continues; an auth failure suspends the exact
     batch behind a credential gate.
+
+    `effective_pages` is the live paging control (unhashed; derived from CLI
+    `--paging` by the caller). It defaults to 1 — page 1 only, byte-identical
+    to the pre-paging behaviour — so every existing caller that does not pass
+    it is unaffected.
     """
 
     if not queries:
         raise ValueError("research batch requires at least one planned query")
-    if len(queries) > 100:
-        raise ValueError("research batch exceeds the maximum of 100 planned queries")
+    if len(queries) > MAX_BATCH_REQUESTS:
+        raise ValueError(f"research batch exceeds the maximum of {MAX_BATCH_REQUESTS} planned queries")
+    # Self-enforced at the egress boundary, not just relied on from
+    # `ResearchBudget.validate(effective_pages=...)` (PR #49 review, Security
+    # LOW finding): that check only runs for callers that plan their queries
+    # through a `ResearchBudget` and remember to pass `effective_pages` to it
+    # — `_research_kipris` does today, but nothing stops a future non-CLI
+    # caller from building `PlannedQuery` objects directly and handing this
+    # executor a large `effective_pages` with no such check ever having run.
+    # This is the same ceiling, checked again here, before the paging loop
+    # below can issue a single request.
+    if len(queries) * effective_pages > MAX_BATCH_REQUESTS:
+        raise ValueError(
+            f"research batch: planned queries * effective_pages must not exceed "
+            f"{MAX_BATCH_REQUESTS} (planned={len(queries)}, effective_pages={effective_pages})"
+        )
     if not normalize(idempotency_key):
         raise ValueError("idempotency_key: required")
     prepare = getattr(adapter, "prepare_envelope", None)
@@ -890,7 +999,13 @@ def run_research_batch(
     credential_name = normalize(getattr(adapter, "credential_name", ""))
     if requires_credential and not credential_name:
         raise ValueError("credential-requiring adapter must declare its credential name")
+    # Representative per-term ceiling for the approval scope and the two-locus
+    # enforcement below. plan_keyword_queries/plan_bibliography_queries give
+    # every envelope in one batch the same `result_budget`, so the first is
+    # exact, not an approximation.
+    batch_result_budget = resolved[0].envelope.result_budget
     request_revision = None
+    approved_scope: dict[str, Any] | None = None
     if requires_credential:
         if prior.state is RunState.RESEARCH_RUNNING:
             refuse_stale_re_research_reentry(connection, run_id)
@@ -909,7 +1024,10 @@ def run_research_batch(
             schema_version="research-request-v1",
         )
         if credential_decision_id:
-            _verify_and_consume_credential_decision(
+            # RC2 locus (i): reject a resume that asks for more pages or more
+            # rows-per-term than the operator actually approved. Effective_pages
+            # is outside the hash, so this is the only check that can see it.
+            approved_scope = _verify_and_consume_credential_decision(
                 connection,
                 state,
                 run_id=run_id,
@@ -917,12 +1035,16 @@ def run_research_batch(
                 credential_operation=credential_operation,
                 subject_revision_hash=request_revision.content_hash,
                 idempotency_key=idempotency_key,
+                effective_pages=effective_pages,
+                result_budget=batch_result_budget,
             )
         if not bool(getattr(adapter, "credential_present", False)):
             scope = _batch_credential_scope(
                 [query.envelope for query in resolved],
                 auth_attempt=credential_decision_id or "preflight",
                 credential_name=credential_name,
+                effective_pages=effective_pages,
+                result_budget=batch_result_budget,
             )
             gate = state.suspend_gate(
                 run_id,
@@ -956,20 +1078,42 @@ def run_research_batch(
     store = ResearchStore(connection)
     executions: list[ResearchExecution] = []
     for index, query in enumerate(resolved):
-        execution = store.execute(
+        # One planned term can now span several pages. `execute_paginated`
+        # follows the adapter's `next_cursor` up to `effective_pages`, which is
+        # what finally gives `--paging` an effect on this path; with the
+        # shipped default (`effective_pages=1`) this behaves exactly as the
+        # single call it replaces.
+        #
+        # RC2 locus (ii): pass the approved ceilings straight through, sourced
+        # independently from `approved_scope` rather than trusted from
+        # `effective_pages`/`batch_result_budget` above. Pages 2+ are minted
+        # here, after the one-time consume in `_verify_and_consume_credential_
+        # decision` returns, so that check alone cannot bound what this loop
+        # actually requests — this is a second, independent enforcement of the
+        # same ceiling, load-bearing rather than redundant, and it is the only
+        # enforcement at all on the no-prior-gate path where no decision is
+        # ever consumed.
+        paged = execute_paginated(
+            store,
             adapter,
             query,
+            connection=connection,
             idempotency_key=f"{base_key}:q{index:02d}",
             retrieved_at=retrieved_at,
+            effective_pages=effective_pages,
+            approved_effective_pages=approved_scope.get("effective_pages") if approved_scope else None,
+            approved_result_budget=approved_scope.get("result_budget") if approved_scope else None,
         )
-        executions.append(execution)
-        if requires_credential and execution.failure_kind == "auth":
+        executions.extend(paged)
+        if requires_credential and any(item.failure_kind == "auth" for item in paged):
             if request_revision is None:
                 raise RuntimeError("credential adapter has no request revision")
             scope = _batch_credential_scope(
                 [query.envelope for query in resolved],
                 auth_attempt=credential_decision_id or "remote_auth",
                 credential_name=credential_name,
+                effective_pages=effective_pages,
+                result_budget=batch_result_budget,
             )
             gate = state.suspend_gate(
                 run_id,
@@ -1033,4 +1177,5 @@ def run_research_batch(
             and all(item.replayed for item in executions)
             and finished.replayed
         ),
+        planned_count=len(resolved),
     )
