@@ -33,7 +33,7 @@ from patent_factory.provenance import digest
 from patent_factory.report import publish_report
 from patent_factory.research import run_research
 from patent_factory.scaffold import count_todos, scaffold_gate_decision_input
-from patent_factory.state import StateStore
+from patent_factory.state import StateError, StateStore
 from tests.integration.test_g004_ideation_and_shortlist import (
     candidate, candidate_input, ready_profile, shortlist_input,
 )
@@ -429,6 +429,26 @@ class CheckpointReIdeateTests(CheckpointFixture):
                 "SELECT stale FROM artifact_revisions WHERE revision_id=?", (row["revision_id"],),
             ).fetchone()[0]
             self.assertEqual(current_stale, 1)
+
+    def test_byte_identical_reideate_replay_raises_state_error_not_false_success(self):
+        # Review finding #3: after `re_ideate` the run sits at
+        # ideation_running. Resubmitting the BYTE-IDENTICAL candidate_input
+        # (same as the original, pre-checkpoint ideate call) hits the
+        # idempotency replay for both `ideation.start` and `ideation.publish`
+        # — but the run's actual current state is still ideation_running, so
+        # a hardcoded "candidates_ready" status would misreport success over
+        # a stalled run.
+        self._run_audit(["matched", "different", "different"])
+        gate_id = self._pending_gate_id()
+        request = self._decide_input(gate_id, action="re_ideate")
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
+        self.assertEqual(resolved.next_state, RunState.IDEATION_RUNNING.value)
+        with self.assertRaises(StateError):
+            run_ideation(
+                self.connection, profile_connection=self.profile_connection, run_root=self.run_root,
+                run_id="run", profile=self.profile, candidate_input=candidate_input(3, self.evidence, self.span),
+                config=load_evaluation_config(),
+            )
 
     def test_re_ideate_rejects_any_non_empty_decisions(self):
         self._run_audit(["matched", "different", "different"])
