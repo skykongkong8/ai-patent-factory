@@ -160,41 +160,36 @@ are in [docs/kipris-contract-spike.md](docs/kipris-contract-spike.md).
 
 ### One research operation per run
 
-`ALLOWED_TRANSITIONS[RunState.RESEARCH_COMPLETE]` only permits
-`DOMAIN_PIVOT_REQUIRED` or `IDEATION_RUNNING` (`src/patent_factory/state.py:84`)
-— there is deliberately no `RESEARCH_COMPLETE → RESEARCH_RUNNING` re-entry
-edge. **A run can execute at most one research operation.** Once a research
-verb (`research fixture`, `research manual`, `research kipris`, or
-`research serpapi`) completes a run, a second research call on that same run is
-refused: `research.py:552` and `research.py:742` only start
-`RESEARCH_RUNNING` from `RESEARCH_READY`/`RESEARCH_RUNNING`, and `research
-serpapi`'s own preflight check (`cli.py:977`) raises
-`"research is not permitted from run state ..."` once the run has moved past
-it. This is a user-accepted decision — see
-[docs/g009-scope-addendum.md](docs/g009-scope-addendum.md) — because re-adding
-the re-entry edge needs a full invalidation-DAG analysis of what a second
-research pass would invalidate downstream (candidates, finalists, audit).
+There is no direct `RESEARCH_COMPLETE → RESEARCH_RUNNING` re-entry edge in the
+state machine, so calling a research verb (`research fixture`, `research
+manual`, `research kipris`, or `research serpapi`) again right after a run
+reaches `research_complete` is refused. Enforcement sits in more than one
+place, all deriving from the same transition table: `run_research` and
+`run_research_batch` (the shared executors behind every research verb) only
+auto-start `RESEARCH_RUNNING` from `RESEARCH_READY`/`RESEARCH_RUNNING`, and
+`research serpapi` additionally checks the run's current state before any
+network egress and raises `"research is not permitted from run state ..."` if
+the state can no longer reach `RESEARCH_RUNNING`. Either way, no second
+research call reaches an adapter from a completed run outside the route below.
+This is a user-accepted decision — see
+[docs/g009-scope-addendum.md](docs/g009-scope-addendum.md) — because a general
+re-entry edge needs a full invalidation-DAG analysis of what a second research
+pass would invalidate downstream (candidates, finalists, audit).
 
-To combine KIPRIS and SerpApi/Google Patents evidence, run **two runs**, one
-adapter each, and take each independently through `/ideate` onward:
-
-```bash
-# Run A — KIPRIS
-python3 -m patent_factory run start \
-  --run workspace/runs/example-kipris --run-id example-kipris \
-  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
-python3 -m patent_factory research kipris \
-  --run workspace/runs/example-kipris --run-id example-kipris \
-  --query 센서 --korean-synonym 감지기 --english-synonym sensor
-
-# Run B — SerpApi (Google Patents)
-python3 -m patent_factory run start \
-  --run workspace/runs/example-serpapi --run-id example-serpapi \
-  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
-python3 -m patent_factory research serpapi \
-  --run workspace/runs/example-serpapi --run-id example-serpapi \
-  --query "sensor calibration"
-```
+**One gate-mediated route back does exist.** If the final similarity audit
+raises a COVERAGE gate — evidence coverage on one or more finalists came in
+below threshold — resolving it with `gate decide --action expand` plus a
+bounded expansion plan genuinely returns the run to `research_running`, and a
+second research operation executes and publishes a second research bundle.
+This is not a general "run research again" escape hatch: it is reached only
+through the audit pipeline's own coverage check, for the finalist set the
+audit already scored, not as a way to combine independent adapter runs. The
+second pass's manifest is scoped to the research stage — it excludes any row
+the audit itself already wrote against the same run (the audit tags its own
+queries so they can be told apart) — so the republished bundle, and the
+report's "Research Scope and Method" section rendered from it, describe only
+what research retrieved, never what audit separately pulled into its own
+similarity corpus.
 
 ## Full pipeline verbs
 
