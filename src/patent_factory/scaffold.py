@@ -254,6 +254,32 @@ def scaffold_gate_decision_input(
     }
 
 
+def gate_decision_dossier(scope: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Flat per-finalist audit verdict for presenting the checkpoint dossier.
+
+    ``approval_scope.finalist_bindings`` already carries every field
+    (verbatim, hash-bound); this re-projects them so an agent building the
+    ``/checkpoint`` dossier does not have to reach into the nested scope blob
+    by hand. ``coverage``/``upper_bound_reference_id`` matter most on a
+    ``coverage_insufficient`` finalist: a null ``closest_reference_id`` there
+    is not "nothing found" — it means the closest OBSERVED reference stayed
+    below the excessive threshold, while ``upper_bound_reference_id`` names
+    the real reference (at ``coverage``) that keeps coverage too thin to
+    clear (review finding #6). This is CLI-response-only (returned via the
+    `scaffold` command's `extras`, never written into the decision-input
+    draft file), since `gate-decision-input-v2` rejects any extra top-level
+    key.
+    """
+    return [{
+        "closest_reference_id": item.get("closest_reference_id"),
+        "coverage": item.get("coverage"),
+        "finalist_id": item["finalist_id"],
+        "outcome": item["outcome"],
+        "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+        "upper_bound_reference_id": item.get("upper_bound_reference_id"),
+    } for item in (scope.get("finalist_bindings") or [])]
+
+
 def scaffold_report_input(
     profile_connection: sqlite3.Connection,
     *,
@@ -486,7 +512,7 @@ def seal_feature_map_input(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
-    "ScaffoldError", "TODO", "count_todos", "evidence_binding_table",
+    "ScaffoldError", "TODO", "count_todos", "evidence_binding_table", "gate_decision_dossier",
     "scaffold_audit_query_input", "scaffold_candidate_input", "scaffold_gate_decision_input",
     "scaffold_report_input", "scaffold_feature_map_input", "scaffold_shortlist_input", "seal_feature_map_input",
 ]

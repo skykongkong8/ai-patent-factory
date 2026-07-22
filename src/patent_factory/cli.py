@@ -37,7 +37,7 @@ from .report import publish_report
 from .review import run_review
 from .runs import prepare_run_profile, run_show, run_status, start_run
 from .scaffold import (
-    count_todos, evidence_binding_table, scaffold_audit_query_input,
+    count_todos, evidence_binding_table, gate_decision_dossier, scaffold_audit_query_input,
     scaffold_candidate_input, scaffold_feature_map_input, scaffold_gate_decision_input,
     scaffold_report_input, scaffold_shortlist_input,
     seal_feature_map_input,
@@ -1193,6 +1193,7 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     elif command == "gate-decision":
         with connect_database(database_path) as connection:
             draft = scaffold_gate_decision_input(connection, run_id=run_id, gate_id=normalize(args.gate_id))
+        extras["dossier"] = gate_decision_dossier(draft["approval_scope"])
     elif command == "feature-map":
         if args.seal:
             source = contained_input(args.seal, workspace_root, "feature map seal input")

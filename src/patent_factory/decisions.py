@@ -294,9 +294,11 @@ def _resolution(
         current_bindings = [{
             "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
             "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+            "coverage": item["coverage"],
             "finalist_hash": digest(finalist_map[item["finalist_id"]]), "finalist_id": item["finalist_id"],
             "map_id": feature_map[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
             "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+            "upper_bound_reference_id": item["upper_bound_reference_id"],
         } for item in audit["results"]]
         affected = sorted(result["finalist_id"] for result in audit["results"] if result["outcome"] == "decision_required")
         coverage_insufficient_ids = sorted(

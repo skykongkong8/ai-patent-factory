@@ -538,9 +538,11 @@ def run_audit_scoring(
             "finalist_bindings": [{
                 "candidate_id": item["candidate_id"], "closest_reference_id": item["closest_reference_id"],
                 "corpus_hash": item["corpus_hash"], "counterargument": item["counterargument"],
+                "coverage": item["coverage"],
                 "finalist_hash": digest(finalists[item["finalist_id"]]), "finalist_id": item["finalist_id"],
                 "map_id": maps[item["finalist_id"]]["map_id"], "outcome": item["outcome"],
                 "r_hi": item["r_hi"], "r_obs": item["r_obs"],
+                "upper_bound_reference_id": item["upper_bound_reference_id"],
             } for item in results],
             "corpus_set_hash": corpus_row["content_hash"],
             "feature_map_set_hash": feature_hash, "finalist_set_hash": finalist_row["content_hash"],

@@ -32,7 +32,7 @@ from patent_factory.models import QueryEnvelope, RunState
 from patent_factory.provenance import digest
 from patent_factory.report import publish_report
 from patent_factory.research import run_research
-from patent_factory.scaffold import count_todos, scaffold_gate_decision_input
+from patent_factory.scaffold import count_todos, gate_decision_dossier, scaffold_gate_decision_input
 from patent_factory.state import StateError, StateStore
 from tests.integration.test_g004_ideation_and_shortlist import (
     candidate, candidate_input, ready_profile, shortlist_input,
@@ -399,6 +399,58 @@ class CheckpointLegalLanguageScreenTests(CheckpointFixture):
         with self.assertRaisesRegex(ValueError, "validation.legal_language"):
             resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=offending)
         self.assertEqual(self.connection.execute("SELECT count(*) FROM gate_decisions").fetchone()[0], 0)
+
+
+class CheckpointFinalistBindingsLockstepTests(CheckpointFixture):
+    """Review finding #6: `finalist_bindings` must carry `coverage` and
+    `upper_bound_reference_id`, lockstep across the two independent
+    derivation sites (audit.py scope builder, decisions.py staleness
+    mirror), and the checkpoint dossier must surface both — especially for
+    a coverage_insufficient finalist, where a null `closest_reference_id`
+    is not "nothing found"."""
+
+    def test_finalist_bindings_carries_coverage_and_upper_bound_reference_id(self):
+        scored = self._run_audit(["matched", "different", "unavailable"])
+        audit_row = self._current("audit_batch")
+        audit = json.loads(audit_row["content_json"])
+        results_by_id = {item["finalist_id"]: item for item in audit["results"]}
+        gate_id = self._pending_gate_id()
+        self.assertEqual(gate_id, scored.gate_id)
+        envelope = inspect_gate(self.connection, "run", gate_id)
+        bindings = envelope["approval_scope"]["finalist_bindings"]
+        self.assertEqual(len(bindings), 3)
+        for binding in bindings:
+            expected = results_by_id[binding["finalist_id"]]
+            self.assertEqual(binding["coverage"], expected["coverage"])
+            self.assertEqual(binding["upper_bound_reference_id"], expected["upper_bound_reference_id"])
+        insufficient = next(item for item in results_by_id.values() if item["outcome"] == "coverage_insufficient")
+        self.assertIsNotNone(insufficient["upper_bound_reference_id"])
+
+    def test_lockstep_walk_succeeds_with_zero_gate_mismatch_on_clean_and_breaching_audits(self):
+        # Both approve walks must complete with no GateMismatchError — the
+        # staleness mirror at decisions.py must byte-match the scope
+        # builder at audit.py, or every gate decide would brick.
+        self._run_audit(["different"] * 3)
+        gate_id = self._pending_gate_id()
+        clean = self._decide_input(gate_id, action="approve")
+        resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=clean)
+        self.assertEqual(resolved.next_state, RunState.AUDIT_APPROVED.value)
+
+    def test_gate_decision_dossier_surfaces_coverage_and_upper_bound_for_every_finalist(self):
+        self._run_audit(["matched", "different", "unavailable"])
+        gate_id = self._pending_gate_id()
+        draft = scaffold_gate_decision_input(self.connection, run_id="run", gate_id=gate_id)
+        dossier = gate_decision_dossier(draft["approval_scope"])
+        self.assertEqual(len(dossier), 3)
+        by_outcome = {item["outcome"]: item for item in dossier}
+        self.assertIn("coverage_insufficient", by_outcome)
+        self.assertIn("decision_required", by_outcome)
+        insufficient = by_outcome["coverage_insufficient"]
+        self.assertIsNotNone(insufficient["coverage"])
+        self.assertIsNotNone(insufficient["upper_bound_reference_id"])
+        # The dossier is CLI-response-only: it must never leak into the
+        # decision-input draft file itself (exact top-level key set).
+        self.assertNotIn("dossier", draft)
 
 
 class CheckpointReIdeateTests(CheckpointFixture):
