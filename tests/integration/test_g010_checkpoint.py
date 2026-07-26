@@ -34,8 +34,8 @@ from patent_factory.models import GateKind, QueryEnvelope, RunState
 from patent_factory.provenance import digest
 from patent_factory.report import publish_report
 from patent_factory.research import (
-    LiveResearchReentryRefusedError, ResearchBudget, plan_keyword_queries,
-    refuse_stale_re_research_reentry, run_research, run_research_batch,
+    CredentialRequiredError, ResearchBudget, plan_keyword_queries,
+    run_research, run_research_batch, validated_reentry_anchor,
 )
 from patent_factory.scaffold import (
     ScaffoldError, count_todos, gate_decision_dossier, scaffold_gate_decision_input,
@@ -666,10 +666,14 @@ class CheckpointReResearchTests(CheckpointFixture):
 
 
 class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
-    """Review finding #12: live research verbs must refuse a second in-run
-    research pass entered via `re_research` — SETUP.md/checkpoint.md/
-    research SKILL.md all describe this route as offline-only (issue #48),
-    but nothing previously enforced it."""
+    """Issue #48 (Option X): a live second research pass entered via
+    `re_research` is FORCE-GATED — a fresh credential gate is raised even
+    when the credential is in env, carrying the resolution's plan binding and
+    the literal second-pass terms, so no second pass ever egresses on a
+    silently-reused first-pass approval. These flows resolve a REAL clean
+    audit's checkpoint (all-"different" outcomes -> the always-raised
+    POST_AUDIT_CHECKPOINT), proving the relaxation from a clean-audit
+    checkpoint, not only a coverage-insufficient one."""
 
     def _live_batch(self):
         queries = plan_keyword_queries(
@@ -709,7 +713,7 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
             query=envelope, idempotency_key="live-reentry-single-query-check", retrieved_at=RETRIEVED_AT,
         )
 
-    def test_post_checkpoint_second_pass_refused_via_run_research_single_query_entry_point(self):
+    def test_post_checkpoint_second_pass_force_gated_via_run_research_single_query_entry_point(self):
         self._run_audit(["different"] * 3)
         gate_id = self._pending_gate_id()
         request = self._decide_input(
@@ -719,11 +723,20 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
         self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
 
-        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
+        # The adapter's credential IS present ("unused-secret"), so the raised
+        # gate is Option X's force-gate, not the missing-credential suspend —
+        # and the stub transport still asserts nothing egressed.
+        with self.assertRaises(CredentialRequiredError) as caught:
             self._live_single_query()
-        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+        scope = caught.exception.gate.approval_scope
+        self.assertEqual(scope["needed_research"], ["broader prior-art sweep for the sensor mechanism"])
+        self.assertTrue(scope["plan_hash"])
+        self.assertEqual(scope["second_pass_terms"], ["센서"])
+        self.assertEqual(
+            StateStore(self.connection).snapshot("run").state, RunState.CREDENTIAL_REQUIRED,
+        )
 
-    def test_post_checkpoint_second_pass_refused_with_failure_code_naming_issue_48(self):
+    def test_post_checkpoint_second_pass_force_gated_with_plan_bound_scope(self):
         self._run_audit(["different"] * 3)
         gate_id = self._pending_gate_id()
         request = self._decide_input(
@@ -733,15 +746,22 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
         self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
 
-        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
-            refuse_stale_re_research_reentry(self.connection, "run")
-        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+        anchor = validated_reentry_anchor(self.connection, "run")
+        self.assertIsNotNone(anchor)
+        self.assertEqual(
+            anchor.plan, {"needed_research": ["broader prior-art sweep for the sensor mechanism"]},
+        )
 
-        # Wiring check: the live batch entry point itself refuses, before
-        # any transport call (the stub transport asserts if reached).
-        with self.assertRaises(LiveResearchReentryRefusedError) as caught:
+        # Wiring check: the live batch entry point force-gates before any
+        # transport call (the stub transport asserts if reached), with the
+        # plan binding and the literal batch terms in the approval scope.
+        with self.assertRaises(CredentialRequiredError) as caught:
             self._live_batch()
-        self.assertEqual(caught.exception.code, "live_research_reentry_refused_issue_48")
+        scope = caught.exception.gate.approval_scope
+        self.assertEqual(scope["plan_hash"], anchor.plan_hash)
+        self.assertEqual(scope["re_research_decision_id"], anchor.decision_id)
+        self.assertEqual(scope["second_pass_terms"], ["센서", "감지기", "sensor"])
+        self.assertEqual(scope["needed_research"], ["broader prior-art sweep for the sensor mechanism"])
 
     def test_cycle_back_after_offline_publish_then_coverage_expand_is_allowed_again(self):
         self._run_audit(["different"] * 3)
@@ -752,11 +772,10 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         )
         resolved = resolve_gate(self.connection, run_root=self.run_root, run_id="run", decision_input=request)
         self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
-        with self.assertRaises(LiveResearchReentryRefusedError):
-            refuse_stale_re_research_reentry(self.connection, "run")
+        self.assertIsNotNone(validated_reentry_anchor(self.connection, "run"))
 
-        # Offline second pass (manual import — the one route this second
-        # pass is actually allowed through today).
+        # Offline second pass (manual import — never force-gated; the guard
+        # lives inside the requires_credential branch).
         record = {
             "canonical_url": "https://example.test/cycle-back",
             "identifier": "cycle-back-1", "title": "Cycle-back reference",
@@ -777,10 +796,9 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         )
         self.assertEqual(second_pass.next_state, RunState.RESEARCH_COMPLETE.value)
         # A research_complete transition now exists after the re_research
-        # anchor — a live verb is no longer refused (it would still need a
-        # research_running state to test against; the discriminator itself
-        # already reads as satisfied).
-        refuse_stale_re_research_reentry(self.connection, "run")  # must not raise
+        # anchor — the four-way guard reads this as a cycle-back (None), so a
+        # live verb is neither refused nor force-gated on this route.
+        self.assertIsNone(validated_reentry_anchor(self.connection, "run"))
 
         reauthored = {
             "schema_version": "candidate-input-v1",

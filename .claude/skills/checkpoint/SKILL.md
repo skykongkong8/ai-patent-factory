@@ -89,10 +89,12 @@ disk, so this file always has the decision, before or after invalidation.
   upstream artifact the re-branch does not stale), so vary substance, not just
   wording.
 - **`re_research` → `/research`.** Read the decided `plan.needed_research` the same
-  way; author the offline second pass (`research fixture` / `research normalize-web` +
-  `research manual`) targeting those terms. Live `research kipris` / `research serpapi`
-  is out of scope for this second pass, deferred to
-  [issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48); the
+  way; author the second pass targeting those terms. Offline verbs (`research
+  fixture` / `research normalize-web` + `research manual`) run as before. A live
+  `research kipris` / `research serpapi` second pass
+  ([issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48))
+  force-raises a fresh credential gate even with the key in env — only the USER
+  approves it, with the plan binding and literal terms visible in the scope; the
   one-research-op-per-run policy for the *direct* (non-gate) path is unchanged.
 
 ## Rules

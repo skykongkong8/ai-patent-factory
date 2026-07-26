@@ -51,8 +51,9 @@ available as an escape hatch.
 - **`/checkpoint`** is a hard stop after *every* `audit score` — clean or
   breaching. It never auto-approves: present the full per-finalist dossier and
   have the user pick exactly one of **approve** (→ `/draft`), **re_ideate** (→
-  `/ideate`, with feedback), **re_research** (→ `/research`, offline second
-  pass only — live is tracked in
+  `/ideate`, with feedback), **re_research** (→ `/research`; offline verbs run
+  as before, and a live second pass force-raises a fresh credential gate the
+  user approves with the plan binding and literal terms visible —
   [issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)), or
   **stop**. This is an accepted breaking change: `audit score` now exits 8
   (`decision_required`) even on a clean run, never 0. See

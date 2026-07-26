@@ -5,8 +5,10 @@ from pathlib import Path
 
 from patent_factory.database import connect_database
 from patent_factory.provenance import digest
+from patent_factory.state import StateStore
 
 from tests.integration.test_g003_research_cli import FIXED_TIME, ROOT, prepare_run, run_cli
+from tests.integration.test_research_reentry_gate import BOUND_PLAN, seed_re_research_reentry
 
 
 class SerpApiCliTests(unittest.TestCase):
@@ -69,12 +71,12 @@ class SerpApiCliTests(unittest.TestCase):
             self.assertTrue(all(row["source_type"] == "google_patent" for row in rows))
             self.assertTrue(all(row["source_locator"].startswith("gpatent:") for row in rows))
 
-    def test_cli_serpapi_refuses_a_stale_re_research_reentry_before_any_network(self):
-        # Review finding #12: the CLI-level preflight (cli.py:1000-1003)
-        # whitelists `prior.state is RunState.RESEARCH_RUNNING` — a run that
-        # reached research_running via `gate decide --action re_research`
-        # must be refused here, not silently accepted like a legitimate
-        # first-pass retry.
+    def test_cli_serpapi_refuses_a_plan_unbound_re_research_reentry_before_any_network(self):
+        # Issue #48: a re_research re-entry whose resolution binds NO plan
+        # artifact cannot scope a live second pass — refused with the
+        # plan-unbound code before any key machinery, quota preflight, or
+        # network egress. (The seeded rows deliberately carry no
+        # gate_resolution artifact, which is exactly this branch.)
         run_root = self.workspace / "serp-reentry"
         prepare_run(run_root, "serp-reentry")
         with connect_database(run_root / "factory.sqlite3") as connection:
@@ -101,7 +103,106 @@ class SerpApiCliTests(unittest.TestCase):
         result = run_cli(*self.common(run_root, "serp-reentry"))
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["failure_code"], "live_research_reentry_refused_issue_48")
+        self.assertEqual(payload["failure_code"], "live_research_reentry_plan_unbound_issue_48")
+
+    def test_second_pass_force_gates_past_the_stored_success_then_resumes_salted(self):
+        """Issue #48 on the serpapi path: a same-request second pass neither
+        replays pass-1's stored success nor bypasses the guard.
+
+        The re-entry is evaluated BEFORE the stored-success short-circuit and
+        the quota preflight, the base key is salted into the second pass's
+        namespace, and the fresh attempt force-gates (exit 13) with the
+        plan-bound scope even though SERPAPI_API_KEY is in env. Approving and
+        resuming with --decision-id publishes pass-2's OWN bundle under the
+        salted store and finish coordinates.
+        """
+
+        run_root = self.workspace / "serp-second"
+        prepare_run(run_root, "serp-second")
+        response = self._response_fixture()
+        account = self._account_fixture("account-ok")
+        fixture_flags = (
+            "--fixture-response", self.relative(response),
+            "--fixture-account", self.relative(account),
+        )
+        first = run_cli(
+            *self.common(run_root, "serp-second"), *fixture_flags,
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        first_payload = json.loads(first.stdout)
+        self.assertEqual(first_payload["next_state"], "research_complete")
+
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            _gate_id, reentry_decision_id = seed_re_research_reentry(connection, "serp-second")
+
+        second = run_cli(
+            *self.common(run_root, "serp-second"), *fixture_flags,
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(second.returncode, 13, second.stdout + second.stderr)
+        gate_payload = json.loads(second.stdout)
+        self.assertEqual(gate_payload["status"], "credential_required")
+
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            gate_row = connection.execute(
+                "SELECT * FROM gate_envelopes WHERE run_id='serp-second' AND status='pending'"
+            ).fetchone()
+            scope = json.loads(gate_row["approval_scope_json"])
+            self.assertEqual(scope["plan_hash"], digest(BOUND_PLAN))
+            self.assertEqual(scope["needed_research"], BOUND_PLAN["needed_research"])
+            self.assertEqual(scope["second_pass_terms"], ["Vision Language Action"])
+            # The suspended operation carries the salted key — the second pass
+            # cannot share pass-1's finish coordinate.
+            self.assertIn(f":re_research:{reentry_decision_id}", gate_row["suspended_operation"])
+            # Nothing executed in the salted namespace yet: the stored pass-1
+            # success was not replayed and no fresh search was spent.
+            self.assertEqual(connection.execute(
+                "SELECT count(*) FROM research_operations WHERE idempotency_key LIKE '%:re_research:%'"
+            ).fetchone()[0], 0)
+            decision, _ = StateStore(connection).decide_gate(
+                gate_row["gate_id"], action="configure_and_verify", actor="inventor",
+                reason="approved the plan-bound second pass",
+                subject_revision_hash=gate_row["subject_revision_hash"],
+                approval_scope=scope,
+            )
+
+        resumed = run_cli(
+            *self.common(run_root, "serp-second"), *fixture_flags,
+            "--decision-id", decision.decision_id,
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        resumed_payload = json.loads(resumed.stdout)
+        self.assertEqual(resumed_payload["next_state"], "research_complete")
+        self.assertFalse(resumed_payload["replayed"])
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            salted_store_keys = [row[0] for row in connection.execute(
+                "SELECT idempotency_key FROM research_operations WHERE idempotency_key LIKE '%:re_research:%'"
+            )]
+            self.assertTrue(salted_store_keys, "pass-2 must execute under the salted namespace")
+            self.assertTrue(all(
+                f":re_research:{reentry_decision_id}:credential:{decision.decision_id}" in key
+                for key in salted_store_keys
+            ))
+            # Pass-1 (env path, no decision) finished under (research.finish,
+            # bare key); pass-2's decision-bound finish lives at the SALTED
+            # research.execute coordinate — two distinct rows, no overlap.
+            finish_rows = [tuple(row) for row in connection.execute(
+                "SELECT operation, idempotency_key FROM idempotency_records "
+                "WHERE operation LIKE 'research.execute:%' OR operation = 'research.finish' "
+                "ORDER BY operation"
+            )]
+            self.assertEqual(len(finish_rows), 2)
+            executed_finish = [row for row in finish_rows if row[0].startswith("research.execute:")]
+            self.assertEqual(len(executed_finish), 1)
+            self.assertIn(f":re_research:{reentry_decision_id}", executed_finish[0][1])
+            bare_finish = [row for row in finish_rows if row[0] == "research.finish"]
+            self.assertNotIn(":re_research:", bare_finish[0][1])
+            used = connection.execute(
+                "SELECT used_at FROM gate_decisions WHERE decision_id=?", (decision.decision_id,),
+            ).fetchone()
+            self.assertTrue(used["used_at"])
 
     def test_success_replay_spends_no_second_search(self):
         run_root = self.workspace / "serp-replay"
