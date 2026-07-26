@@ -16,6 +16,7 @@ from tests.integration.test_g004_ideation_and_shortlist import (
     candidate_input, ready_profile, ready_research, shortlist_input,
 )
 from tests.integration.test_g005_audit import kipris_xml
+from tests.integration.test_audit_pagination import paged_kipris_xml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +113,53 @@ class G005CliTests(unittest.TestCase):
             self.assertEqual(connection.execute(
                 "SELECT count(*) FROM research_queries WHERE envelope_json LIKE '%final_similarity_audit%'"
             ).fetchone()[0], 6)
+
+    def test_fixture_manifest_serves_multiple_pages_through_one_adapter(self):
+        """Issue #52: one page-honouring adapter per planned query.
+
+        The fixture closure used to hard-wire one page's body per adapter; the
+        shared paging loop reuses a single adapter across pages, so a
+        totalCount past one 30-row window must pull page 2 from the SAME
+        adapter without tripping the adapter's page/cursor guard.
+        """
+
+        run_root, finalist_hash, finalists = self.prepare("paged")
+        query = {
+            "schema_version": "audit-query-input-v1", "finalist_set_hash": finalist_hash,
+            "groups": [{"finalist_id": item["finalist_id"], "queries": [
+                {"language": "ko", "term": "동일 검색어"}, {"language": "en", "term": "same query"},
+            ]} for item in finalists],
+        }
+        query_path = self.workspace / "paged-queries.json"
+        query_path.write_text(json.dumps(query, ensure_ascii=False), encoding="utf-8")
+        for page in (1, 2):
+            (self.documents / f"paged-{page}.xml").write_bytes(paged_kipris_xml(page, 30, 60))
+        manifest = {
+            "schema_version": "audit-fixture-manifest-v1", "responses": [
+                {"finalist_id": item["finalist_id"], "page": page,
+                 "source": str(self.relative(self.documents / f"paged-{page}.xml")), "term": term}
+                for item in finalists for term in ("동일 검색어", "same query") for page in (1, 2)
+            ],
+        }
+        manifest_path = self.documents / "paged-manifest.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        result = self.invoke(run_root, "paged", query_path, manifest_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual((payload["status"], len(payload["corpus_hashes"])), ("audit_running", 3))
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            envelopes = [json.loads(row["envelope_json"]) for row in connection.execute(
+                "SELECT envelope_json FROM research_queries WHERE envelope_json LIKE '%final_similarity_audit%'"
+            )]
+            self.assertEqual(len(envelopes), 12)
+            self.assertEqual({body["page"] for body in envelopes}, {1, 2})
+            self.assertTrue(all(body["query_projection"]["num_of_rows"] == 30 for body in envelopes))
+            corpus = json.loads(connection.execute(
+                "SELECT ar.content_json FROM artifact_revisions ar JOIN current_artifacts ca "
+                "ON ca.revision_id=ar.revision_id WHERE ca.run_id='paged' AND ca.kind='corpus_set'"
+            ).fetchone()["content_json"])
+            for item in corpus["corpora"]:
+                self.assertEqual(len(item["records"]), 60)
 
     def test_incomplete_fixture_manifest_fails_as_json_not_a_traceback(self):
         """A missing manifest entry used to raise a bare KeyError.

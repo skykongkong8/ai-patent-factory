@@ -4,6 +4,7 @@ import argparse
 import json
 import shlex
 import sys
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -1301,30 +1302,47 @@ def _audit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 source = contained_input(Path(item["source"]), documents_root, "audit KIPRIS fixture")
                 responses[(item["finalist_id"], normalize(item["term"]), item["page"])] = _bounded_bytes(source, args.byte_budget, "audit KIPRIS fixture")
 
-            def adapter_factory(query, page, finalist):
-                key = (finalist, normalize(query["term"]), page)
-                if key not in responses:
-                    # An unguarded lookup here raised a bare KeyError: the caller
-                    # got a traceback on stderr instead of a cli-result envelope,
-                    # exit 1 with no failure_code, and the run had ALREADY moved
-                    # to audit_running. The required page count is config.page_cap
-                    # and appeared in no CLI output, so there was nothing to act on.
-                    have = sorted(
-                        f"{item[0]}/{item[1]}/page {item[2]}" for item in responses
-                    )
-                    raise CliError(
-                        f"audit fixture manifest has no response for finalist {finalist!r}, "
-                        f"term {normalize(query['term'])!r}, page {page}. Retrieval pages up to "
-                        f"the configured page cap ({load_similarity_config().page_cap}), so supply one response per "
-                        f"(finalist_id, term, page). Present: {', '.join(have) or 'none'}"
-                    )
-                body = responses[key]
+            class ManifestFixtureAdapter(KiprisAdapter):
+                """One adapter per planned query, serving every page from the manifest.
 
-                def transport(url, timeout, byte_budget):
-                    del url, timeout, byte_budget
+                The paging loop reuses the SAME adapter across pages (the
+                AdapterFactory contract in audit.py), so the transport resolves
+                the page from each request's pageNo instead of hard-wiring one
+                body. Availability is pre-checked in `search`, BEFORE the real
+                adapter runs: a missing manifest entry must surface as this
+                actionable CliError from the CLI envelope — never a bare
+                KeyError traceback, and never a swallowed INTERNAL adapter
+                failure persisted against the page's idempotency key (which
+                would replay forever and break fix-the-manifest-and-rerun).
+                """
+
+                def __init__(self, finalist: str, term: str) -> None:
+                    super().__init__("fixture-only", transport=self._serve, credential_required=False)
+                    self._finalist, self._term = finalist, term
+
+                def _serve(self, url, timeout, byte_budget):
+                    del timeout, byte_budget
+                    parameters = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+                    page = int(parameters.get("pageNo", ["1"])[0])
+                    body = responses[(self._finalist, self._term, page)]
                     return TransportResponse(200, {"Content-Type": "application/xml"}, body)
 
-                return KiprisAdapter("fixture-only", transport=transport, credential_required=False)
+                def search(self, envelope):
+                    if (self._finalist, self._term, envelope.page) not in responses:
+                        have = sorted(
+                            f"{item[0]}/{item[1]}/page {item[2]}" for item in responses
+                        )
+                        raise CliError(
+                            f"audit fixture manifest has no response for finalist {self._finalist!r}, "
+                            f"term {self._term!r}, page {envelope.page}. Retrieval pages up to "
+                            f"the configured page cap ({load_similarity_config().page_cap}), so supply one response per "
+                            f"(finalist_id, term, page). Present: {', '.join(have) or 'none'}"
+                        )
+                    return super().search(envelope)
+
+            def adapter_factory(query, page, finalist):
+                del page
+                return ManifestFixtureAdapter(finalist, normalize(query["term"]))
 
         with connect_database(database_path) as connection:
             try:
