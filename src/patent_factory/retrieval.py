@@ -163,24 +163,18 @@ def execute_paginated(
     return tuple(executions)
 
 
-# Intentional divergences from the audit retrieval loop (`audit.py:290-321`),
-# left as documentation rather than unified with it (PR #49 review finding
-# #15; the audit copy's own shrinking-window fix is tracked separately as it
-# changes audit's own hash surface — see issue #52):
-#
-#   * `num_of_rows`: audit sets it to the shrinking `remaining` every page
-#     (`audit.py:303`) — the same bug finding #1 fixes here. This loop sets it
-#     ONCE, to the constant `page_size`, precisely so it does not shrink.
-#   * accounting: audit charges `min(remaining, received)` (`audit.py:319`),
-#     which can add zero and stall on a misreporting source that reports a
-#     cursor with no usable rows; this loop charges `max(1, min(remaining,
-#     counted))` so the ceiling always makes forward progress.
-#   * missing/absent coverage: this loop treats a missing `adapter_events` row
-#     or a NULL `coverage_json` as "stop, nothing more to charge"
-#     (`if row is None: break`, `... if row["coverage_json"] else {}`); the
-#     audit loop assumes both are always present and would raise on
-#     `json.loads(None)` if the assumption ever broke (`audit.py:317-318`).
-#   * approval-scope bounds: this loop is reachable through a credential gate
-#     with an approved `effective_pages`/`result_budget` ceiling (RC2 above);
-#     audit's `page_cap`/`results_per_query` come from `SimilarityConfig`, a
-#     different, non-hash-gated surface with no analogous two-locus check.
+# Divergence ledger, resolved (issue #52): the audit retrieval loop ADOPTED
+# this function (`audit.py`'s `run_audit_retrieval` now builds one constant-
+# window page-1 envelope per planned query and hands it here), retiring the
+# divergences PR #49 review finding #15 recorded — the shrinking `num_of_rows`,
+# the stall-prone `min(remaining, received)` accounting, and the assumed-present
+# coverage row are all governed by this loop's single implementation now. The
+# one remaining intentional difference: audit passes no
+# `approved_effective_pages`/`approved_result_budget` (its `page_cap`/
+# `results_per_query` come from `SimilarityConfig`, a non-hash-gated surface
+# with no credential-approval ceiling to re-apply), so the RC2 clamps are
+# deliberate no-ops on the audit path. Adoption also means audit inherits this
+# loop's full-width final page: at ceiling=100 with a 30-row window the last
+# page still requests 30 rows (up to 120 retrieved for a 100-row ceiling)
+# where the old loop narrowed the final request — over-retrieval only, never
+# under-coverage; `build_retained_corpus` still caps the retained corpus.

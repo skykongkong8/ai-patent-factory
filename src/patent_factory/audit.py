@@ -15,6 +15,7 @@ from .models import GateKind, QueryEnvelope, RunState
 from .privacy import assert_canaries_absent, credential_canaries
 from .provenance import digest, normalize
 from .research import CredentialRequiredError, PlannedQuery, ResearchStore
+from .retrieval import execute_paginated
 from .similarity import (
     canonical_feature_map,
     risk_label,
@@ -26,6 +27,12 @@ from .similarity import (
 from .state import StateError, StateStore, workspace_export_directories
 
 
+# Called as (query, page, finalist_id) with page always 1: once as a preflight
+# probe and once per planned query. The returned adapter serves EVERY page of
+# that query — the shared paging loop (`retrieval.execute_paginated`) follows
+# `next_cursor` by re-invoking the SAME adapter with page-2+ envelopes — so a
+# fixture adapter must resolve the page from each request (e.g. the envelope or
+# the URL's pageNo) rather than hard-wiring one page's body at construction.
 AdapterFactory = Callable[[Mapping[str, Any], int, str], SearchAdapter]
 
 
@@ -275,8 +282,39 @@ def run_audit_retrieval(
                 raise StateError("audit retrieval already runs for a different current query set")
             query_revision = type("Revision", (), {"revision_id": query_row["revision_id"]})()
 
+    # Operation-level replay short-circuit (issue #52): a current corpus_set
+    # bound to THIS freshly-resolved query_revision is a completed prior
+    # operation — return it with zero transport and zero store.execute calls.
+    # Load-bearing, not an optimization: the constant-window fix below changed
+    # page-1's `num_of_rows` (and so its request_fingerprint and derived
+    # query_id), so replaying a completed pre-fix operation through the loop
+    # would miss every recorded page and re-fetch live. The rebuild branch is
+    # deliberately NOT short-circuited — a freshly-minted query_revision
+    # (changed finalist/config invalidated the prior audit) has no bound
+    # corpus_set, so the predicate is pinned to that binding, never to
+    # operation_hash alone.
+    completed = connection.execute(
+        "SELECT ar.* FROM artifact_revisions ar "
+        "JOIN artifact_dependencies ad ON ad.run_id=ar.run_id AND ad.downstream_revision_id=ar.revision_id "
+        "JOIN current_artifacts ca ON ca.revision_id=ar.revision_id "
+        "WHERE ar.run_id=? AND ar.kind='corpus_set' AND ar.stale=0 AND ad.upstream_revision_id=?",
+        (run_id, query_revision.revision_id),
+    ).fetchone()
+    if completed is not None:
+        recorded = json.loads(completed["content_json"])
+        return AuditRetrieval(
+            run_id, query_revision.revision_id, completed["revision_id"],
+            tuple(item["corpus_hash"] for item in recorded["corpora"]), True,
+        )
+
     store = ResearchStore(connection)
     corpora = []
+    # Constant page window (issue #52): fixed ONCE from the whole-query ceiling,
+    # the same `min(30, ceiling)` derivation the shared loop and kipris.py's
+    # `_parameters` default use. KIPRIS offsets by `(pageNo - 1) * numOfRows`,
+    # so the previous per-page `remaining` here shrank the window between pages,
+    # re-serving page 1's rows while a block further out was never requested.
+    window = min(30, config.results_per_query)
     for group in groups:
         query_ids: list[str] = []
         logical_queries: dict[str, str] = {}
@@ -286,39 +324,38 @@ def run_audit_retrieval(
                 "query_group_id": group["query_group_id"], "query_index": query_index,
                 "language": query["language"], "term": query["term"],
             })[:20]
-            logical_received = 0
-            for page in range(1, config.page_cap + 1):
-                remaining = config.results_per_query - logical_received
-                if remaining <= 0:
-                    break
-                binding = {
-                    "purpose": "final_similarity_audit", "finalist_set_hash": finalist_row["content_hash"],
-                    "finalist_id": group["finalist_id"], "query_group_id": group["query_group_id"],
-                }
-                envelope = QueryEnvelope(
-                    run_id=run_id, adapter="kipris", adapter_version="plus-xml-v1", capability="word_search",
-                    allowed_scheme="https", allowed_host="plus.kipris.or.kr", deadline_seconds=10,
-                    page=page, page_cap=config.page_cap, result_budget=remaining,
-                    byte_budget=1_000_000, retry_budget=0, retry_ownership="audit_runner",
-                    query_projection={"word": query["term"], "year": 0, "patent": True, "utility": True, "num_of_rows": remaining},
-                    cursor=str(page) if page > 1 else None, audit_binding=binding,
-                )
-                planned = PlannedQuery(envelope, query["term"], query["term"], f"audit_{query['language']}", 0)
-                execution = store.execute(
-                    adapter_factory(query, page, group["finalist_id"]), planned,
-                    idempotency_key=f"audit:{operation_hash}:{group['finalist_id']}:{query_index}:{page}",
-                    retrieved_at=retrieved_at,
-                )
+            binding = {
+                "purpose": "final_similarity_audit", "finalist_set_hash": finalist_row["content_hash"],
+                "finalist_id": group["finalist_id"], "query_group_id": group["query_group_id"],
+            }
+            # Page 1 must carry the constant window itself: `execute_paginated`
+            # passes page 1 through untouched, and `result_budget` is the
+            # whole-query ceiling, never a per-page value.
+            envelope = QueryEnvelope(
+                run_id=run_id, adapter="kipris", adapter_version="plus-xml-v1", capability="word_search",
+                allowed_scheme="https", allowed_host="plus.kipris.or.kr", deadline_seconds=10,
+                page=1, page_cap=config.page_cap, result_budget=config.results_per_query,
+                byte_budget=1_000_000, retry_budget=0, retry_ownership="audit_runner",
+                query_projection={"word": query["term"], "year": 0, "patent": True, "utility": True, "num_of_rows": window},
+                audit_binding=binding,
+            )
+            planned = PlannedQuery(envelope, query["term"], query["term"], f"audit_{query['language']}", 0)
+            # `approved_effective_pages`/`approved_result_budget` stay at their
+            # None defaults: audit has no credential-gate ceiling to re-apply
+            # (`page_cap`/`results_per_query` come from SimilarityConfig), so
+            # the RC2 clamps are no-ops here by construction.
+            executions = execute_paginated(
+                store, adapter_factory(query, 1, group["finalist_id"]), planned,
+                connection=connection,
+                idempotency_key=f"audit:{operation_hash}:{group['finalist_id']}:{query_index}",
+                retrieved_at=retrieved_at,
+                effective_pages=config.page_cap,
+            )
+            for execution in executions:
                 query_ids.append(execution.query_id)
                 logical_queries[execution.query_id] = logical_query_id
                 if execution.failure_kind:
                     failures.append({"kind": execution.failure_kind, "query_id": execution.query_id})
-                    break
-                event = connection.execute("SELECT next_cursor,coverage_json FROM adapter_events WHERE event_id=?", (execution.event_id,)).fetchone()
-                coverage = json.loads(event["coverage_json"])
-                logical_received += min(remaining, int(coverage.get("received", len(execution.evidence_ids))))
-                if not event["next_cursor"]:
-                    break
         marks = ",".join("?" for _ in query_ids)
         rows = connection.execute(
             f"SELECT re.query_id,re.source_rank,er.evidence_id,er.content_hash,er.record_json "
