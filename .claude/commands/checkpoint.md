@@ -97,12 +97,15 @@ adding real content, both make `gate decide` fail on an otherwise-complete draft
      (drop/deprioritize the "boring" directions, extend the "interesting" ones).
      Re-authoring byte-identical candidates does not raise an error — it silently
      replays the stale ideation context instead of producing anything new.
-   - **`re_research` → `next_state: research_running`** — continue to **`/research`**,
-     offline only (`research fixture` / `research normalize-web` + `research manual`);
+   - **`re_research` → `next_state: research_running`** — continue to **`/research`**;
      author the second pass from the decided `plan.needed_research`, read the same way
-     as `feedback` above. Live `research kipris`/`research serpapi` on this second pass
-     is out of scope, deferred to
-     [issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48).
+     as `feedback` above. Offline verbs (`research fixture` / `research normalize-web`
+     + `research manual`) run as before. Live `research kipris`/`research serpapi` on
+     this second pass
+     ([issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48))
+     force-raises a fresh credential gate even with the key in env; the USER approves
+     its scope — the plan binding plus the literal second-pass terms — before any
+     egress, via `gate decide`.
 
    **Reading the resolution in a fresh session:** the gate resolution is a DAG
    descendant of `audit_batch`, so the FIRST `ideate`/`research` publish after the

@@ -184,54 +184,178 @@ class CredentialRequiredError(RuntimeError):
 
 
 class LiveResearchReentryRefusedError(RuntimeError):
-    """A live (credential-requiring) research verb was refused on a stale re_research re-entry."""
+    """A live second research pass was refused: the re_research binding is stale.
+
+    Repurposed from the pre-#48 blanket "offline-only" refusal: the live second
+    pass is now conditionally allowed (force-gated), and this code names the
+    one remaining hard refusal — an intervening upstream revision invalidated
+    the resolution the re-entry is anchored to.
+    """
 
     code = "live_research_reentry_refused_issue_48"
 
     def __init__(self, run_id: str) -> None:
         super().__init__(
-            f"run {run_id}: live research verbs are refused on a research_running state "
-            "entered via a re_research checkpoint resolution — this second pass is "
-            "offline-only (fixture/normalize-web/manual), deferred to issue #48"
+            f"run {run_id}: the latest re_research resolution no longer binds current "
+            "state (an intervening upstream revision invalidated it) — resolve the "
+            "current gate before retrying a live second research pass"
         )
         self.run_id = run_id
 
 
-def refuse_stale_re_research_reentry(connection: sqlite3.Connection, run_id: str) -> None:
-    """Refuse a live research verb iff the run's current research_running state was
-    entered via a `re_research` checkpoint resolution with no research since (finding #12).
+class LiveResearchReentryPlanUnboundError(RuntimeError):
+    """A live second research pass has no bounded re_research plan to execute."""
 
-    `SETUP.md`, `research/SKILL.md`, and `checkpoint.md` all describe the
-    second in-run research pass as offline-only (issue #48 defers live
-    support), but nothing enforced it: `run_research`'s offline path and the
-    live kipris/serpapi paths accept `RunState.RESEARCH_RUNNING` identically.
+    code = "live_research_reentry_plan_unbound_issue_48"
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(
+            f"run {run_id}: the re_research resolution carries no bounded plan, so a "
+            "live second research pass has nothing approved to execute — record a "
+            "bounded plan in the checkpoint resolution"
+        )
+        self.run_id = run_id
+
+
+class LiveResearchReentryPlanMismatchError(RuntimeError):
+    """The re_research resolution's plan does not reproduce its recorded plan_hash."""
+
+    code = "live_research_reentry_plan_mismatch_issue_48"
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__(
+            f"run {run_id}: the re_research resolution's plan does not match its "
+            "recorded plan_hash — the binding cannot scope a live second research pass"
+        )
+        self.run_id = run_id
+
+
+@dataclass(frozen=True)
+class ReResearchAnchor:
+    """The ONE state-derived coordinate of a `re_research` re-entry (issue #48).
+
+    Derived from persisted state only — never from a caller-supplied decision
+    id (`--decision-id` is the CREDENTIAL decision and is None on the
+    credential-in-env live path). Present iff the run's research_running state
+    was entered via the latest `re_research` checkpoint resolution with no
+    `research_complete` published since.
+    """
+
+    gate_id: str
+    decision_id: str
+    stale: bool
+    plan: Mapping[str, Any] | None
+    plan_hash: str | None
+
+
+def re_research_reentry_anchor(connection: sqlite3.Connection, run_id: str) -> ReResearchAnchor | None:
+    """Derive the re-entry anchor, or None when this is not a re-entry.
 
     Discriminator (RC5), anchored to concrete persisted events rather than a
-    fragile clock comparison alone: refuse iff the latest `gate_decisions`
-    row for this run with `action='re_research'` exists AND no
-    `transition_events` row with `next_state='research_complete'` has a
-    LATER `created_at` than that resolution's (both are written from the
-    same `now` value inside `publish_gate_resolution`'s one transaction, so
-    the anchor and its own transition_event always agree). This keeps a
-    legitimate first-pass retry allowed (no re_research resolution exists at
-    all), refuses the second pass immediately after `re_research`, and
-    allows a later cycle-back (re_research -> offline publish -> a
-    subsequent COVERAGE-expand re-enters research_running by a different
-    route) since a research_complete transition now exists after the anchor.
+    fragile clock comparison alone: a re-entry exists iff the latest
+    `gate_decisions` row with `action='re_research'` has no
+    `transition_events` row with `next_state='research_complete'` LATER than
+    it (both sides of a resolution are written from the same `now` inside
+    `publish_gate_resolution`'s one transaction, so the anchor and its own
+    transition event always agree). A run with no re_research history and the
+    cycle-back route (re_research -> publish -> a later COVERAGE-expand
+    re-entry) both return None — those paths behave exactly as before.
+
+    The bound plan lives in the gate-resolution ARTIFACT, not on
+    `gate_decisions` (there is no plan column and no decision_id->content FK):
+    `idempotency_records.operation = "gate.resolve:{gate_id}"` joined to
+    `artifact_revisions` — the `_durable_resolution_replay` pattern.
     """
-    anchor = connection.execute(
-        "SELECT created_at FROM gate_decisions WHERE run_id=? AND action='re_research' "
-        "ORDER BY created_at DESC LIMIT 1",
+
+    row = connection.execute(
+        "SELECT gate_id, decision_id, stale, created_at FROM gate_decisions "
+        "WHERE run_id=? AND action='re_research' ORDER BY created_at DESC LIMIT 1",
         (run_id,),
     ).fetchone()
-    if anchor is None:
-        return
+    if row is None:
+        return None
     published_since = connection.execute(
         "SELECT 1 FROM transition_events WHERE run_id=? AND next_state=? AND created_at>? LIMIT 1",
-        (run_id, RunState.RESEARCH_COMPLETE.value, anchor["created_at"]),
+        (run_id, RunState.RESEARCH_COMPLETE.value, row["created_at"]),
     ).fetchone()
-    if published_since is None:
+    if published_since is not None:
+        return None
+    resolution = connection.execute(
+        "SELECT ar.content_json FROM idempotency_records ir "
+        "JOIN artifact_revisions ar ON ar.revision_id=ir.artifact_revision_id "
+        "WHERE ir.run_id=? AND ir.operation=? "
+        "ORDER BY ir.created_at DESC LIMIT 1",
+        (run_id, f"gate.resolve:{row['gate_id']}"),
+    ).fetchone()
+    plan: Mapping[str, Any] | None = None
+    plan_hash: str | None = None
+    if resolution is not None:
+        content = json.loads(resolution["content_json"])
+        if isinstance(content.get("plan"), Mapping):
+            plan = content["plan"]
+        if isinstance(content.get("plan_hash"), str):
+            plan_hash = content["plan_hash"]
+    return ReResearchAnchor(row["gate_id"], row["decision_id"], bool(row["stale"]), plan, plan_hash)
+
+
+def validated_reentry_anchor(connection: sqlite3.Connection, run_id: str) -> ReResearchAnchor | None:
+    """The issue-48 guard, as a four-way branch (relaxed, never removed).
+
+    - Not a re-entry (no re_research history, or cycle-back) -> None; the
+      caller proceeds exactly as before.
+    - Stale binding (the resolution's decision was invalidated by an
+      intervening upstream revision) -> LiveResearchReentryRefusedError.
+    - Plan absent or unbounded -> LiveResearchReentryPlanUnboundError; plan
+      not reproducing its recorded plan_hash ->
+      LiveResearchReentryPlanMismatchError. Structural binding only: the
+      NL-direction <-> search-term correspondence is deliberately operator-
+      owned, surfaced as literal terms in the force-gate's approval scope.
+    - Otherwise -> the anchor. The caller force-gates when no fresh
+      credential decision is bound, and allows when one is.
+    """
+
+    anchor = re_research_reentry_anchor(connection, run_id)
+    if anchor is None:
+        return None
+    if anchor.stale:
         raise LiveResearchReentryRefusedError(run_id)
+    # Local import: decisions.py owns plan-boundedness (its resolve-time twin
+    # check) and never imports this module at module level, but the lazy form
+    # keeps this edge cycle-proof either way.
+    from .decisions import _is_bounded_plan
+
+    if anchor.plan is None or not _is_bounded_plan(anchor.plan):
+        raise LiveResearchReentryPlanUnboundError(run_id)
+    if anchor.plan_hash != digest(anchor.plan):
+        raise LiveResearchReentryPlanMismatchError(run_id)
+    return anchor
+
+
+def salted_reentry_key(idempotency_key: str, anchor: ReResearchAnchor) -> str:
+    """Layer 2 of the issue-48 fix: the anchor-keyed base-key salt.
+
+    The force-gate's `:credential:{decision_id}` suffix differentiates only
+    the STORE key; `credential_operation` and the finish transition use the
+    bare key, and `state.publish_transition`'s `_published_replay` early-
+    returns on `(run_id, operation, bare key)` BEFORE the consumed-decision
+    validation — so an unsalted same-term second pass would silently replay
+    the first pass's published bundle (evidence fetched, credential spent,
+    never published). Salting the bare key BEFORE `credential_operation` is
+    derived shifts credential_operation, the finish operation/key, and the
+    store base key together; the suspend<->resume contract still holds
+    because both re-derive the same salted key from the same stable anchor.
+    A first pass has no anchor and is never salted — byte-identical keys.
+
+    Containment (not equality) makes the salt idempotent across the layers
+    that apply it — the serpapi CLI salts its base key before the key/replay
+    machinery, then hands derived keys (including `-rN` retry suffixes) to
+    `run_research`, which salts again on the same anchor.
+    """
+
+    salt = f":re_research:{anchor.decision_id}"
+    if salt in idempotency_key:
+        return idempotency_key
+    return f"{idempotency_key}{salt}"
 
 
 @dataclass(frozen=True)
@@ -618,11 +742,51 @@ def _private_export_directory(run_root: Path, *, create: bool) -> tuple[Path, Pa
     return root, exports
 
 
+def _literal_query_terms(envelopes: Sequence[QueryEnvelope]) -> list[str]:
+    """The literal terms a batch will actually send, for operator approval."""
+
+    terms: list[str] = []
+    for envelope in envelopes:
+        projection = envelope.query_projection
+        term = normalize(projection.get("word") or projection.get("application_number") or "")
+        if term and term not in terms:
+            terms.append(term)
+    return terms
+
+
+def _reentry_scope_fields(
+    reentry_anchor: "ReResearchAnchor | None", envelopes: Sequence[QueryEnvelope],
+) -> dict[str, Any]:
+    """The plan binding an operator approves on a `re_research` second pass.
+
+    Egress honesty (issue #48): `request_fingerprint` is a digest an operator
+    cannot read, and the re_research plan is NL directions, not search terms —
+    so the scope surfaces the recorded plan, its hash, and the LITERAL terms
+    this batch will send, making the direction<->term correspondence an
+    explicit, approved element of the decision. Gated on the second-pass path
+    ONLY (anchor present), evaluated at suspend time: adding these fields
+    unconditionally would shift every FIRST-pass credential
+    `approval_scope_hash`, re-minting recorded gates for no reason.
+    """
+
+    if reentry_anchor is None:
+        return {}
+    plan = dict(reentry_anchor.plan or {})
+    return {
+        "needed_research": normalize(plan.get("needed_research", [])),
+        "plan": normalize(plan),
+        "plan_hash": reentry_anchor.plan_hash,
+        "re_research_decision_id": reentry_anchor.decision_id,
+        "second_pass_terms": _literal_query_terms(envelopes),
+    }
+
+
 def _credential_scope(
     envelope: QueryEnvelope,
     *,
     auth_attempt: str,
     credential_name: str,
+    reentry_anchor: "ReResearchAnchor | None" = None,
 ) -> dict[str, Any]:
     return {
         "adapter": normalize(envelope.adapter),
@@ -632,6 +796,7 @@ def _credential_scope(
         "capability": normalize(envelope.capability),
         "credential_name": credential_name,
         "request_fingerprint": envelope.request_fingerprint,
+        **_reentry_scope_fields(reentry_anchor, (envelope,)),
     }
 
 
@@ -642,6 +807,7 @@ def _batch_credential_scope(
     credential_name: str,
     effective_pages: int,
     result_budget: int,
+    reentry_anchor: "ReResearchAnchor | None" = None,
 ) -> dict[str, Any]:
     """The human-readable ceiling an operator approves at `gate decide`.
 
@@ -669,6 +835,7 @@ def _batch_credential_scope(
             "fingerprints": [envelope.request_fingerprint for envelope in envelopes],
         }),
         "result_budget": result_budget,
+        **_reentry_scope_fields(reentry_anchor, envelopes),
     }
 
 
@@ -776,21 +943,26 @@ def run_research(
     if prior.state is RunState.CREDENTIAL_REQUIRED:
         raise RuntimeError("credential_required: a current decision must resume the suspended request")
 
-    credential_operation = f"research.execute:{idempotency_key}"
     requires_credential = bool(getattr(adapter, "requires_credential", False))
     credential_name = normalize(getattr(adapter, "credential_name", ""))
     if requires_credential and not credential_name:
         raise ValueError("credential-requiring adapter must declare its credential name")
+    reentry_anchor = None
+    if requires_credential and prior.state is RunState.RESEARCH_RUNNING:
+        # Phase-4 validation (guard symmetry): this single-query entry
+        # point is generic over ANY credential-requiring adapter, not
+        # only the CLI's own kipris/serpapi callers — the CLI-level
+        # SerpAPI preflight is one caller, not the only one. Guarding
+        # here too makes `run_research` self-protecting regardless of
+        # caller, matching `run_research_batch`'s identical guard.
+        reentry_anchor = validated_reentry_anchor(connection, run_id)
+        if reentry_anchor is not None:
+            # Before credential_operation is derived: the salt must shift the
+            # finish/consume coordinate together with the store key.
+            idempotency_key = salted_reentry_key(idempotency_key, reentry_anchor)
+    credential_operation = f"research.execute:{idempotency_key}"
     request_revision = None
     if requires_credential:
-        if prior.state is RunState.RESEARCH_RUNNING:
-            # Phase-4 validation (guard symmetry): this single-query entry
-            # point is generic over ANY credential-requiring adapter, not
-            # only the CLI's own kipris/serpapi callers — the CLI-level
-            # SerpAPI preflight is one caller, not the only one. Guarding
-            # here too makes `run_research` self-protecting regardless of
-            # caller, matching `run_research_batch`'s identical guard.
-            refuse_stale_re_research_reentry(connection, run_id)
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
@@ -815,11 +987,18 @@ def run_research(
                 subject_revision_hash=request_revision.content_hash,
                 idempotency_key=idempotency_key,
             )
-        if not bool(getattr(adapter, "credential_present", False)):
+        # Option X (issue #48): a `re_research` second pass with no fresh
+        # credential decision force-raises a gate EVEN WHEN the credential is
+        # in env — no second pass ever egresses on a silently-reused
+        # first-pass approval, and the operator sees the plan binding and
+        # literal terms before any egress.
+        force_gate = reentry_anchor is not None and not credential_decision_id
+        if force_gate or not bool(getattr(adapter, "credential_present", False)):
             scope = _credential_scope(
                 envelope,
                 auth_attempt=credential_decision_id or "preflight",
                 credential_name=credential_name,
+                reentry_anchor=reentry_anchor,
             )
             gate = state.suspend_gate(
                 run_id,
@@ -829,7 +1008,10 @@ def run_research(
                 approval_scope=scope,
                 return_state=prior.state,
                 actor="research-cli",
-                reason="required adapter credential is unavailable",
+                reason=(
+                    "re_research second pass requires an explicit credential approval"
+                    if force_gate else "required adapter credential is unavailable"
+                ),
             )
             raise CredentialRequiredError(gate)
 
@@ -863,6 +1045,7 @@ def run_research(
             envelope,
             auth_attempt=credential_decision_id or "remote_auth",
             credential_name=credential_name,
+            reentry_anchor=reentry_anchor,
         )
         gate = state.suspend_gate(
             run_id,
@@ -994,11 +1177,21 @@ def run_research_batch(
     if prior.state is RunState.CREDENTIAL_REQUIRED:
         raise RuntimeError("credential_required: a current decision must resume the suspended request")
 
-    credential_operation = f"research.execute:{idempotency_key}"
     requires_credential = bool(getattr(adapter, "requires_credential", False))
     credential_name = normalize(getattr(adapter, "credential_name", ""))
     if requires_credential and not credential_name:
         raise ValueError("credential-requiring adapter must declare its credential name")
+    reentry_anchor = None
+    if requires_credential and prior.state is RunState.RESEARCH_RUNNING:
+        # Issue-48 four-way guard: refuses stale/unbound/mismatched bindings,
+        # returns None on a first-pass retry or cycle-back, and otherwise
+        # yields the anchor that force-gates and salts this second pass.
+        reentry_anchor = validated_reentry_anchor(connection, run_id)
+        if reentry_anchor is not None:
+            # Before credential_operation is derived: the salt must shift the
+            # finish/consume coordinate together with the store key.
+            idempotency_key = salted_reentry_key(idempotency_key, reentry_anchor)
+    credential_operation = f"research.execute:{idempotency_key}"
     # Representative per-term ceiling for the approval scope and the two-locus
     # enforcement below. plan_keyword_queries/plan_bibliography_queries give
     # every envelope in one batch the same `result_budget`, so the first is
@@ -1007,8 +1200,6 @@ def run_research_batch(
     request_revision = None
     approved_scope: dict[str, Any] | None = None
     if requires_credential:
-        if prior.state is RunState.RESEARCH_RUNNING:
-            refuse_stale_re_research_reentry(connection, run_id)
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
@@ -1038,13 +1229,21 @@ def run_research_batch(
                 effective_pages=effective_pages,
                 result_budget=batch_result_budget,
             )
-        if not bool(getattr(adapter, "credential_present", False)):
+        # Option X (issue #48): a `re_research` second pass with no fresh
+        # credential decision force-raises a gate EVEN WHEN the credential is
+        # in env — extending the proactive suspend below, which previously
+        # fired only on a missing credential. No second pass ever egresses on
+        # a silently-reused first-pass approval; the operator approves the
+        # plan binding and literal terms before any egress.
+        force_gate = reentry_anchor is not None and not credential_decision_id
+        if force_gate or not bool(getattr(adapter, "credential_present", False)):
             scope = _batch_credential_scope(
                 [query.envelope for query in resolved],
                 auth_attempt=credential_decision_id or "preflight",
                 credential_name=credential_name,
                 effective_pages=effective_pages,
                 result_budget=batch_result_budget,
+                reentry_anchor=reentry_anchor,
             )
             gate = state.suspend_gate(
                 run_id,
@@ -1054,7 +1253,10 @@ def run_research_batch(
                 approval_scope=scope,
                 return_state=prior.state,
                 actor="research-cli",
-                reason="required adapter credential is unavailable",
+                reason=(
+                    "re_research second pass requires an explicit credential approval"
+                    if force_gate else "required adapter credential is unavailable"
+                ),
             )
             raise CredentialRequiredError(gate)
 
@@ -1114,6 +1316,7 @@ def run_research_batch(
                 credential_name=credential_name,
                 effective_pages=effective_pages,
                 result_budget=batch_result_budget,
+                reentry_anchor=reentry_anchor,
             )
             gate = state.suspend_gate(
                 run_id,

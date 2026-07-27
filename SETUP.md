@@ -218,12 +218,21 @@ what research retrieved, never what audit separately pulled into its own
 similarity corpus.
 
 The second: the post-audit `/checkpoint` gate's `re_research` branch, which
-re-enters `RESEARCH_RUNNING` for exactly one bounded second pass, and only
-through `research fixture` / `research normalize-web` + `research manual` —
-never `research kipris` or `research serpapi`. Live credentialed research on
-that second pass is deferred to
-[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48); no
-networked verb, credential gate, or egress policy changed to add this path.
+re-enters `RESEARCH_RUNNING` for exactly one bounded second pass. Offline verbs
+(`research fixture` / `research normalize-web` + `research manual`) run as
+before. Live `research kipris` / `research serpapi` on this second pass
+([issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)) is
+allowed only under a fresh, force-raised credential gate: even with the API key
+in env, the second pass suspends before any egress and the operator approves a
+scope showing the resolution's `plan_hash`, its `needed_research` directions,
+and the literal second-pass search terms. A re-entry whose resolution binds no
+bounded plan (or whose plan no longer reproduces its recorded `plan_hash`) is
+refused with a distinct error code. The approved pass runs under the same
+bounds as any live batch and under a re-entry-salted key namespace, so it can
+never silently replay the first pass's published bundle. If you raise this
+gate by accident (e.g. you only meant to inspect state), resolve it with
+`gate decide --action degrade` — a non-authorizing action that returns the run
+to `research_running` without approving any egress.
 
 ## Full pipeline verbs
 

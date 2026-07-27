@@ -32,8 +32,8 @@ from .privacy import assert_canaries_absent, credential_canaries, delete_run, en
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
     FROZEN_PAGE_CAP, CredentialRequiredError, PlannedQuery, ResearchBudget,
-    plan_bibliography_queries, plan_keyword_queries, refuse_stale_re_research_reentry,
-    run_research, run_research_batch,
+    plan_bibliography_queries, plan_keyword_queries, run_research, run_research_batch,
+    salted_reentry_key, validated_reentry_anchor,
 )
 from .report import publish_report
 from .review import run_review
@@ -1003,6 +1003,23 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         if prior.state is RunState.CREDENTIAL_REQUIRED:
             raise RuntimeError("credential_required: a current decision must resume the suspended request")
 
+        # Issue #48: evaluate the re_research re-entry BEFORE any key or
+        # replay machinery — ahead of the stored-success short-circuit that
+        # used to bypass the guard, and still before any network egress. A
+        # validated re-entry salts the base key here so every derived key
+        # (decision keys, stored lookups, -rN retries) lives in the second
+        # pass's namespace and a same-term pass-1 success can neither replay
+        # nor collide; the refusal branches (stale / plan-unbound /
+        # plan-mismatch) raise their enveloped codes here. `run_research`
+        # re-derives the same anchor and re-applies the same salt
+        # idempotently, and its force-gate suspends a fresh pass-2 with the
+        # plan-bound scope even when SERPAPI_API_KEY is in env.
+        reentry_anchor = None
+        if prior.state is RunState.RESEARCH_RUNNING:
+            reentry_anchor = validated_reentry_anchor(connection, run_id)
+        if reentry_anchor is not None:
+            base_key = salted_reentry_key(base_key, reentry_anchor)
+
         # Any supplied decision is validated locally first, whatever the key mode.
         decision_operation = (
             _serpapi_decision_operation(connection, run_id, args.decision_id)
@@ -1035,17 +1052,16 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             )
         if stored is None and not research_permitted:
             raise CliError(f"research is not permitted from run state {prior.state.value}")
-        # Finding #12: a fresh (non-replayed) attempt on a research_running
-        # state entered via `re_research` is refused here, before any
-        # network egress or quota preflight — the second in-run research
-        # pass is offline-only (issue #48).
-        if stored is None and prior.state is RunState.RESEARCH_RUNNING:
-            refuse_stale_re_research_reentry(connection, run_id)
 
         # Free quota preflight: account.json does not consume a search. Replays of
-        # a stored result never touch the network at all.
+        # a stored result never touch the network at all. A fresh re_research
+        # second pass with no decision is about to be force-gated by
+        # `run_research` (issue #48), so the preflight is skipped there too —
+        # even the free account endpoint must not receive the credential before
+        # the operator approves the plan-bound scope.
+        force_gate_ahead = reentry_anchor is not None and not args.decision_id
         quota_note = None
-        if api_key and stored is None:
+        if api_key and stored is None and not force_gate_ahead:
             try:
                 account = serpapi_account(api_key, transport=account_transport)
             except (ValueError, OSError) as error:

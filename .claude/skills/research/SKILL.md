@@ -62,11 +62,15 @@ hosted-model egress, or a broader data scope.
 
 ## Re-entry after `/checkpoint`
 
-A `re_research` checkpoint decision re-enters this stage for one offline second pass —
-`fixture` / `normalize-web` + `manual` only, never `research kipris` / `research
-serpapi` (a code-level guard now refuses both on a `research_running` state entered
-via this route; live is deferred to
-[issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)). Read the
+A `re_research` checkpoint decision re-enters this stage for one bounded second
+pass. Offline verbs (`fixture` / `normalize-web` + `manual`) run as before. Live
+`research kipris` / `research serpapi`
+([issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48)) is
+force-gated on this route: even with the key in env the verb suspends with
+`credential_required`, and only the USER may approve that gate — its scope shows
+the resolution's `plan_hash`, `needed_research`, and the literal second-pass
+terms; a plan-unbound or plan-mismatched re-entry is refused outright. This
+skill still never runs live/credentialed commands itself. Read the
 decided `plan.needed_research` via
 `run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
 or the durable `<run>/decision-exports/ar_<revision_id>.json` file once the first
