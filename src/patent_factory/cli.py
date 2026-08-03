@@ -25,7 +25,7 @@ from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
 from .lint import audit_advisories, shortlist_advisories
-from .models import QueryEnvelope, RunState
+from .models import GateKind, QueryEnvelope, RunState
 from .paths import contained_input, contained_output, owner_only_file, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
 from .privacy import assert_canaries_absent, credential_canaries, delete_run, environment_secret
@@ -45,7 +45,9 @@ from .scaffold import (
     seal_feature_map_input,
 )
 from .sharing import SensitiveDisclosureRequiredError, share_report
-from .state import ALLOWED_TRANSITIONS, GATE_STATE_SET, StateError, StateStore
+from .state import (
+    ALLOWED_TRANSITIONS, AUTHORIZING_GATE_ACTIONS, GATE_STATE_SET, StateError, StateStore,
+)
 from .validation import validate_and_complete
 
 QUESTIONS = (
@@ -853,6 +855,49 @@ def _serpapi_decision_operation(connection: Any, run_id: str, decision_id: str) 
     return operation
 
 
+def _serpapi_decision_authorizes(
+    connection: Any, run_id: str, decision_id: str, *, reentry_anchor: Any,
+) -> bool:
+    """Can this decision authorize a FRESH egress on THIS second pass?
+
+    `_serpapi_decision_operation` answers a narrower question — which key the
+    decision is bound to — and deliberately says nothing about the decision's
+    action or whether it has already been spent. Spentness in particular
+    belongs here rather than there: a decision that has been used is still the
+    thing a decision-bound resume names, so a key resolver that refused it
+    would be answering a question it was not asked.
+
+    The quota preflight needs the wider answer. It runs before the runner is
+    ever entered, so the runner's own rejection comes too late to stop it: a
+    `degrade` (legal, non-authorizing) decision, an already-spent one, or one
+    approved for a DIFFERENT attempt would otherwise re-enable the preflight
+    and send `SERPAPI_API_KEY` to serpapi.com — a free endpoint, but still the
+    credential leaving the machine before any operator approved this pass's
+    plan-bound scope.
+
+    The third case is the one an action check alone misses. A pass-1 credential
+    decision is authorizing, unstale and unspent; what disqualifies it is that
+    it was never approved for the second pass. Its `suspended_operation` proves
+    that: every attempt inside a live re-entry is salted with the anchor's
+    decision id, so a decision raised for this second pass carries that salt
+    and a decision from any other attempt does not.
+    """
+
+    row = connection.execute(
+        "SELECT gd.action, gd.stale, gd.used_at, gd.suspended_operation, ge.kind "
+        "FROM gate_decisions gd JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id "
+        "WHERE gd.decision_id=? AND gd.run_id=?",
+        (decision_id, run_id),
+    ).fetchone()
+    if row is None or row["stale"] or row["used_at"]:
+        return False
+    if row["action"] not in AUTHORIZING_GATE_ACTIONS.get(GateKind(row["kind"]), frozenset()):
+        return False
+    if reentry_anchor is None:
+        return True
+    return f":re_research:{reentry_anchor.decision_id}" in (row["suspended_operation"] or "")
+
+
 def _serpapi_decision_key(
     connection: Any, run_id: str, decision_id: str, operation: str,
 ) -> tuple[str, dict[str, Any] | None]:
@@ -1061,7 +1106,18 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         # `run_research` (issue #48), so the preflight is skipped there too —
         # even the free account endpoint must not receive the credential before
         # the operator approves the plan-bound scope.
-        force_gate_ahead = needs_reentry_force_gate(reentry_anchor, args.decision_id)
+        # Presence of a decision id is not authorization: `force_gate_ahead`
+        # consumes the SHARED predicate, and a non-authorizing or already-spent
+        # decision is handed to it as no decision at all. Without this, the one
+        # thing standing between a `degrade` decision and the credential
+        # reaching the network is a check that runs after the preflight.
+        force_gate_ahead = needs_reentry_force_gate(
+            reentry_anchor,
+            args.decision_id
+            if args.decision_id and _serpapi_decision_authorizes(
+                connection, run_id, args.decision_id, reentry_anchor=reentry_anchor,
+            ) else None,
+        )
         quota_note = None
         if api_key and stored is None and not force_gate_ahead:
             try:

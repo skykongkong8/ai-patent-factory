@@ -263,6 +263,15 @@ Operator-facing consequences:
   pinning a spent one lands on it and the attempt is refused before any egress.
   Drop the flag and let the gated retry advance to a coordinate of its own, or
   pin a value this run has not used.
+- **`--decision-id` does not switch the guard off.** `research serpapi` runs a
+  free quota preflight against the account endpoint before the search, and it
+  skips that preflight whenever a force-gate is coming — the credential must
+  not leave the machine before the plan-bound scope is approved, free endpoint
+  or not. Supplying a decision id is not by itself an approval of this attempt:
+  a non-authorizing action such as `degrade`, an approval already spent by an
+  earlier attempt, and an approval granted for a different attempt all count as
+  no decision here, so the preflight stays skipped and the request is refused
+  before anything is sent.
 - **Recovering from a refusal.** If a re-entry is refused because its binding
   went stale (`live_research_reentry_refused_issue_48`), publish an offline pass
   — `research fixture`, or `research normalize-web` + `research manual`. An
