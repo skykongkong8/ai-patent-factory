@@ -701,5 +701,53 @@ class SerpApiCliTests(unittest.TestCase):
         self._assert_preflight_never_ran(run_root, result)
         self.assertNotIn("SERP-CANARY-SECRET", result.stdout + result.stderr)
 
+    def test_a_pinned_serpapi_key_is_not_advanced_past(self):
+        """The serpapi call site opts out of the runner advance; that must be locked.
+
+        This path resolves both halves of the retry convention itself, on its
+        own store-row terms, so the runner must not advance again. With
+        `--idempotency-key` the operator has pinned a coordinate outright, and
+        silently handing them a different one would turn an asked-for replay
+        into a fresh egress. Sibling of the kipris lock — that argument was
+        sensitive to nothing until a test was written for it, and so was this
+        one.
+        """
+
+        run_root = self.workspace / "serp-pin"
+        prepare_run(run_root, "serp-pin")
+        pinned = "operator-pinned-serp"
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            seed_re_research_reentry(connection, "serp-pin")
+            salted = f"{pinned}:re_research:gd_seeded_re_research"
+            connection.execute(
+                "INSERT INTO transition_events VALUES(?,?,?,?,?,?,?,?,?)",
+                ("te_serp_pin_finish", "serp-pin", "research-cli", "research_running",
+                 "research_incomplete", "seeded attempt 1 finish", "[]", None, FIXED_TIME),
+            )
+            connection.execute(
+                "INSERT INTO idempotency_records VALUES(?,?,?,?,?,?,?)",
+                ("serp-pin", f"research.execute:{salted}", salted, "te_serp_pin_finish",
+                 None, "research_incomplete", FIXED_TIME),
+            )
+        result = run_cli(
+            *self.common(run_root, "serp-pin"), "--idempotency-key", pinned,
+            "--fixture-response", self.relative(self._response_fixture()),
+            "--fixture-account", self.relative(self._account_fixture("account-ok")),
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        # Advancing would mint a fresh coordinate and raise a gate (exit 13);
+        # honouring the pin lands on the spent one and refuses.
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["failure_code"],
+            "live_research_reentry_spent_coordinate_issue_48",
+        )
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            self.assertEqual(connection.execute(
+                "SELECT count(*) FROM idempotency_records WHERE run_id='serp-pin' "
+                "AND idempotency_key LIKE '%-r2'"
+            ).fetchone()[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

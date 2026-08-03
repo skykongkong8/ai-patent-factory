@@ -99,9 +99,10 @@ disk, so this file always has the decision, before or after invalidation.
   That force-gate covers EVERY attempt of the second pass, retries included: an
   approved attempt that ends `research_incomplete` stays inside the guard, and
   the retry is force-gated in turn — or, from a state that cannot legally carry
-  a credential gate, refused before any egress. A retry reusing an already-published attempt
-  key is refused with `live_research_reentry_spent_coordinate_issue_48` before
-  any egress — retry under a fresh attempt key (`--idempotency-key`).
+  a credential gate, refused before any egress. A plain rerun advances to a
+  fresh attempt key of its own; `--idempotency-key` pins the coordinate and
+  switches that advance off, so pinning an already-published one is refused
+  with `live_research_reentry_spent_coordinate_issue_48` before any egress.
 
 ## Rules
 

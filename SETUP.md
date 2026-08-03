@@ -248,13 +248,21 @@ suspended for approval. Either way it does not reach the network.
 
 Operator-facing consequences:
 
-- **`live_research_reentry_spent_coordinate_issue_48`** — a retry that reuses an
-  attempt key whose result was already published is refused before any egress,
-  rather than quietly handing back the earlier attempt's bundle with the
-  credential spent for nothing. Retry under a fresh attempt key: pass
-  `--idempotency-key` with a new value. That mints a fresh coordinate while
-  leaving the resolution's binding live, so the retry is still force-gated and
-  still salted — it is a fresh approval, not a way around one.
+- **Retrying after an incomplete attempt: just rerun the command.** The retry
+  advances to a fresh attempt key of its own (`-r2`, `-r3`, …) instead of
+  landing on the coordinate the previous attempt already published, so it
+  publishes its own bundle rather than quietly inheriting the earlier one with
+  the credential spent for nothing. The resolution's binding stays live
+  throughout, so the retry still raises its own credential gate with its own
+  plan-bound scope — the advance saves you key arithmetic, it is not a way
+  around an approval. Approving that gate and resuming with `--decision-id`
+  finds the advanced coordinate automatically; you do not have to name it.
+- **`live_research_reentry_spent_coordinate_issue_48`** — what you see if you
+  pin a coordinate that was already used. `--idempotency-key` pins the attempt
+  coordinate exactly, which necessarily switches the automatic advance off, so
+  pinning a spent one lands on it and the attempt is refused before any egress.
+  Drop the flag and let the gated retry advance to a coordinate of its own, or
+  pin a value this run has not used.
 - **Recovering from a refusal.** If a re-entry is refused because its binding
   went stale (`live_research_reentry_refused_issue_48`), publish an offline pass
   — `research fixture`, or `research normalize-web` + `research manual`. An
