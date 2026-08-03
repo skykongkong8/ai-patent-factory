@@ -661,6 +661,12 @@ def _research_kipris(
                 retrieved_at=args.retrieved_at,
                 credential_decision_id=args.decision_id,
                 effective_pages=effective_pages,
+                # An explicit --idempotency-key pins the coordinate: the
+                # operator chose it, so the retry convention must not move it.
+                # Without one, the key is recomputed from the request
+                # fingerprint every invocation, which is exactly the case the
+                # convention exists for.
+                advance_spent_key=not args.idempotency_key,
             )
         except CredentialRequiredError as error:
             return _credential_gate_payload("research", error, normalize(args.run_id)), 5
@@ -1076,6 +1082,12 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 connection, run_root=run_root, run_id=run_id, adapter=adapter,
                 query=planned, idempotency_key=idempotency_key, retrieved_at=args.retrieved_at,
                 credential_decision_id=args.decision_id,
+                # This path resolved both halves of the convention above, on
+                # its own store-row terms (`_serpapi_idempotency_key` reuses a
+                # key only when it replays THIS invocation's stored success,
+                # which the finish-coordinate form cannot express). Advancing
+                # again in the runner would double-apply it.
+                advance_spent_key=False,
             )
         except CredentialRequiredError as error:
             return ({

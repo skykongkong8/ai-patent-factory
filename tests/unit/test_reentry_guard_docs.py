@@ -34,6 +34,23 @@ class ReentryGuardDocsTests(unittest.TestCase):
         self.assertIn("--idempotency-key", SETUP)
         self.assertIn("fresh attempt key", SETUP)
 
+    def test_setup_documents_the_automatic_retry_advance_and_what_disables_it(self):
+        """The advance changed what the operator should DO, so the docs must say so.
+
+        Before the advance, the documented recovery from a spent coordinate was
+        to pass `--idempotency-key`. That flag is now precisely what switches
+        the advance off, so leaving the old wording in place would tell an
+        operator to do the one thing that reproduces their problem.
+        """
+
+        normalised = " ".join(SETUP.split())
+        self.assertIn("advances to a fresh attempt key of its own", normalised)
+        self.assertIn("switches the automatic advance off", normalised)
+        for content in (RESEARCH_SKILL, CHECKPOINT_SKILL):
+            skill = " ".join(content.split())
+            self.assertIn("advances to a fresh attempt key", skill)
+            self.assertIn("switches that advance off", skill)
+
     def test_setup_documents_the_offline_publish_escape_hatch(self):
         self.assertIn(LiveResearchReentryRefusedError.code, SETUP)
         recovery = SETUP.split("Recovering from a refusal")[1][:900]

@@ -137,6 +137,31 @@ class GuardTestCase(unittest.TestCase):
              RunState.RESEARCH_RUNNING.value, utc_now()),
         )
 
+    def single(self, adapter, key, **kwargs):
+        """Drive the SINGLE-QUERY runner, whose suspend sites are separate code.
+
+        `run_research` and `run_research_batch` are hand-parallel twins: each
+        carries its own copy of the guard, the refusal and both suspends. Every
+        other test in this module drives the batch runner, so without this the
+        single-query copies could be reverted with the whole suite green.
+        """
+
+        envelope = QueryEnvelope(
+            run_id="run", adapter="kipris", adapter_version="plus-xml-v1",
+            capability="word_search", allowed_scheme="https",
+            allowed_host="plus.kipris.or.kr", deadline_seconds=10, page=1, page_cap=1,
+            result_budget=10, byte_budget=1_000_000, retry_budget=0,
+            retry_ownership="research_runner",
+            query_projection={
+                "word": "센서", "year": 0, "patent": True, "utility": True,
+                "num_of_rows": 10,
+            },
+        )
+        return run_research(
+            self.connection, run_root=self.root, run_id="run", adapter=adapter,
+            query=envelope, idempotency_key=key, retrieved_at=RETRIEVED_AT, **kwargs,
+        )
+
     def approve(self, gate, action="configure_and_verify"):
         decision, _ = self.store.decide_gate(
             gate.gate_id, action=action, actor="user", reason="approved",
@@ -263,31 +288,6 @@ class SuspendabilityTests(GuardTestCase):
         self.assertEqual(gate.return_state, RunState.RESEARCH_READY)
         self.assertEqual(gate.suspended_state, RunState.RESEARCH_READY)
         self.assertEqual(gate.suspended_operation, "research.execute:first-pass")
-
-    def single(self, adapter, key, **kwargs):
-        """Drive the SINGLE-QUERY runner, whose suspend sites are separate code.
-
-        `run_research` and `run_research_batch` are hand-parallel twins: each
-        carries its own copy of the guard, the refusal and both suspends. Every
-        other test in this module drives the batch runner, so without this the
-        single-query copies could be reverted with the whole suite green.
-        """
-
-        envelope = QueryEnvelope(
-            run_id="run", adapter="kipris", adapter_version="plus-xml-v1",
-            capability="word_search", allowed_scheme="https",
-            allowed_host="plus.kipris.or.kr", deadline_seconds=10, page=1, page_cap=1,
-            result_budget=10, byte_budget=1_000_000, retry_budget=0,
-            retry_ownership="research_runner",
-            query_projection={
-                "word": "센서", "year": 0, "patent": True, "utility": True,
-                "num_of_rows": 10,
-            },
-        )
-        return run_research(
-            self.connection, run_root=self.root, run_id="run", adapter=adapter,
-            query=envelope, idempotency_key=key, retrieved_at=RETRIEVED_AT, **kwargs,
-        )
 
     def test_the_single_query_runner_suspends_the_same_way(self):
         """Both of `run_research`'s suspend sites, which the batch tests cannot see.
@@ -793,75 +793,217 @@ class SpentCoordinateTests(GuardTestCase):
         ).fetchone()
         return row["revision_id"], row["content_json"]
 
-    def test_spent_attempt_coordinate_is_refused_before_any_egress(self):
-        """T-I3 (B-8): the retry must not silently inherit attempt 1's bundle.
+    def test_spent_attempt_coordinate_advances_and_publishes_its_own_bundle(self):
+        """T-I3 (B-8), in its PR-B form: AC-8.
 
         The defect being pinned is a SILENCE. Left alone, this retry does not
         fail — it fetches fresh evidence, then `_published_replay` hands back
         attempt 1's bundle before the consumed-decision validation ever runs.
         The run reports the old incomplete outcome, the credential is spent,
         and the decision is left consumed-but-unused. So the assertions here
-        are about the PUBLISHED BUNDLE, not merely about an exception being
-        raised.
+        are about the PUBLISHED BUNDLE, not about an exception being raised or
+        not raised.
 
-        The operator's way forward is a fresh attempt key. PR-B will mint one
-        for them, at which point this test flips to "publishes its own bundle"
-        and keeps exactly these content assertions.
+        PR-A refused this attempt and told the operator to re-key by hand;
+        PR-B advances the coordinate for them. Either way attempt 1's bundle is
+        never handed back as if it were this attempt's result — which is the
+        property, and it is asserted the same way in both worlds.
         """
 
         _decision, published = self.published_second_pass_attempt()
-        before_revision, before_content = self.current_bundle()
+        before_revision, _before_content = self.current_bundle()
         self.assertEqual(before_revision, published.artifact_revision_id)
         self.assertEqual(published.bundle["evidence"], [])
-        before_run = tuple(self.connection.execute(
-            "SELECT state, state_version FROM runs WHERE run_id='run'",
-        ).fetchone())
-        decisions_before = self.connection.execute(
-            "SELECT count(*) FROM gate_decisions WHERE run_id='run'"
-        ).fetchone()[0]
 
+        # No operator key arithmetic: the same call as before, same terms.
+        retry = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
+        with self.assertRaises(CredentialRequiredError) as captured:
+            self.batch(retry, "spent")
+        self.assertEqual(retry.calls, [])
+        gate = captured.exception.gate
+        self.assertTrue(
+            gate.suspended_operation.endswith("-r2"),
+            f"the retry must advance past the spent coordinate: {gate.suspended_operation}",
+        )
+        self.assertIn(":re_research:gd_seeded_re_research", gate.suspended_operation)
+
+        decision = self.approve(gate)
+        resumed_adapter = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
+        resumed = self.batch(
+            resumed_adapter, "spent", credential_decision_id=decision.decision_id,
+        )
+        # The resume re-derives the ADVANCED key from its decision, even though
+        # the caller passed the unadvanced one — the half of the convention
+        # that cannot be left behind.
+        self.assertEqual(resumed.next_state, RunState.RESEARCH_COMPLETE.value)
+        self.assertNotEqual(resumed.artifact_revision_id, before_revision)
+        self.assertEqual(resumed_adapter.calls, ["센서", "감지기", "sensor"])
+        self.assertTrue(resumed.bundle["evidence"])
+        used = self.connection.execute(
+            "SELECT used_at FROM gate_decisions WHERE decision_id=?", (decision.decision_id,),
+        ).fetchone()
+        self.assertTrue(used["used_at"])
+        # Both attempts' finish coordinates persist side by side.
+        finishes = sorted(
+            row[0] for row in self.connection.execute(
+                "SELECT idempotency_key FROM idempotency_records WHERE run_id='run' "
+                "AND operation LIKE 'research.execute:%'"
+            )
+        )
+        salted = "spent:re_research:gd_seeded_re_research"
+        self.assertEqual(finishes, [salted, f"{salted}-r2"])
+
+    def test_a_spent_coordinate_is_still_refused_when_it_cannot_be_advanced(self):
+        """M-3's lock, kept reachable after PR-B made the honest retry advance.
+
+        The refusal is not dead once the advance exists — it is the backstop
+        for every caller that does NOT get the advance, which is exactly the
+        operator who pinned a coordinate with `--idempotency-key` and pinned a
+        spent one. Without it, that caller falls into the silent replay.
+        """
+
+        _decision, published = self.published_second_pass_attempt(key="pinned")
+        before = self.current_bundle()
+        decisions_before = [tuple(row) for row in self.connection.execute(
+            "SELECT decision_id, consumed_at, used_at FROM gate_decisions "
+            "WHERE run_id='run' ORDER BY decision_id",
+        )]
         retry = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
         with self.assertRaises(LiveResearchReentrySpentCoordinateError) as caught:
-            self.batch(retry, "spent")
+            run_research_batch(
+                self.connection, run_root=self.root, run_id="run", adapter=retry,
+                queries=plan(), idempotency_key="pinned", retrieved_at=RETRIEVED_AT,
+                advance_spent_key=False,
+            )
         self.assertEqual(
             caught.exception.code, "live_research_reentry_spent_coordinate_issue_48",
         )
         self.assertEqual(retry.calls, [])
-        # Attempt 1's bundle was never handed back as this attempt's result,
-        # and nothing new was published at the coordinate.
-        self.assertEqual(self.current_bundle(), (before_revision, before_content))
+        self.assertEqual(self.current_bundle(), before)
+        self.assertEqual(published.bundle["evidence"], [])
+        # No decision is supplied here, so this only says the refused attempt
+        # created none. The case where the refusal actually has a consume to
+        # get in front of is the next test.
         self.assertEqual(
-            self.connection.execute(
-                "SELECT count(*) FROM idempotency_records WHERE run_id='run' "
-                "AND operation LIKE 'research.execute:%'"
-            ).fetchone()[0],
-            1,
-        )
-        # Refused before any egress AND before any state mutation: the refusal
-        # sits above the `research.start` state-check transition and above the
-        # request revision, so a turned-away attempt writes nothing. Sensitive
-        # because the run is at `research_incomplete`, where that transition
-        # would otherwise fire.
-        self.assertEqual(
-            tuple(self.connection.execute(
-                "SELECT state, state_version FROM runs WHERE run_id='run'",
-            ).fetchone()),
-            before_run,
-        )
-        self.assertEqual(
-            self.connection.execute(
-                "SELECT count(*) FROM idempotency_records WHERE run_id='run' "
-                "AND operation='research.start'"
-            ).fetchone()[0],
-            0,
-        )
-        # Refused ABOVE the consume: no decision was spent by the refused attempt.
-        self.assertEqual(
-            self.connection.execute(
-                "SELECT count(*) FROM gate_decisions WHERE run_id='run'"
-            ).fetchone()[0],
+            [tuple(row) for row in self.connection.execute(
+                "SELECT decision_id, consumed_at, used_at FROM gate_decisions "
+                "WHERE run_id='run' ORDER BY decision_id",
+            )],
             decisions_before,
         )
+
+    def test_the_advance_does_not_touch_a_run_with_no_reentry_anchor(self):
+        """Scoping: the advance must not fire wider than the refusal it replaces.
+
+        A run with no `re_research` history reaches this code too. Its
+        coordinates are not the guard's business — the refusal never fires
+        there, so the advance must not either. Moving them would change an
+        identifier on a path that succeeds today, which is the one thing this
+        change promised not to do.
+        """
+
+        # Attempt 1 publishes at a decision-bound coordinate, with no anchor
+        # anywhere: an ordinary first pass that needed a credential gate.
+        missing = CredentialStubAdapter(present=False)
+        with self.assertRaises(CredentialRequiredError) as captured:
+            self.batch(missing, "no-anchor")
+        decision = self.approve(captured.exception.gate)
+        self.batch(
+            CredentialStubAdapter(present=True, results=ALL_FAIL), "no-anchor",
+            credential_decision_id=decision.decision_id,
+        )
+        self.assertIsNone(re_research_reentry_anchor(self.connection, "run"))
+        published = self.connection.execute(
+            "SELECT count(*) FROM idempotency_records WHERE run_id='run' "
+            "AND operation='research.execute:no-anchor'"
+        ).fetchone()[0]
+        self.assertEqual(published, 1, "the coordinate the advance would move must be spent")
+
+        self.park("research_running")
+        retry = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
+        self.batch(retry, "no-anchor")
+        self.assertEqual(retry.calls, ["센서", "감지기", "sensor"])
+        keys = sorted(
+            row[0] for row in self.connection.execute(
+                "SELECT idempotency_key FROM research_operations WHERE run_id='run' "
+                "AND idempotency_key NOT LIKE '%:credential:%'"
+            )
+        )
+        self.assertEqual(keys, [f"no-anchor:q{index:02d}" for index in range(3)])
+        self.assertFalse(
+            any("-r2" in key for key in keys),
+            f"an unanchored run's coordinates were advanced: {keys}",
+        )
+
+        # The single-query runner carries its own copy of the same scoping, and
+        # it needs its own spent coordinate to be observable: an advance over a
+        # coordinate nothing published is a no-op in both worlds.
+        self.reset()
+        single_key = "no-anchor-single"
+        missing_single = CredentialStubAdapter(present=False)
+        with self.assertRaises(CredentialRequiredError) as single_gate:
+            self.single(missing_single, single_key)
+        single_decision = self.approve(single_gate.exception.gate)
+        self.single(
+            CredentialStubAdapter(present=True, results={"센서": failure()}), single_key,
+            credential_decision_id=single_decision.decision_id,
+        )
+        self.assertIsNone(re_research_reentry_anchor(self.connection, "run"))
+        self.assertEqual(self.connection.execute(
+            "SELECT count(*) FROM idempotency_records WHERE run_id='run' "
+            "AND operation=?", (f"research.execute:{single_key}",),
+        ).fetchone()[0], 1)
+
+        # Park at research_running so the retry's own publish is legal; the
+        # point here is which COORDINATE it lands on, not the state walk.
+        self.park("research_running")
+        retry_single = CredentialStubAdapter(present=True, results={"센서": success()})
+        self.single(retry_single, single_key)
+        self.assertEqual(retry_single.calls, ["센서"])
+        self.assertEqual(
+            sorted(row[0] for row in self.connection.execute(
+                "SELECT idempotency_key FROM research_operations WHERE run_id='run' "
+                "AND idempotency_key NOT LIKE '%:credential:%'"
+            )),
+            [single_key],
+        )
+
+    def test_a_pinned_key_still_resumes_the_decision_it_was_advanced_to(self):
+        """The resume half must NOT be gated off with the advance.
+
+        An operator whose retry was auto-advanced to `-r2` gets a gate bound to
+        `-r2`. If they then pin the coordinate — with `--idempotency-key`, or
+        any caller that opts out of the advance — the decision-bound derivation
+        still has to find `-r2`, or the approval they were just granted cannot
+        be resumed at all. Gating both halves on one flag breaks exactly the
+        retry the advance created.
+        """
+
+        _first, _published = self.published_second_pass_attempt(key="pinned-resume")
+        with self.assertRaises(CredentialRequiredError) as captured:
+            self.batch(CredentialStubAdapter(present=True), "pinned-resume")
+        gate = captured.exception.gate
+        self.assertTrue(gate.suspended_operation.endswith("-r2"))
+        decision = self.approve(gate)
+
+        # The caller pins the UNADVANCED key and opts out of the advance; the
+        # resume must still land on the coordinate the decision is bound to.
+        adapter = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
+        resumed = run_research_batch(
+            self.connection, run_root=self.root, run_id="run", adapter=adapter,
+            queries=plan(), idempotency_key="pinned-resume", retrieved_at=RETRIEVED_AT,
+            credential_decision_id=decision.decision_id, advance_spent_key=False,
+        )
+        self.assertEqual(resumed.next_state, RunState.RESEARCH_COMPLETE.value)
+        self.assertEqual(adapter.calls, ["센서", "감지기", "sensor"])
+        finish = sorted(
+            row[0] for row in self.connection.execute(
+                "SELECT idempotency_key FROM idempotency_records WHERE run_id='run' "
+                "AND operation LIKE 'research.execute:%'"
+            )
+        )
+        salted = "pinned-resume:re_research:gd_seeded_re_research"
+        self.assertEqual(finish, [salted, f"{salted}-r2"])
 
     def test_completed_attempt_still_replays_for_its_own_decision(self):
         """T-I3b — the anti-blanket-refusal lock (B-10).
@@ -881,6 +1023,47 @@ class SpentCoordinateTests(GuardTestCase):
         self.assertEqual(adapter.calls, [])
         self.assertEqual(replayed.artifact_revision_id, published.artifact_revision_id)
         self.assertEqual(replayed.bundle["evidence"], published.bundle["evidence"])
+
+    def test_a_refused_attempt_leaves_a_supplied_decision_unconsumed(self):
+        """The refusal sits ABOVE the consume, and this is what that buys.
+
+        `consume_decision` is idempotent, so consuming first and refusing after
+        would not corrupt anything — it would leave the decision
+        consumed-but-unused, which is precisely the accounting state this
+        refusal exists to prevent. Asserting that with no decision supplied
+        proves nothing; the decision has to be there and has to reach the
+        refusal for the ordering to be observable at all.
+
+        The supplied decision is bound to a DIFFERENT attempt, which is what
+        makes the coordinate stay spent: a decision bound to this one would be
+        the designed replay and must not be refused.
+        """
+
+        _first, published = self.published_second_pass_attempt(key="pinned-consume")
+        # A second, genuinely unrelated authorization on the same run.
+        with self.assertRaises(CredentialRequiredError) as captured:
+            self.batch(CredentialStubAdapter(present=True), "another-attempt")
+        other = self.approve(captured.exception.gate)
+        self.assertIn("another-attempt", other.suspended_operation)
+        self.assertIsNone(self.connection.execute(
+            "SELECT used_at FROM gate_decisions WHERE decision_id=?", (other.decision_id,),
+        ).fetchone()["used_at"])
+
+        adapter = CredentialStubAdapter(present=True, results=ALL_SUCCEED)
+        with self.assertRaises(LiveResearchReentrySpentCoordinateError):
+            run_research_batch(
+                self.connection, run_root=self.root, run_id="run", adapter=adapter,
+                queries=plan(), idempotency_key="pinned-consume", retrieved_at=RETRIEVED_AT,
+                credential_decision_id=other.decision_id, advance_spent_key=False,
+            )
+        self.assertEqual(adapter.calls, [])
+        spent = self.connection.execute(
+            "SELECT consumed_at, used_at FROM gate_decisions WHERE decision_id=?",
+            (other.decision_id,),
+        ).fetchone()
+        self.assertIsNone(spent["consumed_at"], "the refused attempt consumed the decision")
+        self.assertIsNone(spent["used_at"])
+        self.assertEqual(self.current_bundle()[0], published.artifact_revision_id)
 
     def test_a_fresh_attempt_key_clears_the_refusal(self):
         """The documented recovery, asserted rather than left to the docs.

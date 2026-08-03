@@ -253,8 +253,9 @@ class LiveResearchReentrySpentCoordinateError(RuntimeError):
 
     def __init__(self, run_id: str, detail: str) -> None:
         super().__init__(
-            f"run {run_id}: {detail} — rerun with --idempotency-key to retry under a "
-            "fresh attempt key, so this attempt publishes its own bundle"
+            f"run {run_id}: {detail} — rerun WITHOUT --idempotency-key so an "
+            "authorized retry advances to a fresh attempt key of its own, or pass "
+            "--idempotency-key with a value this run has not already used"
         )
         self.run_id = run_id
 
@@ -552,6 +553,72 @@ def _published_finish_at(connection: sqlite3.Connection, run_id: str, key: str) 
         "SELECT event_id FROM idempotency_records WHERE run_id=? AND operation=? AND idempotency_key=?",
         (run_id, f"research.execute:{key}", key),
     ).fetchone()
+
+
+def attempt_coordinate(
+    connection: sqlite3.Connection,
+    run_id: str,
+    idempotency_key: str,
+    *,
+    credential_decision_id: str | None,
+    advance: bool,
+) -> str:
+    """The coordinate this attempt lands on — the retry convention, in one place.
+
+    Decision 4c, and it is TWO halves that only work together.
+
+    * A FRESH attempt advances past any coordinate this run already published a
+      decision-bound finish at, using the same `-rN` shape the serpapi path has
+      always used. Without it, an honest same-term retry after an incomplete
+      attempt lands on the spent coordinate and has to be re-keyed by hand.
+    * A RESUME takes the exact key its decision is bound to. This is the half
+      that cannot be left behind: the kipris key is recomputed from the request
+      fingerprint on every invocation, so it reproduces the UNADVANCED key, and
+      a resume that used it would no longer match the decision's
+      `suspended_operation`. Hoisting only the advance would break every
+      approved retry.
+
+    The advance deliberately keys on `research.execute:` coordinates only. An
+    attempt with no decision finishes under `research.finish`, and a re-run of
+    one of those is a designed zero-transport replay — advancing past it would
+    turn a replay into a fresh egress.
+
+    `advance` gates ONLY the advance, and callers scope it to exactly the case
+    the spent-coordinate refusal covers. Two rules follow, and both matter:
+
+    * It must not fire wider than that refusal. A run with no re_research
+      anchor at all reaches this function too, and moving its coordinate would
+      change an identifier on a path that succeeds today — the one thing this
+      whole change promised not to do.
+    * It must not gate the RESUME half. An operator who pins the coordinate
+      they were advanced to still has to be able to resume the decision bound
+      to it; switching both halves off together would break exactly the retry
+      the advance just created.
+    """
+
+    if credential_decision_id:
+        row = connection.execute(
+            "SELECT suspended_operation FROM gate_decisions WHERE decision_id=? AND run_id=?",
+            (credential_decision_id, run_id),
+        ).fetchone()
+        bound = (row["suspended_operation"] or "") if row is not None else ""
+        bound = bound[len("research.execute:"):] if bound.startswith("research.execute:") else ""
+        # Undo THIS convention's own advance and nothing else: the suffix must
+        # be exactly the `-r<digits>` shape minted below, so any other
+        # disagreement between the supplied key and the decision stays a
+        # genuine mismatch for `_verify_and_consume_credential_decision` to
+        # reject rather than something silently adopted here.
+        advanced = bound[len(idempotency_key) + 2:] if bound.startswith(f"{idempotency_key}-r") else ""
+        if bound and (bound == idempotency_key or advanced.isdigit()):
+            return bound
+        return idempotency_key
+    if not advance:
+        return idempotency_key
+    candidate, attempt = idempotency_key, 1
+    while _published_finish_at(connection, run_id, candidate) is not None:
+        attempt += 1
+        candidate = f"{idempotency_key}-r{attempt}"
+    return candidate
 
 
 def needs_reentry_force_gate(
@@ -1138,6 +1205,7 @@ def run_research(
     retrieved_at: str | None = None,
     credential_decision_id: str | None = None,
     fault_at: FaultInjector = None,
+    advance_spent_key: bool = True,
 ) -> ResearchRun:
     """Execute one bounded research operation through the authoritative state machine."""
 
@@ -1175,6 +1243,16 @@ def run_research(
         if requires_credential else (None, idempotency_key)
     )
     force_gate = needs_reentry_force_gate(reentry_anchor, credential_decision_id)
+    if requires_credential:
+        # Decision 4c, after the salt so a second pass advances inside its own
+        # namespace, and before `credential_operation` is derived so the whole
+        # finish/consume coordinate moves together. `force_gate` scopes the
+        # advance to the same attempts the spent-coordinate refusal covers.
+        idempotency_key = attempt_coordinate(
+            connection, run_id, idempotency_key,
+            credential_decision_id=credential_decision_id,
+            advance=advance_spent_key and force_gate,
+        )
     credential_operation = f"research.execute:{idempotency_key}"
     request_revision = None
     if requires_credential:
@@ -1338,6 +1416,7 @@ def run_research_batch(
     retrieved_at: str | None = None,
     credential_decision_id: str | None = None,
     fault_at: FaultInjector = None,
+    advance_spent_key: bool = True,
     effective_pages: int = 1,
 ) -> ResearchBatchRun:
     """Execute a bounded batch of planned queries in one research session.
@@ -1408,6 +1487,16 @@ def run_research_batch(
         if requires_credential else (None, idempotency_key)
     )
     force_gate = needs_reentry_force_gate(reentry_anchor, credential_decision_id)
+    if requires_credential:
+        # Decision 4c, after the salt so a second pass advances inside its own
+        # namespace, and before `credential_operation` is derived so the whole
+        # finish/consume coordinate moves together. `force_gate` scopes the
+        # advance to the same attempts the spent-coordinate refusal covers.
+        idempotency_key = attempt_coordinate(
+            connection, run_id, idempotency_key,
+            credential_decision_id=credential_decision_id,
+            advance=advance_spent_key and force_gate,
+        )
     credential_operation = f"research.execute:{idempotency_key}"
     # Representative per-term ceiling for the approval scope and the two-locus
     # enforcement below. plan_keyword_queries/plan_bibliography_queries give
