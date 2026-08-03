@@ -69,7 +69,15 @@ pass. Offline verbs (`fixture` / `normalize-web` + `manual`) run as before. Live
 force-gated on this route: even with the key in env the verb suspends with
 `credential_required`, and only the USER may approve that gate — its scope shows
 the resolution's `plan_hash`, `needed_research`, and the literal second-pass
-terms; a plan-unbound or plan-mismatched re-entry is refused outright. This
+terms; a plan-unbound or plan-mismatched re-entry is refused outright. The
+force-gate covers EVERY attempt of that second pass, retries included: it is
+keyed on the live `re_research` resolution, not on the run's current state, so
+an approved attempt that ends `research_incomplete` does not fall out of the
+guard — the retry is force-gated with its own plan-bound scope, or, from a
+state that cannot legally carry a credential gate, refused before any egress. A retry
+that reuses an already-published attempt key is refused before any egress with
+`live_research_reentry_spent_coordinate_issue_48`; retry under a fresh attempt
+key (`--idempotency-key`), which stays force-gated and salted. This
 skill still never runs live/credentialed commands itself. Read the
 decided `plan.needed_research` via
 `run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,

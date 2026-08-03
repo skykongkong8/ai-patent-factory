@@ -14,7 +14,7 @@ from .models import AdapterResult, GateEnvelope, GateKind, QueryEnvelope, RunSta
 from .provenance import canonical_json, digest, evidence_revision_id, normalize
 from .privacy import assert_canaries_absent, credential_canaries
 from .retrieval import execute_paginated
-from .state import StateStore, workspace_export_directories
+from .state import ALLOWED_TRANSITIONS, GATE_STATES, StateStore, workspace_export_directories
 
 # The frozen page_cap fossil's value (ResearchBudget.page_cap, QueryEnvelope.
 # page_cap below). Named here — rather than left as a bare `5` wherever an
@@ -230,6 +230,150 @@ class LiveResearchReentryPlanMismatchError(RuntimeError):
         self.run_id = run_id
 
 
+class LiveResearchReentrySpentCoordinateError(RuntimeError):
+    """This attempt is reusing an attempt coordinate a prior attempt already spent.
+
+    One code for two symptoms of the same fact, because they partition the
+    retry space rather than overlap it:
+
+    * a prior attempt already PUBLISHED the finish coordinate this attempt
+      would land on, so proceeding would silently replay that attempt's bundle
+      instead of publishing this one's evidence (the credential spent, the
+      decision consumed-but-unused, the run never advancing); or
+    * the run's `research.start` record at this coordinate was already
+      recorded, so the state-check transition replayed and left the run
+      un-advanced in a state a CREDENTIAL gate cannot legally suspend from —
+      the guard would choose a branch it cannot complete.
+
+    Both refuse BEFORE any egress. The recovery is the same in both cases and
+    is the one the CLI already names: retry under a fresh attempt key.
+    """
+
+    code = "live_research_reentry_spent_coordinate_issue_48"
+
+    def __init__(self, run_id: str, detail: str) -> None:
+        super().__init__(
+            f"run {run_id}: {detail} — rerun with --idempotency-key to retry under a "
+            "fresh attempt key, so this attempt publishes its own bundle"
+        )
+        self.run_id = run_id
+
+
+def _suspendable_state(state: StateStore, run_id: str) -> RunState:
+    """Read the state a credential gate would suspend FROM, and guarantee it can.
+
+    Decision 3. Two defects sit here, and one check closes both.
+
+    `suspend_gate` requires `return_state == prior.state` at suspend time, but
+    every caller used to pass either a snapshot taken BEFORE the state-check
+    transition (stale by construction once that transition fires) or a
+    hardcoded `RESEARCH_RUNNING` (correct only when it fired). Reading the
+    state here, at suspend time, is the only formulation that is right on both
+    paths.
+
+    `suspend_gate` also requires the gate transition itself to be legal, and a
+    CREDENTIAL gate can only suspend from `research_ready`, `research_running`
+    and `research_incomplete`. Normally the state-check transition moves the
+    run to `RESEARCH_RUNNING` first — but when that transition REPLAYS
+    (`state.transition` early-returns on an existing idempotency record before
+    it validates anything) the run stays where it was, and four entry states
+    then cannot carry the gate at all. Refusing here, before any egress, turns
+    that into a defined code instead of a `StateError` raised after the
+    credential has already been spent.
+
+    NOT "the run must have reached `research_running`": an ordinary first pass
+    suspends from `research_ready`, which the state-check transition skips by
+    design, and that rule would refuse every one of them.
+    """
+
+    current = state.snapshot(run_id).state
+    if GATE_STATES[GateKind.CREDENTIAL] not in ALLOWED_TRANSITIONS.get(current, frozenset()):
+        raise LiveResearchReentrySpentCoordinateError(
+            run_id,
+            f"a credential gate cannot suspend this run from {current.value}, because the "
+            "research.start record at this attempt coordinate was already recorded and left "
+            "the run un-advanced",
+        )
+    return current
+
+
+def _is_own_decisions_replay(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    credential_decision_id: str | None,
+    published_event_id: str | None,
+) -> bool:
+    """Is this attempt the SUPPORTED idempotent replay of a completed attempt?
+
+    Re-running a credentialed attempt with the decision that produced it is a
+    designed path: `_verify_and_consume_credential_decision` takes its
+    `used_at` branch, the store replays every page with zero transport, and the
+    finish replays the same bundle. A published finish record at the
+    coordinate is therefore exactly what a legitimate replay looks like, so
+    neither the spent-coordinate refusal nor the suspendability check may fire
+    on it — the record's own decision is the discriminator.
+    """
+
+    if published_event_id is None or not credential_decision_id:
+        return False
+    decision = connection.execute(
+        "SELECT consumed_by_event_id FROM gate_decisions WHERE decision_id=? AND run_id=?",
+        (credential_decision_id, run_id),
+    ).fetchone()
+    return decision is not None and decision["consumed_by_event_id"] == published_event_id
+
+
+def _refuse_spent_attempt_coordinate(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    idempotency_key: str,
+    credential_decision_id: str | None,
+    force_gate: bool,
+) -> None:
+    """Refuse an attempt whose finish coordinate a prior attempt already published.
+
+    Decision 4b. Without this, such an attempt does not fail — it SILENTLY
+    REPLAYS that finish (`publish_transition`'s `_published_replay` early-
+    returns before the consumed-decision validation). Its freshly fetched
+    evidence is discarded, the credential is spent for nothing, the decision is
+    left consumed-but-unused and the run never advances. Within one second pass
+    that replay is silent rather than loud, and the retry-within-a-second-pass
+    path is exactly the traffic the anchor-keyed guard newly creates, so it is
+    refused here rather than assumed to fail noisily somewhere downstream.
+
+    Placed above the credential-decision consume — the one point both legs of
+    the guard pass through — so a refused attempt leaves its decision reusable
+    instead of consumed-but-unused, which is the very accounting fault this
+    refusal exists to prevent. And above the state-check transition too, so a
+    refused attempt is not merely egress-free but SIDE-EFFECT-free: it leaves
+    the run in the state it found it, with no `research.start` record and no
+    request revision written on its way to being turned away.
+
+    The scoping is what keeps it from becoming a blanket refusal: it fires on
+    the force-gate branch (where by construction no decision can claim the
+    record) and on a supplied decision that did NOT produce the record, and
+    never on the record's own decision.
+    """
+
+    published = _published_finish_at(connection, run_id, idempotency_key)
+    if published is None or not (force_gate or credential_decision_id):
+        return
+    if _is_own_decisions_replay(
+        connection,
+        run_id=run_id,
+        credential_decision_id=credential_decision_id,
+        published_event_id=published["event_id"],
+    ):
+        return
+    raise LiveResearchReentrySpentCoordinateError(
+        run_id,
+        f"a prior attempt already published the finish coordinate {idempotency_key!r}, "
+        "so this attempt would replay that bundle instead of publishing its own evidence",
+    )
+
+
 @dataclass(frozen=True)
 class ReResearchAnchor:
     """The ONE state-derived coordinate of a `re_research` re-entry (issue #48).
@@ -356,6 +500,80 @@ def salted_reentry_key(idempotency_key: str, anchor: ReResearchAnchor) -> str:
     if salt in idempotency_key:
         return idempotency_key
     return f"{idempotency_key}{salt}"
+
+
+def _apply_reentry_guard(
+    connection: sqlite3.Connection, run_id: str, idempotency_key: str,
+) -> tuple["ReResearchAnchor | None", str]:
+    """The issue-48 guard and its salt, as ONE implementation (Decision 2).
+
+    The predicate that decides "this run is inside an authorized second pass"
+    existed in three hand-copies and its salt application in four, and the
+    `RESEARCH_INCOMPLETE` bypass was in every one of them. Both live here now,
+    so a caller cannot hold one without the other and the copies cannot desync.
+
+    Callers still own their CALL SITE — the CLI must salt before its own
+    key/replay machinery, the runners before `credential_operation` is derived
+    — but not the decision.
+
+    THE GUARD IS THE ANCHOR, NOT A RUN STATE (Decision 1B). Issue #48 asked
+    `prior.state is RESEARCH_RUNNING` first, which is a PROXY for the fact the
+    anchor already states outright, and the two disagree the moment a second
+    pass ends `RESEARCH_INCOMPLETE`: the run leaves `research_running` while
+    the anchor stays live, and the retry then egresses unsalted and ungated on
+    terms no operator approved.
+
+    Enumerating the states instead would still be incomplete today, not merely
+    fragile. On a fresh key the three gate states are stopped by
+    `_validate_direct_transition` — an accident of the transition layer, not a
+    property of this guard — but a replayed `research.start` early-returns
+    before that check ever runs, and on that path all six non-running states
+    reach here and egress every term. The anchor's own contract ("latest
+    re_research resolution, with no `research_complete` since") is the only
+    formulation that is total over entry states, including ones not yet
+    invented.
+
+    The guard stays inside `requires_credential` at every call site: an offline
+    second pass is unsalted and ungated by design.
+    """
+
+    anchor = validated_reentry_anchor(connection, run_id)
+    if anchor is None:
+        return None, idempotency_key
+    # Before `credential_operation` is derived: the salt must shift the
+    # finish/consume coordinate together with the store key.
+    return anchor, salted_reentry_key(idempotency_key, anchor)
+
+
+def _published_finish_at(connection: sqlite3.Connection, run_id: str, key: str) -> sqlite3.Row | None:
+    """The decision-bound finish record at one attempt coordinate, if any."""
+
+    return connection.execute(
+        "SELECT event_id FROM idempotency_records WHERE run_id=? AND operation=? AND idempotency_key=?",
+        (run_id, f"research.execute:{key}", key),
+    ).fetchone()
+
+
+def needs_reentry_force_gate(
+    reentry_anchor: "ReResearchAnchor | None", credential_decision_id: str | None,
+) -> bool:
+    """Option X (issue #48): does this attempt need an explicit approval first?
+
+    A `re_research` second pass with no fresh credential decision force-raises
+    a gate EVEN WHEN the credential is in env, so no second pass ever egresses
+    on a silently-reused first-pass approval and the operator sees the plan
+    binding and the literal terms before anything leaves the machine.
+
+    The serpapi CLI consults this before its free quota preflight and the
+    runners before their suspend, so the predicate itself is never duplicated.
+    That is a claim about the predicate, not about its inputs: a caller that
+    knows more about whether a supplied decision can authorize THIS attempt is
+    free to pass a stricter input, and the CLI preflight does exactly that,
+    because it runs before the runner is ever entered and so cannot wait for
+    the runner's own rejection.
+    """
+
+    return reentry_anchor is not None and not normalize(credential_decision_id or "")
 
 
 @dataclass(frozen=True)
@@ -947,22 +1165,23 @@ def run_research(
     credential_name = normalize(getattr(adapter, "credential_name", ""))
     if requires_credential and not credential_name:
         raise ValueError("credential-requiring adapter must declare its credential name")
-    reentry_anchor = None
-    if requires_credential and prior.state is RunState.RESEARCH_RUNNING:
-        # Phase-4 validation (guard symmetry): this single-query entry
-        # point is generic over ANY credential-requiring adapter, not
-        # only the CLI's own kipris/serpapi callers — the CLI-level
-        # SerpAPI preflight is one caller, not the only one. Guarding
-        # here too makes `run_research` self-protecting regardless of
-        # caller, matching `run_research_batch`'s identical guard.
-        reentry_anchor = validated_reentry_anchor(connection, run_id)
-        if reentry_anchor is not None:
-            # Before credential_operation is derived: the salt must shift the
-            # finish/consume coordinate together with the store key.
-            idempotency_key = salted_reentry_key(idempotency_key, reentry_anchor)
+    # Guard symmetry: this single-query entry point is generic over ANY
+    # credential-requiring adapter, not only the CLI's own kipris/serpapi
+    # callers — the CLI-level SerpAPI preflight is one caller, not the only
+    # one. Guarding here too makes `run_research` self-protecting regardless of
+    # caller, matching `run_research_batch`'s identical guard.
+    reentry_anchor, idempotency_key = (
+        _apply_reentry_guard(connection, run_id, idempotency_key)
+        if requires_credential else (None, idempotency_key)
+    )
+    force_gate = needs_reentry_force_gate(reentry_anchor, credential_decision_id)
     credential_operation = f"research.execute:{idempotency_key}"
     request_revision = None
     if requires_credential:
+        _refuse_spent_attempt_coordinate(
+            connection, run_id=run_id, idempotency_key=idempotency_key,
+            credential_decision_id=credential_decision_id, force_gate=force_gate,
+        )
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
@@ -987,12 +1206,6 @@ def run_research(
                 subject_revision_hash=request_revision.content_hash,
                 idempotency_key=idempotency_key,
             )
-        # Option X (issue #48): a `re_research` second pass with no fresh
-        # credential decision force-raises a gate EVEN WHEN the credential is
-        # in env — no second pass ever egresses on a silently-reused
-        # first-pass approval, and the operator sees the plan binding and
-        # literal terms before any egress.
-        force_gate = reentry_anchor is not None and not credential_decision_id
         if force_gate or not bool(getattr(adapter, "credential_present", False)):
             scope = _credential_scope(
                 envelope,
@@ -1006,7 +1219,11 @@ def run_research(
                 suspended_operation=credential_operation,
                 subject_revision_hash=request_revision.content_hash,
                 approval_scope=scope,
-                return_state=prior.state,
+                # Decision 3, and the only point that reaches every branch this
+                # suspend is chosen from: read the state the gate will actually
+                # suspend from, and refuse before any egress when a credential
+                # gate cannot legally suspend from it.
+                return_state=_suspendable_state(state, run_id),
                 actor="research-cli",
                 reason=(
                     "re_research second pass requires an explicit credential approval"
@@ -1053,7 +1270,9 @@ def run_research(
             suspended_operation=credential_operation,
             subject_revision_hash=request_revision.content_hash,
             approval_scope=scope,
-            return_state=RunState.RESEARCH_RUNNING,
+            # Decision 3 again: the research.start transition below the guard
+            # may have advanced the run since, so read the state here too.
+            return_state=_suspendable_state(state, run_id),
             actor="research-cli",
             reason="adapter rejected the configured credential",
         )
@@ -1181,16 +1400,14 @@ def run_research_batch(
     credential_name = normalize(getattr(adapter, "credential_name", ""))
     if requires_credential and not credential_name:
         raise ValueError("credential-requiring adapter must declare its credential name")
-    reentry_anchor = None
-    if requires_credential and prior.state is RunState.RESEARCH_RUNNING:
-        # Issue-48 four-way guard: refuses stale/unbound/mismatched bindings,
-        # returns None on a first-pass retry or cycle-back, and otherwise
-        # yields the anchor that force-gates and salts this second pass.
-        reentry_anchor = validated_reentry_anchor(connection, run_id)
-        if reentry_anchor is not None:
-            # Before credential_operation is derived: the salt must shift the
-            # finish/consume coordinate together with the store key.
-            idempotency_key = salted_reentry_key(idempotency_key, reentry_anchor)
+    # Issue-48 four-way guard: refuses stale/unbound/mismatched bindings,
+    # returns None on a first-pass retry or cycle-back, and otherwise yields
+    # the anchor that force-gates and salts this second pass.
+    reentry_anchor, idempotency_key = (
+        _apply_reentry_guard(connection, run_id, idempotency_key)
+        if requires_credential else (None, idempotency_key)
+    )
+    force_gate = needs_reentry_force_gate(reentry_anchor, credential_decision_id)
     credential_operation = f"research.execute:{idempotency_key}"
     # Representative per-term ceiling for the approval scope and the two-locus
     # enforcement below. plan_keyword_queries/plan_bibliography_queries give
@@ -1200,6 +1417,10 @@ def run_research_batch(
     request_revision = None
     approved_scope: dict[str, Any] | None = None
     if requires_credential:
+        _refuse_spent_attempt_coordinate(
+            connection, run_id=run_id, idempotency_key=idempotency_key,
+            credential_decision_id=credential_decision_id, force_gate=force_gate,
+        )
         if prior.state not in {RunState.RESEARCH_READY, RunState.RESEARCH_RUNNING}:
             state.transition(
                 run_id, RunState.RESEARCH_RUNNING, actor="research-cli", reason="state check",
@@ -1229,13 +1450,6 @@ def run_research_batch(
                 effective_pages=effective_pages,
                 result_budget=batch_result_budget,
             )
-        # Option X (issue #48): a `re_research` second pass with no fresh
-        # credential decision force-raises a gate EVEN WHEN the credential is
-        # in env — extending the proactive suspend below, which previously
-        # fired only on a missing credential. No second pass ever egresses on
-        # a silently-reused first-pass approval; the operator approves the
-        # plan binding and literal terms before any egress.
-        force_gate = reentry_anchor is not None and not credential_decision_id
         if force_gate or not bool(getattr(adapter, "credential_present", False)):
             scope = _batch_credential_scope(
                 [query.envelope for query in resolved],
@@ -1251,7 +1465,11 @@ def run_research_batch(
                 suspended_operation=credential_operation,
                 subject_revision_hash=request_revision.content_hash,
                 approval_scope=scope,
-                return_state=prior.state,
+                # Decision 3, and the only point that reaches every branch this
+                # suspend is chosen from: read the state the gate will actually
+                # suspend from, and refuse before any egress when a credential
+                # gate cannot legally suspend from it.
+                return_state=_suspendable_state(state, run_id),
                 actor="research-cli",
                 reason=(
                     "re_research second pass requires an explicit credential approval"
@@ -1324,7 +1542,9 @@ def run_research_batch(
                 suspended_operation=credential_operation,
                 subject_revision_hash=request_revision.content_hash,
                 approval_scope=scope,
-                return_state=RunState.RESEARCH_RUNNING,
+                # Decision 3 again: the research.start transition below the guard
+                # may have advanced the run since, so read the state here too.
+                return_state=_suspendable_state(state, run_id),
                 actor="research-cli",
                 reason="adapter rejected the configured credential",
             )
