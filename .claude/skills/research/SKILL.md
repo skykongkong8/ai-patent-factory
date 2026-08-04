@@ -74,10 +74,12 @@ force-gate covers EVERY attempt of that second pass, retries included: it is
 keyed on the live `re_research` resolution, not on the run's current state, so
 an approved attempt that ends `research_incomplete` does not fall out of the
 guard — the retry is force-gated with its own plan-bound scope, or, from a
-state that cannot legally carry a credential gate, refused before any egress. A retry
-that reuses an already-published attempt key is refused before any egress with
-`live_research_reentry_spent_coordinate_issue_48`; retry under a fresh attempt
-key (`--idempotency-key`), which stays force-gated and salted. This
+state that cannot legally carry a credential gate, refused before any egress. A
+plain rerun advances to a fresh attempt key of its own, so it publishes its own
+bundle instead of inheriting the previous attempt's — still force-gated, still
+salted. `--idempotency-key` pins the coordinate and switches that advance off,
+so pinning an already-published one is refused before any egress with
+`live_research_reentry_spent_coordinate_issue_48`. This
 skill still never runs live/credentialed commands itself. Read the
 decided `plan.needed_research` via
 `run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
