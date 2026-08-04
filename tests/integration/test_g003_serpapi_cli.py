@@ -10,6 +10,9 @@ from patent_factory.state import StateStore
 from tests.integration.test_g003_research_cli import FIXED_TIME, ROOT, prepare_run, run_cli
 from tests.integration.test_research_reentry_gate import BOUND_PLAN, seed_re_research_reentry
 
+SALTED_ATTEMPT = "research.execute:seeded-attempt:re_research:gd_seeded_re_research"
+UNSALTED_ATTEMPT = "research.execute:pass-one-attempt"
+
 
 class SerpApiCliTests(unittest.TestCase):
     def setUp(self):
@@ -654,6 +657,40 @@ class SerpApiCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 13, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "credential_required")
 
+    def _seed_credential_decision(
+        self, connection, run_id, decision_id, *, action, used_at, suspended_operation,
+    ):
+        """A decided CREDENTIAL gate and a decision on it, bound to a research op.
+
+        `status='decided'` keeps `one_pending_gate_per_run` satisfied, and the
+        `research.execute:` prefix is what `_serpapi_decision_operation`
+        requires — everything the preflight sees before it decides whether to
+        egress is present and well formed.
+
+        `suspended_operation` is a PARAMETER because it decides which check in
+        `_serpapi_decision_authorizes` is the one under test. The binding check
+        runs LAST, but it is the only one an unsalted decision ever reaches:
+        an authorizing, unstale, unspent pass-1 decision passes everything
+        before it. Seed all three cases that way and the action and spentness
+        checks become dead weight — the tests pass whether or not those checks
+        exist. The action and spentness cases therefore seed a SALTED
+        operation, so the binding check cannot answer for them.
+        """
+
+        gate_id = f"ge_{decision_id}"
+        connection.execute(
+            "INSERT INTO gate_envelopes VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (gate_id, run_id, "credential", "credential_required", "research_running",
+             suspended_operation, "0" * 64, "{}", digest({}),
+             "research_running", FIXED_TIME, "decided"),
+        )
+        connection.execute(
+            "INSERT INTO gate_decisions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (decision_id, gate_id, run_id, action, "inventor", "0" * 64, digest({}),
+             suspended_operation, "research_running", "seeded",
+             FIXED_TIME, 0, FIXED_TIME, used_at, None),
+        )
+
     def _assert_preflight_never_ran(self, run_root, result):
         """The account fixture reports an EXHAUSTED quota, so it is self-reporting.
 
@@ -747,6 +784,72 @@ class SerpApiCliTests(unittest.TestCase):
                 "SELECT count(*) FROM idempotency_records WHERE run_id='serp-pin' "
                 "AND idempotency_key LIKE '%-r2'"
             ).fetchone()[0], 0)
+
+
+    def _preflight_case(self, name, decision_id, *, action, used_at, suspended_operation):
+        run_root = self.workspace / name
+        prepare_run(run_root, name)
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            seed_re_research_reentry(connection, name)
+            self._seed_credential_decision(
+                connection, name, decision_id, action=action, used_at=used_at,
+                suspended_operation=suspended_operation,
+            )
+        result = run_cli(
+            *self.common(run_root, name),
+            "--fixture-response", self.relative(self._response_fixture()),
+            "--fixture-account", self.relative(self._account_fixture("account-exhausted")),
+            "--decision-id", decision_id,
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "error")
+        self._assert_preflight_never_ran(run_root, result)
+        self.assertNotIn("SERP-CANARY-SECRET", result.stdout + result.stderr)
+
+    def test_non_authorizing_decision_does_not_reach_the_quota_preflight(self):
+        """AC-9: a `degrade` decision id must not re-enable the preflight.
+
+        `degrade` is a legal CREDENTIAL action that deliberately authorizes
+        nothing. The runner rejects it — but only after the preflight has
+        already had its chance to send the key, which is why the fix is in the
+        preflight's own predicate.
+
+        Seeded with a SALTED operation on purpose: the decision IS bound to this
+        second pass, so the binding check passes it through and the action check
+        is the only thing left to stop it.
+        """
+
+        self._preflight_case(
+            "serp-degrade", "gd_degraded", action="degrade", used_at=None,
+            suspended_operation=SALTED_ATTEMPT,
+        )
+
+    def test_spent_decision_does_not_reach_the_quota_preflight(self):
+        """AC-9: an already-used decision id must not re-enable it either.
+
+        A spent decision is real and it authorized something once; nothing in
+        the old predicate noticed that its authorization had been consumed.
+        Also seeded SALTED, so the spentness check is the load-bearing one.
+        """
+
+        self._preflight_case(
+            "serp-spent", "gd_spent", action="configure_and_verify", used_at=FIXED_TIME,
+            suspended_operation=SALTED_ATTEMPT,
+        )
+
+    def test_decision_bound_to_another_attempt_does_not_reach_the_quota_preflight(self):
+        """AC-9: the third member, and the one an action check cannot see.
+
+        A pass-1 credential decision is authorizing, unstale and unspent —
+        everything except its binding says yes. Nobody approved it for THIS
+        second pass, and its unsalted `suspended_operation` is the proof.
+        """
+
+        self._preflight_case(
+            "serp-misbound", "gd_pass_one", action="configure_and_verify", used_at=None,
+            suspended_operation=UNSALTED_ATTEMPT,
+        )
 
 
 if __name__ == "__main__":
