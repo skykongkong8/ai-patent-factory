@@ -654,6 +654,52 @@ class SerpApiCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 13, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "credential_required")
 
+    def _assert_preflight_never_ran(self, run_root, result):
+        """The account fixture reports an EXHAUSTED quota, so it is self-reporting.
+
+        If the preflight consulted it, the command would return the
+        quota-exhausted envelope (exit 12) and record a `research_quota_stop`
+        revision. Neither appearing is the assertion that the credential never
+        reached the account endpoint.
+        """
+
+        payload = json.loads(result.stdout)
+        self.assertNotEqual(result.returncode, 12, result.stdout)
+        self.assertNotEqual(payload.get("status"), "quota_exhausted")
+        self.assertFalse(self._template_path().exists())
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            self.assertEqual(connection.execute(
+                "SELECT count(*) FROM artifact_revisions WHERE kind='research_quota_stop'"
+            ).fetchone()[0], 0)
+            self.assertEqual(
+                connection.execute("SELECT count(*) FROM adapter_events").fetchone()[0], 0,
+            )
+
+    def test_force_gated_second_pass_never_reaches_the_quota_preflight(self):
+        """T-E2: the preflight is skipped on a force-gated attempt, every time.
+
+        The quota preflight calls a FREE endpoint, which is exactly why it is
+        easy to wave through — but it still carries `SERPAPI_API_KEY` off the
+        machine, and on a second pass the operator has not yet approved the
+        plan-bound scope. The account fixture here reports an exhausted quota,
+        so it is self-reporting: reaching it would return exit 12 and the
+        quota-stop envelope instead of the credential gate.
+        """
+
+        run_root = self.workspace / "serp-preflight"
+        prepare_run(run_root, "serp-preflight")
+        with connect_database(run_root / "factory.sqlite3") as connection:
+            seed_re_research_reentry(connection, "serp-preflight")
+        result = run_cli(
+            *self.common(run_root, "serp-preflight"),
+            "--fixture-response", self.relative(self._response_fixture()),
+            "--fixture-account", self.relative(self._account_fixture("account-exhausted")),
+            environment={"SERPAPI_API_KEY": "SERP-CANARY-SECRET"},
+        )
+        self.assertEqual(result.returncode, 13, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["status"], "credential_required")
+        self._assert_preflight_never_ran(run_root, result)
+        self.assertNotIn("SERP-CANARY-SECRET", result.stdout + result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

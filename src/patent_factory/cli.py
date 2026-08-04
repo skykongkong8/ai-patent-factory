@@ -32,8 +32,8 @@ from .privacy import assert_canaries_absent, credential_canaries, delete_run, en
 from .provenance import digest, normalize, strict_json_loads
 from .research import (
     FROZEN_PAGE_CAP, CredentialRequiredError, PlannedQuery, ResearchBudget,
-    plan_bibliography_queries, plan_keyword_queries, run_research, run_research_batch,
-    salted_reentry_key, validated_reentry_anchor,
+    _apply_reentry_guard, needs_reentry_force_gate, plan_bibliography_queries,
+    plan_keyword_queries, run_research, run_research_batch,
 )
 from .report import publish_report
 from .review import run_review
@@ -1014,11 +1014,7 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         # re-derives the same anchor and re-applies the same salt
         # idempotently, and its force-gate suspends a fresh pass-2 with the
         # plan-bound scope even when SERPAPI_API_KEY is in env.
-        reentry_anchor = None
-        if prior.state is RunState.RESEARCH_RUNNING:
-            reentry_anchor = validated_reentry_anchor(connection, run_id)
-        if reentry_anchor is not None:
-            base_key = salted_reentry_key(base_key, reentry_anchor)
+        reentry_anchor, base_key = _apply_reentry_guard(connection, run_id, base_key)
 
         # Any supplied decision is validated locally first, whatever the key mode.
         decision_operation = (
@@ -1059,7 +1055,7 @@ def _research_serpapi(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         # `run_research` (issue #48), so the preflight is skipped there too —
         # even the free account endpoint must not receive the credential before
         # the operator approves the plan-bound scope.
-        force_gate_ahead = reentry_anchor is not None and not args.decision_id
+        force_gate_ahead = needs_reentry_force_gate(reentry_anchor, args.decision_id)
         quota_note = None
         if api_key and stored is None and not force_gate_ahead:
             try:

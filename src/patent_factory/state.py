@@ -734,6 +734,60 @@ class StateStore:
             )
             return TransitionResult(self._snapshot(run_id), event_id, artifact), exported, gate
 
+    def _sequenced_gate_id(self, base: str) -> str:
+        """Disambiguate a re-raised gate deterministically, and ONLY on collision.
+
+        The gate id is derived from `{run_id, kind, prior state, operation,
+        subject hash, scope hash, return state}` and nothing else, so raising
+        the SAME gate twice re-derives the same id and the insert dies on the
+        primary key. That is not a theoretical corner: a `degrade` decision is
+        legal and non-authorizing, `gate_action_target` falls through to the
+        return state, and the run therefore lands back exactly where it was,
+        with nothing published and an identical re-entry waiting. Worse, the
+        failure escapes as a raw `sqlite3.IntegrityError` — not a
+        `RuntimeError`, so `cli.py`'s catch tuple never sees it and the command
+        exits with a traceback and no `cli-result-v1` envelope at all.
+
+        Returning the EXISTING envelope, the way `suspend_gate_with_artifact`
+        handles its own replay, is not available here: `gate_decisions.gate_id`
+        is `NOT NULL UNIQUE` — one decision per gate — so a re-raised gate that
+        handed back the old envelope could never carry a second decision and
+        the retry would be unresolvable. A new id is necessary, not convenient.
+
+        The sequence is state-derived rather than random, matching how every
+        other identifier in this kernel is minted, and it is applied ONLY when
+        a row already exists at the base id: every gate of every kind that
+        works today is byte-identical, so goldens, fixtures and recorded ids
+        are untouched. Nothing anywhere re-derives a gate id to look a gate up
+        — every consumer takes the stored value or queries by content columns —
+        so the derivation is not a lookup contract.
+        """
+
+        gate_id = "ge_" + base[:20]
+        if self.connection.execute(
+            "SELECT 1 FROM gate_envelopes WHERE gate_id=?", (gate_id,)
+        ).fetchone() is None:
+            return gate_id
+        # Highest suffix + 1, not a row COUNT: a count is only monotonic while
+        # the sequence has no gaps, and one removed row would hand back an id
+        # that already exists — reinstating the raw IntegrityError this exists
+        # to remove. Base ids are `ge_` + 20 hex with no `-`, so the sequenced
+        # space and the base space are structurally disjoint.
+        # Prefix compared with substr rather than LIKE: `_` is a
+        # single-character wildcard in a LIKE pattern and every gate id starts
+        # `ge_`, so `LIKE 'ge_...-%'` would also match ids like `geX...`. The
+        # over-match would make this scan see rows it should not, in the one
+        # routine that must never hand back an id that already exists.
+        prefix, highest = f"{gate_id}-", 1
+        for row in self.connection.execute(
+            "SELECT gate_id FROM gate_envelopes WHERE substr(gate_id,1,?)=?",
+            (len(prefix), prefix),
+        ):
+            suffix = row["gate_id"][len(prefix):]
+            if suffix.isdigit():
+                highest = max(highest, int(suffix))
+        return f"{gate_id}-{highest + 1}"
+
     def suspend_gate(self, run_id: str, kind: GateKind | str, *, suspended_operation: str, subject_revision_hash: str, approval_scope: dict[str, Any], return_state: RunState | str, actor: str, reason: str, fault_at: FaultInjector = None) -> GateEnvelope:
         gate_kind = GateKind(kind)
         gate_state = GATE_STATES[gate_kind]
@@ -752,7 +806,7 @@ class StateStore:
                 "UPDATE gate_decisions SET stale=1 WHERE decision_id IN (SELECT gd.decision_id FROM gate_decisions gd JOIN gate_envelopes ge ON ge.gate_id=gd.gate_id WHERE gd.run_id=? AND ge.kind=? AND gd.stale=0 AND gd.used_at IS NULL AND (gd.subject_revision_hash<>? OR gd.approval_scope_hash<>?))",
                 (run_id,gate_kind.value,subject_revision_hash,scope_hash),
             )
-            gate_id = "ge_" + digest({"run_id":run_id,"kind":gate_kind.value,"state":prior.state.value,"operation":suspended_operation,"subject":subject_revision_hash,"scope":scope_hash,"return":desired_return.value})[:20]
+            gate_id = self._sequenced_gate_id(digest({"run_id":run_id,"kind":gate_kind.value,"state":prior.state.value,"operation":suspended_operation,"subject":subject_revision_hash,"scope":scope_hash,"return":desired_return.value}))
             self.connection.execute("INSERT INTO gate_envelopes VALUES(?,?,?,?,?,?,?,?,?,?,?, 'pending')", (gate_id,run_id,gate_kind.value,gate_state.value,prior.state.value,suspended_operation,subject_revision_hash,scope_json,scope_hash,desired_return.value,now))
             inject_fault(fault_at,"after_gate")
             event_id = "te_" + digest({"gate_id":gate_id,"actor":actor,"at":now})[:20]

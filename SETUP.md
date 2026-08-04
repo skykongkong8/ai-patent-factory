@@ -234,6 +234,35 @@ gate by accident (e.g. you only meant to inspect state), resolve it with
 `gate decide --action degrade` — a non-authorizing action that returns the run
 to `research_running` without approving any egress.
 
+**The force-gate covers every attempt of that second pass, retries included.**
+It is keyed on the live `re_research` resolution, not on the run's current
+state, so an approved pass that ends `research_incomplete` — every term timed
+out, say — does not fall out of the guard. The next attempt raises its own
+credential gate with its own plan-bound scope, whatever state the run re-entered
+from, and no attempt egresses on the previous attempt's approval. A retry that
+re-enters from `domain_pivot_required`, `coverage_insufficient`,
+`decision_required` or `insufficient_evidence` inside that era is covered too,
+though what you see differs: most of those states cannot legally carry a
+credential gate, so the attempt is refused before any egress rather than
+suspended for approval. Either way it does not reach the network.
+
+Operator-facing consequences:
+
+- **`live_research_reentry_spent_coordinate_issue_48`** — a retry that reuses an
+  attempt key whose result was already published is refused before any egress,
+  rather than quietly handing back the earlier attempt's bundle with the
+  credential spent for nothing. Retry under a fresh attempt key: pass
+  `--idempotency-key` with a new value. That mints a fresh coordinate while
+  leaving the resolution's binding live, so the retry is still force-gated and
+  still salted — it is a fresh approval, not a way around one.
+- **Recovering from a refusal.** If a re-entry is refused because its binding
+  went stale (`live_research_reentry_refused_issue_48`), publish an offline pass
+  — `research fixture`, or `research normalize-web` + `research manual`. An
+  offline pass performs no egress and publishes `research_complete`, which
+  quiets the anchor even when it is stale, and the live path proceeds normally
+  afterwards. This is the documented way forward; it requires publishing real
+  offline evidence, so it disarms the guard only by satisfying it.
+
 ## Full pipeline verbs
 
 Each stage below takes a versioned `*-input-v1.json` you author under

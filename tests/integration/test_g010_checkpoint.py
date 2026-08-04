@@ -34,8 +34,9 @@ from patent_factory.models import GateKind, QueryEnvelope, RunState
 from patent_factory.provenance import digest
 from patent_factory.report import publish_report
 from patent_factory.research import (
-    CredentialRequiredError, ResearchBudget, plan_keyword_queries,
-    run_research, run_research_batch, validated_reentry_anchor,
+    CredentialRequiredError, LiveResearchReentryRefusedError, ResearchBudget,
+    plan_keyword_queries, re_research_reentry_anchor, run_research, run_research_batch,
+    validated_reentry_anchor,
 )
 from patent_factory.scaffold import (
     ScaffoldError, count_todos, gate_decision_dossier, scaffold_gate_decision_input,
@@ -46,7 +47,10 @@ from tests.integration.test_g004_ideation_and_shortlist import (
     candidate, candidate_input, ready_profile, shortlist_input,
 )
 from tests.integration.test_g005_audit import kipris_xml
+from tests.integration.test_g009_research_batch import failure
+from tests.integration.test_g009_research_batch import success as success_result
 from tests.integration.test_g009_scaffolds import filled, filled_shortlist
+from tests.integration.test_research_reentry_gate import CredentialStubAdapter
 from tests.unit.test_g005_similarity import feature_map
 
 try:
@@ -762,6 +766,113 @@ class CheckpointLiveReentryEnforcementTests(CheckpointFixture):
         self.assertEqual(scope["re_research_decision_id"], anchor.decision_id)
         self.assertEqual(scope["second_pass_terms"], ["센서", "감지기", "sensor"])
         self.assertEqual(scope["needed_research"], ["broader prior-art sweep for the sensor mechanism"])
+
+    def test_incomplete_second_pass_retry_cannot_egress_through_the_real_gate_path(self):
+        """RALPLAN-DR T-I10: the reported bypass, through the genuine pipeline.
+
+        Every earlier assertion in this class stops at attempt 1. The defect
+        was in attempt TWO: an approved second pass whose terms all fail
+        publishes `RESEARCH_INCOMPLETE`, the run leaves `research_running`, and
+        the guard's old run-state predicate stopped recognising a second pass
+        that the anchor still says is live. The retry then egressed unapproved
+        terms with the credential in env, in pass 1's unsalted namespace.
+
+        Driven from a real clean audit and a real `resolve_gate` resolution —
+        no seeded gate rows — so what is asserted is the pipeline's behaviour,
+        not a fixture's. And the two differ in a way worth pinning: publishing
+        attempt 1's bundle STALES the `re_research` decision through the
+        ordinary invalidation DAG, which a seeded fixture never reproduces. So
+        the real retry lands on the guard's REFUSAL branch rather than its
+        force-gate branch. Both close the hole — what matters is that the
+        retry cannot egress — and the refusal has a documented way forward,
+        asserted here too so the widened surface can never wedge a run.
+        """
+
+        self._run_audit(["different"] * 3)
+        request = self._decide_input(
+            self._pending_gate_id(), action="re_research",
+            plan={"needed_research": ["broader prior-art sweep for the sensor mechanism"]},
+        )
+        resolved = resolve_gate(
+            self.connection, run_root=self.run_root, run_id="run", decision_input=request,
+        )
+        self.assertEqual(resolved.next_state, RunState.RESEARCH_RUNNING.value)
+
+        terms = ("센서", "감지기", "sensor")
+        queries = plan_keyword_queries(
+            run_id="run", origin_query="센서", korean_synonyms=("감지기",),
+            english_synonyms=("sensor",), budget=ResearchBudget(max_calls=3),
+        )
+
+        def attempt(adapter):
+            return run_research_batch(
+                self.connection, run_root=self.run_root, run_id="run", adapter=adapter,
+                queries=queries, idempotency_key="twin-second-pass", retrieved_at=RETRIEVED_AT,
+                credential_decision_id=getattr(adapter, "decision_id", None),
+            )
+
+        with self.assertRaises(CredentialRequiredError) as first:
+            attempt(CredentialStubAdapter(present=True))
+        store = StateStore(self.connection)
+        gate = first.exception.gate
+        approved, _ = store.decide_gate(
+            gate.gate_id, action="configure_and_verify", actor="inventor",
+            reason="approved the plan-bound second pass",
+            subject_revision_hash=gate.subject_revision_hash,
+            approval_scope=dict(gate.approval_scope),
+            suspended_operation=gate.suspended_operation, return_state=gate.return_state,
+        )
+        failing = CredentialStubAdapter(present=True, results={term: failure() for term in terms})
+        failing.decision_id = approved.decision_id
+        incomplete = attempt(failing)
+        self.assertEqual(incomplete.next_state, RunState.RESEARCH_INCOMPLETE.value)
+        self.assertEqual(store.snapshot("run").state, RunState.RESEARCH_INCOMPLETE)
+        # The re-entry is still a re-entry — nothing published
+        # `research_complete` — but publishing the bundle staled the decision
+        # the anchor binds to.
+        self.assertIsNotNone(re_research_reentry_anchor(self.connection, "run"))
+        self.assertTrue(re_research_reentry_anchor(self.connection, "run").stale)
+
+        retry = CredentialStubAdapter(
+            present=True, results={term: success_result(term) for term in terms},
+        )
+        with self.assertRaises(LiveResearchReentryRefusedError) as second:
+            attempt(retry)
+        self.assertEqual(second.exception.code, "live_research_reentry_refused_issue_48")
+        # THE assertion: nothing left the machine, and nothing was written into
+        # pass 1's unsalted namespace. At HEAD this retry ran all three terms.
+        self.assertEqual(retry.calls, [])
+        unsalted = self.connection.execute(
+            "SELECT count(*) FROM research_operations WHERE run_id='run' "
+            "AND idempotency_key LIKE 'twin-second-pass%' "
+            "AND idempotency_key NOT LIKE '%:re_research:%'"
+        ).fetchone()[0]
+        self.assertEqual(unsalted, 0)
+        self.assertEqual(store.snapshot("run").state, RunState.RESEARCH_INCOMPLETE)
+
+        # The documented way forward: an offline pass publishes
+        # `research_complete` with zero egress, which quiets even a stale
+        # anchor, and the live path proceeds normally afterwards.
+        record = {
+            "canonical_url": "https://example.test/twin-recovery",
+            "identifier": "twin-recovery-1", "title": "Twin recovery reference",
+            "content_hash": digest("twin recovery unique content"),
+            "language": "en", "provenance": "reviewed_import",
+        }
+        offline_envelope = QueryEnvelope(
+            run_id="run", adapter="manual_web", adapter_version="import-v1",
+            capability="import", allowed_scheme="https", allowed_host="example.test",
+            deadline_seconds=1, page=1, page_cap=1, result_budget=10, byte_budget=10_000,
+            retry_budget=0, retry_ownership="research_runner",
+            query_projection={"content_type": "application/json", "records": [record]},
+        )
+        recovered = run_research(
+            self.connection, run_root=self.run_root, run_id="run",
+            adapter=ManualWebAdapter(("example.test",)), query=offline_envelope,
+            idempotency_key="twin-offline-recovery", retrieved_at=RETRIEVED_AT,
+        )
+        self.assertEqual(recovered.next_state, RunState.RESEARCH_COMPLETE.value)
+        self.assertIsNone(validated_reentry_anchor(self.connection, "run"))
 
     def test_cycle_back_after_offline_publish_then_coverage_expand_is_allowed_again(self):
         self._run_audit(["different"] * 3)

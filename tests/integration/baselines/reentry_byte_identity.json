@@ -1,0 +1,67 @@
+{
+  "first_pass_credential_gate": {
+    "approval_scope_hash": "fcdfc1f7ccfe301dfb45f72ae9646e97a6240691ab96a500a45bae90da95f86f",
+    "gate_id": "ge_43c80aeb9dfecf12cad7",
+    "return_state": "research_ready",
+    "scope_keys": [
+      "adapter",
+      "adapter_version",
+      "allowed_host",
+      "auth_attempt",
+      "capability",
+      "credential_name",
+      "effective_pages",
+      "max_requests",
+      "query_count",
+      "request_fingerprint",
+      "result_budget"
+    ],
+    "suspended_operation": "research.execute:first-pass",
+    "suspended_state": "research_ready"
+  },
+  "recorded_at_commit": "0d0aedc",
+  "second_pass_attempt_one": {
+    "approval_scope_hash": "0b80a5200d9e5499272f21015525465db25ae1c5fc001fa78a6daa2cd8f14822",
+    "finish_coordinates": [
+      [
+        "research.execute:attempt-one:re_research:gd_seeded_re_research",
+        "attempt-one:re_research:gd_seeded_re_research"
+      ]
+    ],
+    "gate_id": "ge_83012a6bdc3aa960ad31",
+    "return_state": "research_running",
+    "scope_keys": [
+      "adapter",
+      "adapter_version",
+      "allowed_host",
+      "auth_attempt",
+      "capability",
+      "credential_name",
+      "effective_pages",
+      "max_requests",
+      "needed_research",
+      "plan",
+      "plan_hash",
+      "query_count",
+      "re_research_decision_id",
+      "request_fingerprint",
+      "result_budget",
+      "second_pass_terms"
+    ],
+    "store_keys": [
+      "attempt-one:re_research:gd_seeded_re_research:credential:{credential_decision_id}:q00",
+      "attempt-one:re_research:gd_seeded_re_research:credential:{credential_decision_id}:q01",
+      "attempt-one:re_research:gd_seeded_re_research:credential:{credential_decision_id}:q02"
+    ],
+    "suspended_operation": "research.execute:attempt-one:re_research:gd_seeded_re_research",
+    "suspended_state": "research_running"
+  },
+  "serpapi_derived_keys": {
+    "decision_bound_resume": "serpapi-0123456789abcdef0123:re_research:gd_seeded",
+    "fresh_ladder": [
+      "serpapi-0123456789abcdef0123",
+      "serpapi-0123456789abcdef0123-r2",
+      "serpapi-0123456789abcdef0123-r3"
+    ]
+  }
+}

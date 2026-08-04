@@ -96,6 +96,12 @@ disk, so this file always has the decision, before or after invalidation.
   force-raises a fresh credential gate even with the key in env — only the USER
   approves it, with the plan binding and literal terms visible in the scope; the
   one-research-op-per-run policy for the *direct* (non-gate) path is unchanged.
+  That force-gate covers EVERY attempt of the second pass, retries included: an
+  approved attempt that ends `research_incomplete` stays inside the guard, and
+  the retry is force-gated in turn — or, from a state that cannot legally carry
+  a credential gate, refused before any egress. A retry reusing an already-published attempt
+  key is refused with `live_research_reentry_spent_coordinate_issue_48` before
+  any egress — retry under a fresh attempt key (`--idempotency-key`).
 
 ## Rules
 
