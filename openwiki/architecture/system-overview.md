@@ -6,6 +6,28 @@ tags: [architecture, ownership, local-first, cli, state-management, privacy]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-d885ecdfd5ee5aa1be7163b9
+    resource: repo://.claude/commands/research.md
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
+  - id: openwiki-source-a2371d6362e5db4bc834ad03
+    resource: repo://CLAUDE.md
+  - id: openwiki-source-23775c3de52f3ab95a13cb8b
+    resource: repo://README.md
+  - id: openwiki-source-2031cb956b3e7b18a7f69f3e
+    resource: repo://src/patent_factory/__main__.py
+  - id: openwiki-source-c1a9676b43a2a0c748e6207b
+    resource: repo://src/patent_factory/cli.py
+  - id: openwiki-source-870325ff4b17b4d6f70a692e
+    resource: repo://src/patent_factory/models.py
+  - id: openwiki-source-a107ea3b6eaf2512d3cdc66c
+    resource: repo://src/patent_factory/paths.py
+  - id: openwiki-source-4d454f3fd05d54e91310a94c
+    resource: repo://src/patent_factory/runs.py
+  - id: openwiki-source-512bf2e0c1ec4e0829aa53b5
+    resource: repo://tests/integration/test_run_inspection.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # System Overview and Ownership

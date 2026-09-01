@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:2aaf037dcc6e641e606377423f02cb1aed8e2ef27c648f1e153ac78af457047b",
+  "claims": [
+    {
+      "id": "claim_2a14358f17b4448eb640634b7cf3754b",
+      "statement": "The Python CLI is the authority for workflow state, gates, invalidation, idempotency, and exports; the driving agent supplies structured inputs but cannot fabricate state or gate decisions.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L153-L178",
+          "version": "repo-lines-v1:sha256:f1ab078d9839b9bb1eb4556efe4108f54593d550c6e5e38fb00053aec17d7a46:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOGM2ZDMwOWE5ZjAyYTdjNDM0MDIwMzY3MTkyMjA5OWUyZTUyN2RhMWY3NGNhZmYxOTdhM2JmNGZiMTFlZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlN2ExNzFmZTE3OGZjMTc3Yzg3YTI2ODYyYTYzYmYyMThkMjhhNmFkMzY1ZTNlZDdhOGRhNmU4Y2M1MGExOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0YTExNGE5MzVkOGE2ODVmNGQwMzMxYmVkMDMwZjA4ZWQ0YmU0Yzk0ZDRhZGRhMmI5MTRlOTk3M2I0YjU0NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0NGY5NjkyNGNiY2M5M2YyMzI3YTdmMTIzNmFjZGE3MDQyYmRlYjVmOWQzMTUwZmE3YzRiYjU5YzhmZGRmY2YifQ"
+        },
+        {
+          "resource": "repo://docs/decision-contract.md#L3-L7",
+          "version": "repo-lines-v1:sha256:976f20c8eacf8410e8d80a4caa6fd3184f14c9dcb8746b1f88699054ca73bae1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ0NjNmYWY4MjM2YzRhYWMyYmMxYzk0NWUxZWY5MWJiMzBkZTJiYmY0MWJiYjRjZTZhZmZkNjk5OWJiNDBkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGUyNTMwM2MzYzViZjM4NDBlZDIzMjQ0Y2U3MzdjMWM4MDc3NTZmZjMxYjBkNDMwOTk0M2NhNWQ0NTliOWM3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2UxMmU1ZGMzMmMyNjExYjBlNTFmZjNjYzhiMTY2MzdlNmExM2M1NDVlZjUyYjBhNTc2YTMyZDljZDVmNWZiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODAyMGVhYTUwYWYwNGQxNzcyMDZhNmFmYjc0MjJiNTNiOThmNWM0OTcwNDY1NDA1YmVkMjk1YTQ4NjAyZDRjNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f6acf3efb1d7452d8bda3aff7eee697d",
+      "statement": "The committed Justin end-to-end journey exercises the public CLI from init through profile binding, research, ideation, shortlist, audit retrieval and scoring, post-audit gate approval, drafting, independent review, and validation, and asserts the final English report byte-matches examples/justin/expected-report-en.md.",
+      "evidence": [
+        {
+          "resource": "repo://tests/e2e/test_full_journey.py#L237-L335",
+          "version": "repo-lines-v1:sha256:59befcf060da9e7067003cab8359d0ed99de3a973507a8f2b8e71ac4726d5a80:eyJzZWxlY3RlZExpbmVDb3VudCI6OTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNmNmODYyYmIxMDAyM2M1NWE1NGZlNjk1ZWM3MDA2NTM0ZDhmYjMzYWI2MGNlZTE4OWUwZTkxNDJmZDFlZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiOTEzOTVlNzAxOTY3ZTI1OTY4YjNhOGU0OTQ5NTlhMDMxOTBiZDlkMWI0OGJjZjE2ZmE3NGE4MDIxODVmNGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZDUyMzE4ZjU2ZDhkZDQ0NWQ4OGU4YTUyYjIzOWQ1YTEwZjQyMDM2ZWVmYWViMjliZTM2YTg4MWVmMWJmMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_full_journey.py#L3-L13",
+          "version": "repo-lines-v1:sha256:b2824f4eb64eadfd2789e98d4ff18373894bb8b499ad5fb302152024b60e0cd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhZWVjMWJhODZlNjZhYTZmYmEyZTQyYmMyZDE3MTlhZmY2NmNlMmJhODM4N2Y1Nzc2MGMwZDU2NWJiMDYwMDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2YzJjNzNiNDY2NjNhYjZjMGIwNGU5Mjg4MTY4OTAxZWJjYjYxY2FiZGRkZDk0NjU0ZjJiYTM3ZWU2NmRhOTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1ZGMxNzI5Zjk0ZmEwNTYwOTcwYjNlYzgxZmE2YzBlNDUyMjJkOGJmODgzZjM3ZGNjMzE2NTE5NDVmMmEzNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlY2U3ZjEzYjdiNmEzNTE2ZmNkNGI1NDMyZDg1OGU1ZjVhMjUyMDRlNjY3OGQ5MzEwZjA1MzNlOTU0NzlmNDUifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_full_journey.py#L91-L135",
+          "version": "repo-lines-v1:sha256:acb369f13900ddcf7f5015710fac25f0901395a031b47a812b5be4a860f0ac4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxN2E4NmQyODRlM2FmZjU1YTBmZWNiMDhmYzA2M2Q3NDJiMjNmMTAyMmUzMDFhZmQ1NmI0NGY3N2Y5NjYwNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNmExNzk0YWRiNDRmMjYxNWUwZGZmY2ZmN2Y3MjdjYWIwOWVlMGZhMzVjZDIzN2ViZWUyNGU1YjliYTkzY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzZWIyYmEzMWEwYTg2ZDExZmZiOWZiODk2MjQzOGRiOTNlYzAxZjhkM2IyYWRjOTE2YmQ4NzdhN2MyZDAzNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0YWMxZDNkZmRjZjI4ODcwZTA3ODM5MTUyNDAzMTRjNDUyODY1M2M1YWRjODUzMjI4OTVhZGQzNzMxNWQyNDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2d7ac733c05945979eaf328a5ef5d8ce",
+      "statement": "Every new audit, including a clean audit, raises the post_audit_checkpoint gate and prevents a direct transition from scoring to drafting; approval requires current finalist bindings and per-finalist feedback, while coverage-insufficient batches cannot be approved.",
+      "evidence": [
+        {
+          "resource": "repo://docs/decision-contract.md#L13-L27",
+          "version": "repo-lines-v1:sha256:76692d5baf7614c8734c96ddba8505d21d680a07c39a41b590bf48e2b2d8f32b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwMjdlZTkzZGM4ZmEyOGQ0YzYyMDkyZjI3OGI5OGZiZjYwNGQ4ZTliYWYyMGY5NDU0N2QzMzhlNzBlY2UzNjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOTFkYmQ5Mzc4OTZkNGJkZGVhZGRmNTQyYTA0ZWFiNmQxMDZmMDk0YWUxODQzNmY3NTg4MGRhNzY3NDg1NzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2NDQ4YTUyZTVhZjU5OWI0NmFiM2Y3NTJiYTRlMjkyZWI1YjhlMTcyZTk5ZjM0NDVjZTlkYzk3MmQ5YmIwZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyYmYzOGEwOGJkMTQwOTg2NzBiMzlkZDBhMmY4OWI2ZWZmZWEyZjA4YmVmY2VmMTJlNTM4MGFjMWIyZDEzZTYifQ"
+        },
+        {
+          "resource": "repo://docs/simrisk-v1.md#L21-L42",
+          "version": "repo-lines-v1:sha256:9da3036cfbb8eec425dcca082d74c5583bdaf6cd484022c3eeb923c910547638:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkOWVkYjY5Zjg5NGZjMjVkYjc5MWY4MDMxZWNiM2VhNjE4YmZjZTU3ODc2MDFkN2M4ZDQ2YTQ0MDg3MDgyNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2ZDVmMmRjYThjOWUyYzY1YTQ1YzJiODAyYWY4NGNhNmZhN2JlYmQ1MzViNDYyMmExZDBlNzY4M2M3ZWY5MTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwYTZkMzY0MDZlMzU1NjI4N2IyNTk2YzgwODkzNmI0MGYyZTA0YTg2MDIyNjZhNzc1YjY5ZmRlMmI2MDFiMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_full_journey.py#L237-L285",
+          "version": "repo-lines-v1:sha256:48d3dc0965df01313e977d784990c79a4b874ded46832841c9419e026b5adb59:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExNmNmODYyYmIxMDAyM2M1NWE1NGZlNjk1ZWM3MDA2NTM0ZDhmYjMzYWI2MGNlZTE4OWUwZTkxNDJmZDFlZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZjUzN2JhNzI4MDFhY2M2NjRmMGJmZWQ3NWI0MzQ0YzFkYjUxMzUzOTRiNTA3MWQ3MmRhNWRkY2NhMzEwMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZDUyMzE4ZjU2ZDhkZDQ0NWQ4OGU4YTUyYjIzOWQ1YTEwZjQyMDM2ZWVmYWViMjliZTM2YTg4MWVmMWJmMzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzOWRiOTRlOTg4OWZkOWIzMDE1MTU2YTQyZDgwYTkwNjI4NzAwNGM0MDQ2Y2UwZTliMmVhNjUzYzJkNDVhNjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_65159ef7c61a4336a67474bcda32e2d0",
+      "statement": "Gate decisions are bound to one pending gate, its current subject revision hash, exact approval scope, and recorded suspended operation; the state kernel owns branch targets, approval is consumable once, and stop is terminal.",
+      "evidence": [
+        {
+          "resource": "repo://docs/decision-contract.md#L3-L7",
+          "version": "repo-lines-v1:sha256:976f20c8eacf8410e8d80a4caa6fd3184f14c9dcb8746b1f88699054ca73bae1:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ0NjNmYWY4MjM2YzRhYWMyYmMxYzk0NWUxZWY5MWJiMzBkZTJiYmY0MWJiYjRjZTZhZmZkNjk5OWJiNDBkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGUyNTMwM2MzYzViZjM4NDBlZDIzMjQ0Y2U3MzdjMWM4MDc3NTZmZjMxYjBkNDMwOTk0M2NhNWQ0NTliOWM3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2UxMmU1ZGMzMmMyNjExYjBlNTFmZjNjYzhiMTY2MzdlNmExM2M1NDVlZjUyYjBhNTc2YTMyZDljZDVmNWZiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODAyMGVhYTUwYWYwNGQxNzcyMDZhNmFmYjc0MjJiNTNiOThmNWM0OTcwNDY1NDA1YmVkMjk1YTQ4NjAyZDRjNyJ9"
+        },
+        {
+          "resource": "repo://tests/integration/test_g002_gate_matrix.py#L37-L67",
+          "version": "repo-lines-v1:sha256:2cf35a14a0f5ea04655e6a3e7e5a628e0e38bac7ec6b334d4cb6dcf1621d1ac9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzNGJhY2M0ZjIwNDk5ZGIxOTNhZGJhNTI5MThmMWMyZTQ4ODBhYzhkOTIxNDJlMDE0ZWFjNGVjZTU1YTAyMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNzJkMmI1OWFhOTRmODVhYmI5NGU2NjEzNTg1MzgzYTI5Y2NkYjRlOTU2MmFkYjViY2M0NTI1ZjFiNmYyNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3MjM4MDA5MDcxNTBlMDhjNmM5NWQwZTkzNjM5NjUwOGJiOTE1NmZlZWQwZTNjOGNlY2IwNDk2MThlMTM5NjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5ZTQ4NzNiMTlmZDc2MjgzNzk3YjFmMTg2Yjk0ZjRjNTM1ZmY2MjZlNTkxZGU0NTM1YmNlYTAzNmQyNzhhYzIifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g002_gate_matrix.py#L84-L104",
+          "version": "repo-lines-v1:sha256:6b7bd608fc7eea2838b7ad0a15a7985a5c839fc7991e23c2641cf9673ab7c84d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4ZjY5ZGJkZDlhYTQxNjRiOTE1Y2VhZGNhYjdhMjY2NTMwZTM5MTYwMzEzYzRlNDdmYzg3YjMxODcwZjI4ZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNzJkMmI1OWFhOTRmODVhYmI5NGU2NjEzNTg1MzgzYTI5Y2NkYjRlOTU2MmFkYjViY2M0NTI1ZjFiNmYyNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjM2QyNTQ0N2Q3OGUwMDgzYjNkMTJmNDRjNjBlMjQ5MzU2YjVlNTljZjQxMmE0NTNjMmRlNmViOTlmMjljYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0dcad36035034f7e93e6016b727aa5da",
+      "statement": "Changing an upstream profile, evidence, finalist, corpus, feature map, or scorer revision stales dependent decision, draft, review, and validation artifacts and removes their current pointers.",
+      "evidence": [
+        {
+          "resource": "repo://docs/ideation-contract.md#L35-L42",
+          "version": "repo-lines-v1:sha256:0be057b042a7b34abcf3a0b6096c150792bdd2d486542073349a4069705dfaeb:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFhZDVjOGQ4NjhmOTg0NjMwNjg5Y2QyYzIwNWUwNDI5NjEwNjE5NDc4ZjE3ZjA0YTc2MmI0MjdlMmM5ZThiNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGM4ODAxZDhhNTcwNzg1ZGZjNTEzNzU3YWM3OTA4NzczYTMzZjJmMjY0YmIxY2EzNTc3NDJkNjY2MDRiODg2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDZjYWU4MGYxNTc4MWIxMDRkZTc0YTE3ZjQzODAxNGI1Yjg2MzEzNDFjMjBhYmEzZWU5ZGI0YzFiYTQzNzdhNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://tests/integration/test_g002_invalidation_dag.py#L14-L27",
+          "version": "repo-lines-v1:sha256:4fec29976849c34237644c0f9cba949a9d68ef0ed2e3742741ef1d9d9b936ba5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyZTE3YjU3YzdiMjhhZjY5ZmUzY2EyNTNlNGMyODQ3Mzg5ZjgwOTQyZWRmMGY1NjYyZTE5ZTFmODliZDFkNWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1NzViMGJkZjUwMWQ0ZTEzY2QyMjVhNGI1OGNjYzBhMDk4ODhhNGNjNThhMmI2NDNiZWVjOTcxZGE1OTEyMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5OTI0MjBiZWNiOTViN2Q5MmIxMjBiNWViZDMxMTEyY2NkNzAzZDdjZjIwMGI1NGJhMDVjYWU0MzlhNjViNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3ODFlNGRhMjQ4MzNlZmNlOWEzYTk3YjJlNTE1Mjg5YjJkOWRlOTlhYzQ5ZWZiNTNlZmI2NjAwYWUzODJmMTUifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g002_invalidation_dag.py#L30-L53",
+          "version": "repo-lines-v1:sha256:1163ea6a897d664a5a2bcd94f94eb2d3f23c048a86a4baa90b929ba561e89f05:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZjgxMjAwMWVlYmJkN2IwN2UyMmYwNmNiYTg1NzE3M2ZjYzVjZDc2ZjQyMWViZGRjMTg3NmE2MjU0ZWNmOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNzJkMmI1OWFhOTRmODVhYmI5NGU2NjEzNTg1MzgzYTI5Y2NkYjRlOTU2MmFkYjViY2M0NTI1ZjFiNmYyNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0NTY4YjE5NmJlNmFjMzAxMjhkODM3ZjY0ZjU5M2U5MjZkODg5OTI2Mzc3MTJlYWU2OGFhNDE4ZTY4NTEzMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkNDEzNDBjYzIzOWExNTljZTliNjAyMmU5ZjYzMjI4MzJlMmVhZDc2Y2FlOWU0NzU0ZDIxMGViOGZiNmQ1ZTgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a18164ff6792492b923f57b19a2e91fa",
+      "statement": "Ideation and shortlist boundaries enforce evidence-bound, schema-complete candidates and three independent finalist scoring axes; three or more unique complete finalists publish finalist-set-v1, while insufficiency publishes insufficiency-v1 with no finalist pointer.",
+      "evidence": [
+        {
+          "resource": "repo://docs/ideation-contract.md#L7-L33",
+          "version": "repo-lines-v1:sha256:3b22fc20684fb44210f0b449e3a24b9665620d1349db67fa5d1f20748b943759:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljNDA0NWEwMDIwOTAzZmViMTkxOGQ1ZmZlYjI5OWQ5NmM5NGQ1ZWY2MWEyMzE5NDhkZmU5MWJjMDBlNzhjZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5ZWVlOWI2N2E0YTk1NGY1NTFhNmZiYmY4YWE4MzAwZjgwYTNkNWZlOGZhMDk0N2Y2YTE5OTJhNTE5YzRjZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwNWNhY2ZiNjkxZDA1ODE2YTM2NGIwZjNhOTU0NTI5MzJjMjQxZjZkZjRiYTk0MmNiYmQ2NDEyNzE0NTlhMzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2MzAzNWJlNzZjNTA2NDEzNzIyNzlkNzM2NGNmN2ZhOTIyODEyNDk0ZjE1MzZjZjZkNmE5YmJhODBhYTlmMzgifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g004_ideation_and_shortlist.py",
+          "version": "repo-file-v1:sha256:3161e729d385003b0e1ffff0697f607bd66531f84fe573d059ba41334d8c09cd"
+        },
+        {
+          "resource": "repo://tests/unit/test_g004_contracts.py",
+          "version": "repo-file-v1:sha256:d5496875c1368b5e3f2e7ae6a36917a5fc2dff1c6c2ce2ec369e7dda3c37bccf"
+        }
+      ]
+    },
+    {
+      "id": "claim_10c2c480d64b4969bae1445bb09760f4",
+      "statement": "Report rendering is deterministic and private, citations resolve to exact current evidence records, review is a separate hash-bound pass, and only a current approved review plus passing validation can reach complete.",
+      "evidence": [
+        {
+          "resource": "repo://docs/report-contract.md#L3-L23",
+          "version": "repo-lines-v1:sha256:4b8be58c1b142e23992333c4645e453b0d961709be00da9e956c0b1dfc2594a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMzdlZmMzMjQxNjZiNzA1NDdjMjg2YTFkNmMzMmM4YjUwNThhYjZhNDQwNDg5YzdlYmRkOGIzNTcxMjgzODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4NDMwZDMwMTYxNGI4YzlmYzU5YmJhY2FiOGY5OTI1YTc0M2JjZGYzNDRmNGQ2ODNjZGQ1NDdkMmU3OTg5ZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxYzZjODdjZjAzNjMwNGE0YTI0YmJmOGExMDBmZjYwNTA3MTM2NmNlNWM4ZGI4YzFlMTY0NWI3MGM3ZmRiNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4NmU2NzUxZjZhZTYyYmZkZTZjZjcyYjIzOTEzODM1OTM4YTA1YWNiYjU5NGUwNTIyMDczYTYzZTcxZjRlYjgifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g007_report_review_validation.py",
+          "version": "repo-file-v1:sha256:fb2de66254ef2c223eb15871ac90a29485476bcf515665256e04468ee0b7649f"
+        },
+        {
+          "resource": "repo://tests/unit/test_report_evidence_map.py",
+          "version": "repo-file-v1:sha256:1e872de9668d1a12296231771a2d6a88a71926115bca874c7ff45ec086b63096"
+        }
+      ]
+    },
+    {
+      "id": "claim_5eef3cdf88b9449485aebd98909aed5d",
+      "statement": "KIPRIS and manual web adapter tests enforce bounded, allowlisted transport and closed-record normalization, including no network calls for missing credentials or denied targets, redirect rejection, explicit failure kinds, pagination, empty-success metadata, canonical dates, and malformed-response rejection.",
+      "evidence": [
+        {
+          "resource": "repo://tests/unit/test_g003_adapters.py#L177-L221",
+          "version": "repo-lines-v1:sha256:f0b2d3888a898c935910981b0bd3d77c97b3639d4bd674775b0f9f38a18b78aa:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0Njg4NjQyN2UzMzFhYjkyODk2NGU3MDljNzc3NTM5MjkyNDIzZjU5MjI1YmU2NjEwMmIxN2VhNGRkM2ZjNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2OTRjY2IxYzViNmM2NzcwNjRhZjZiZTcwZDIwYmU2YmE3YzhmYTljNWRmYWM2YzY2OWI4NzBhNmYwYzQ4OTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4MmEzYTIzNGE5YmYyYmIxOTY2N2MwZTM2NTllMmVhMDA3Zjg1MjhhNmM5MTU2YjIzOWRjNjBkZDQxYjBlZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1OWVhZTUwYmY3OTg2ZWFmM2M5NzgxYzk0NjM4MzI4YjM3OTg5OWMzNGNkNTFhNDQ3YzgzMWEyNWI1MjJjM2EifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_g003_adapters.py#L26-L174",
+          "version": "repo-lines-v1:sha256:5c48d24468358fe2eb90a648bf45a958aa1ddc00527bdb90bfdc610667c5f53e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlYTk4YjgyZmE5YjFiOWJhYzdhOWFkOWYyMDY5N2Y4OGI1MGVhNzJkOGUyNzhiYzRlYTQzNmE1MGI3ZDRmODNhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5NmZiODc2ZGJhZDJhMjUyYTZiMzZiNjYxMGE4OTY3OWE4MGVlMmMxNWE2ZWRmMTA4Y2RjZGZlMDk5ZDYyNzY5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyYjE5OTY4NTZmMmFlYTg0YzRmNzQxOWIyMDUwOTU3MGFjYjAyNmIyZWFjMmQwM2ZmYWI5MWRmMDJmNTY5M2Q5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmN2Q4OGMxYTczNGNhYWU0OTk0NTk4ZmVkOGFiMGMyMWM5NThhYjg0ODJmMjRiZTg5ZTY0M2NlOWU2MTE0MDMzIn0"
+        },
+        {
+          "resource": "repo://tests/unit/test_google_patents_adapter.py",
+          "version": "repo-file-v1:sha256:ce17a6a2057e2000904102636ff934affe88b93507212ecde7b6532e8ef66329"
+        },
+        {
+          "resource": "repo://tests/unit/test_kipris_live_shape.py",
+          "version": "repo-file-v1:sha256:6b6fd0dc9c9a0ec5736d3f1724fc1bc53631b5ae9dd7346869ae661a90ee6bbf"
+        }
+      ]
+    },
+    {
+      "id": "claim_52a8a30a7ec44b578449fedfed89685f",
+      "statement": "Fixture governance requires every fixture to be registered, hash-pinned, explained by provenance metadata, and replayed through the real adapter so required edge shapes are proven by parsed bytes rather than manifest labels.",
+      "evidence": [
+        {
+          "resource": "repo://tests/fixtures/PROVENANCE.json",
+          "version": "repo-file-v1:sha256:c77c22bc8744a71f6027bab5b625372cfbc087c451fbb7dda8f2614b7831a1c3"
+        },
+        {
+          "resource": "repo://tests/unit/test_fixture_provenance.py#L117-L169",
+          "version": "repo-lines-v1:sha256:ebc2c584d92aadcdeceeb52b36668eafb9eeb705220a71ab9a4499df7aae7789:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjM2VkZDE3YTUyMjcyZjU3NWQyYzZmYmRmNmQ5ZDg3NDUxMzQzMjg5YzkyMGFjOGVkMDdiMzVhN2M1NjRjMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkYjIzMTJjODBlY2M4ZTNiZDg1ZTc4MWQxYTZmM2FkNmY5MzkyYTk1YTE1MGZhNjljYWIyNzZjYjQ2ZDU4M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5ZjkzMDgzYzE5NzEyMWI5ODI3MDBiYThhZmFiZDE3MjJjZjFkM2U3NDA0NTA5ZTgwZWZhMjcyNDdmNjJmMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmNDRmNjc2YzZmOWY2MWM4M2E0MDY1NjhjZDczODViZGIyNzhhMjY1Y2M1NTY5MGZjOTliOTdmMDI0NDdkNGYifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_fixture_provenance.py#L3-L25",
+          "version": "repo-lines-v1:sha256:8ef0dbf12df1dc4b94e63b1fb600417b517fd386214de1c01e0cfa4f20b48462:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YzVlYTk4Mjg1MjU1ZGU2NWExZTY0NDY5YjQ0OTAzMmQwODgyYzJlM2NiYmZmMmEwYTc0MzJkZmFlNDIyYjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1OTM5ZGMyMTlmZTI1NzM3YTQ3MTk5YmM1MDBlNjc2YWQ5MDgzYjc2ZjUwZjUyNmQ3NjYxMDMzNjFjZTcwMGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3ZTAyZmVlN2ZhNTA0NDc0YWQ4Y2Q2Y2YxODM2N2FlZDBjYzMxYWI3Yzk2Zjk5ZTg3MjQ2Yjg2OWQ0NDA0OGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MWQ1ZDY4OTMzYzZiMDYzOTg0OGNiY2UzMTgxYTExMWIyZDdjYzcyOWY2OTFiZjMzMTFkMWQ1NTE0ODhkMGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e9104fb3a8084a8589de86dc2f3c75f5",
+      "statement": "Privacy tests ensure secret and credential diagnostics expose status but never values, exact current approval is required before hosted callbacks, canaries block callbacks without echoing secrets, redaction removes sensitive fields, and run deletion cannot escape the workspace through outside paths or symlinks.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L174-L178",
+          "version": "repo-lines-v1:sha256:0cc04b1dd4adfa8a5c8c527edaaf082d9cb517c0c33f59c1add9daa07ee83db8:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTkzNjI1NWY1MDk3YTFmZjM5N2M2OWVmZmM5Zjg0MzgyNDE4NGMxZmJhYmMzOGY3YjgwYWQ1ZjAyNDUxMDJlNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU3YTE3MWZlMTc4ZmMxNzdjODdhMjY4NjJhNjNiZjIxOGQyOGE2YWQzNjVlM2VkN2E4ZGE2ZThjYzUwYTE5YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzg4ODNmYTliZWRhMzQ5YWFlMWI4OTYzMGY4ZDIxMDBmZDllNzU1MDNhMWViNTliN2E2ZTJhMzYxN2NjZGE3MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTQ0Zjk2OTI0Y2JjYzkzZjIzMjdhN2YxMjM2YWNkYTcwNDJiZGViNWY5ZDMxNTBmYTdjNGJiNTljOGZkZGZjZiJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_privacy.py#L118-L155",
+          "version": "repo-lines-v1:sha256:d296c98e87fd121a7f63d386eabee7abe70bfad83083be8d005b930ae99b8176:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhOGU5YmE0MTFjYzFkMGU1NDM4OTc0NTdiODcxZGEzZTQwOWYxZTM4YTA1MzI2Y2I2MWRjNTg0OGRmMTRjZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0OGMxODc1ZjVjNWU1ZjEzMzg1NjkxZDcxOTBhNGNiYmEwMjJhOGYxOGI2NmUwYTAyODIxYTllMzBhNmY1M2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0NmE3YWMwNzViYTA4YzA2ZmYxNmY1Yjc4NjQzZDNmMWUyYzU5ZWY4MmE2NTlhZTllNDQ3ZDIzYTRiNzIwMzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkMjZmNDQ0ZWFjNjZkMDBiODhkZmRjZDIxMWUxNDI3ZmZjNWRjN2U0ZWJjZDg4NDllZjMyZjBkYzlmZjhhZWQifQ"
+        },
+        {
+          "resource": "repo://tests/unit/test_privacy.py#L34-L115",
+          "version": "repo-lines-v1:sha256:4726b3c71e988784112cff753e8648edb513ea531cfc665c2174cda9c68f3eb7:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYWZlOTgxNzc4NjI5YWRjYjcxNmQ4NjI4ZjEyMDRhNWFjYjQwY2MzMjEyYmI4M2E2YTA2ODM2NzMwODhlZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZDkwY2IxMTg0YzA2NjVlZGJiODJmNmE0NGI0OWQ3MDllYzRmZjYxNmUzNjQwYWFlYmE0OTQxYWRmOGRlM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjNDFlMDAwZDc5YzcxZDc4YTM1NmJkMDkzYTk4ZjA1ZGVkYTU0YjM0MWFmOGQxZDcyZDA1MjlkOTk3ZWFhODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhNGVlNDkwZWYxYmRhYTQ1N2Q2ZTQ3MTIyYmRiYWI3NDE2OWIyMGJiNTk1ZjkwZGVkY2FjNjAyNTQ5YjIyZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c8e7677ba25a4b8cab80edbc8df9ba71",
+      "statement": "External sharing is separately gated: approval binds the exact report, recipient, destination, purpose, sensitive fields, and content hash; redaction creates a new revision and invalidates review and validation; exact completed-share retries replay the receipt, while changed scope requires a new gate.",
+      "evidence": [
+        {
+          "resource": "repo://docs/report-contract.md#L25-L32",
+          "version": "repo-lines-v1:sha256:9ee162393d6d20f97d942e8084dd66611b6500aae90d4af340b2f41eba57c90e:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjI3YjcxMjMyMTgyOGY5OTNlMGFiMDYxMzRjNDMzZjgzYTNlMzVmY2UzNGVhMDNjMzhiNDMyYjUxMDRhYzkwZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGYyYzg4MjgxNDdkZWVkYjg2YThiODBhYTI4Y2IwZjVkZmZmMzQyOGFlZDc1NTZjNDQwMTllMWZmOTBhOTI1YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTdhOGJlMGFmNjgyZjlhMmMyZDYwOWU3MDcyNjZhODlmYTkzYWU0NmQwZDk3MDBjODI3NDE1YThjZDhhOTlkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTUzOGUwMGM3MzRhM2RjYjg3YTRjZjhkMTAwMDMzNThiMWVlYzYyMTMwZGFkYjU3MjUxYjE4NzkzMTZhNjcyMSJ9"
+        },
+        {
+          "resource": "repo://tests/unit/test_privacy.py#L53-L83",
+          "version": "repo-lines-v1:sha256:453ea235691de1a1dedccdca7282758df5f7b4669e3d81e82616a9518b3b2f6a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxOTE2YzhkNmQzN2NmYTBjODhjN2FmMTgxOTdhMDUyOGI5OWZiNTA1ZDJkYTJhZGM1YTA2NjA2NDA4ZjYxMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjYTE0ZDRjMjRlODEwMzY2OWNkODc5OWMwMjUwYjM2ZTgyMjhjZjM4ZTViZTA3NDlmOTg5ZjNhNjAxYWJjNmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyM2Y5YTc5ZDgxNTkzNDAwM2ViMjdlMjI5MDdhMTI2NzZkZTQzZDg5YmE4NDc0NjQwMDJmM2M0ZjA4NmZiYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0N2M5NzcxMmE4NDczM2FjZDE0NmVhYzMwZTgyY2UzNjYzNzY4NTdhZGYzMTFhNDU0YWMxMDQ4YTA5NzU0MzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5fe9908c475145a886c7874e9993e7b3",
+      "statement": "Release-evidence verification records required-test execution, calibration trust, privacy status, schema versions, and atomic owner-only manifest behavior; missing trust or explicit test skips keep release review-blocked, and failures do not expose canaries.",
+      "evidence": [
+        {
+          "resource": "repo://tests/e2e/test_release_evidence.py#L180-L270",
+          "version": "repo-lines-v1:sha256:60f917d4a3e6b3c6a4af5969f288cb2d564150095d503050fed07b379289e9fc:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmODRmMzJlNWY4YzdlNmQ2ZDUyYzYwN2Y0ZjFiZWVlMjA1OWE0NmE2ZDVhYmZmZWQzZmRjMTdjODNkODcwYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1YzdlOGM0NzQ3OTJhMTcwZTA4YjIzYmM0MGE1ODNkOWZkOGUwZWI2N2YyOTlhMGQ2MjBiNDE2Nzg0YmQ2MWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4YTU5YmQ0MGQ4ZTI0NTE4NWNkMDFlNWQ4YTA1NDIxMzg2Yzc3OTM4Y2RjNTI3MzllYmU1NzRiYmUxY2YxZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhZWJlMDMwYzUzOWU0ZTM5ZjFjYzM4ZjZhNWMyYzkwM2MwYzEzMTBiOWZjNTE0ZWJmY2M2ODJhYzg3MDdmNmQifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_release_evidence.py#L323-L357",
+          "version": "repo-lines-v1:sha256:63aaeb85381e94176130bbafee87c329d189fa352bdcf82adf482552f9ed87c2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3YmJhNTU3Yzk1YWVlMDEyMjdlNWVjZTJhM2U5NTJkNDU2ZDk5ZGNkOThiMGQyYTY2ZGRiNWViMWVjYmEzMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyODM3NjcxMzFhYTBmYWY3NjYyZTEzMGJiN2QzNGU4OGU0NDFlMzU4NDliNDk4MzhiODA2NWRiMDU1NWU0NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwMGQ5Y2ZjYWZjNWIxNTM2OTE5MmIzMmU1MTJhZmRmNTc4Mjk1YTRiM2FhZGE1Y2UyMWYyOThkNjM3NzgyMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNDliYzQzMjA1N2VlZmY3ZDkwMjJjZWY3Zjg3MDg0MjA0ZWQ2YjY1Zjk4ZDQxMTM2YjgyNmMzNWE2N2U2NDcifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_release_evidence.py#L408-L446",
+          "version": "repo-lines-v1:sha256:0a8c92c1b10a6e5281475338340a2a948b528a3aab813d9dc795b982a201bb2c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4MDY2YWFkNzg3ZDA2M2QxZTQzODgxZjk4NDE5YTQyOGVmMzk4NjI2MWNhZDA2OGMwZWZmNTA2NmMxYjYzODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNjBlMDZjNzg5YWM1NjMyYWI1ZWVmNzNiYzViNmYxZDNkYTU3OWM5ODhlNTI3MDQzMDY2MGMwZjcwZjFkNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MmNjODg2ZTNhMDYyMmQ4NmMxMWMwMTcxZTY5Mzg3YTg0YmQyZDM4YmY4MGZhMzRmODY5NmQ3YmQxY2Y3ZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAzM2U3OTBmN2U2Yzg2ZDE1OTliOGExYzU2MjVjY2E4MmJkMGQwMjU0NDJhMDE3OTY3MzNlMjhiNzUwNTRiN2UifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_release_evidence.py#L90-L170",
+          "version": "repo-lines-v1:sha256:535f39aac2c6ffe996db6c39a1887e1e0edd881a9ecbd0deb59cb651067cac9a:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmMjZiMjg4OTRmYTZmMTdjMGFlNzRjOTU0OThkMmI0OTAxNTJmNzM3YmQ0NWVjZjcyYzI1YWY2ODAxODJkNjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0MGY2ZmY4NmNjOGVkNGQwYmQ4NmViMDBmMDNkOGI2MTJhZTAyZGI5OGZjNTViZTZjNzRhN2E2YmU5YjkyMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3NjE2MmEyMTdjMDM4OGZmMjg3NDAxMTcxYmVlYzc5ZjFjNjY4NWQ0Zjg3YmU0OTI1Yzk2YjgyYzA2MmZkNmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c9981b46aff4e28826e44863283d8e1",
+      "statement": "Research re-entry binds a bounded plan hash, republishes the research bundle, stales downstream artifacts, rejects skip-ahead execution, and requires the audit stages to be redone before approval.",
+      "evidence": [
+        {
+          "resource": "repo://tests/e2e/test_research_reentry.py#L339-L409",
+          "version": "repo-lines-v1:sha256:f3c83d808f57cc905959d66eb1327f5e5b9e1c899734a2de607f2e3d87fcbd4f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5ZWMwYzU4NjJiNWEwNmEwYjdmOTEyZGZlNmI0MGM5MGI0YjNkOGI1MDNlMTA3MTQ3Y2E4NDNiYTAyZTBkMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxY2FmYjhmOWZiNDE1YTFhNmE5ZGY3NWMyYjhiZWU4NzU2Y2MxNDM3OWViZmY4Njg2YzM3NDU5ZjgxZWMxMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNWQ0Yjg1ODU5OGQyM2MyNWU5M2ZjYjcyNTZmMjVkOTJlMWE1MjIzYWM4MGY5MGFhNDJmZjE1OGRjY2E2MzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhZTRlOTVjNDU5ZDkxMzc4MGEzZTQzNWE1NzNkNzBjNmFkYmVkNzdkNWY5M2E4OTUyODU1YTA5MjA4NmNhZTkifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_research_reentry.py#L426-L501",
+          "version": "repo-lines-v1:sha256:221710f3d5b254fc07dc3b922d781915d4bf9233bae0d1e8817abfe6a7d1fd65:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5YWVlMzI5NmI4NzA1M2ZlZGM5ZmI3ZWEwYjgwMjhiODdkZGM5ZjkzZjM0NmZiMjQ5MTFlYmQ0ZjBjNDIxOWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMzk3Njk4ZmI3OWQ3MDhlMWIwYmI5Y2FmM2E3YTA0Y2M4ZmUyMTBkYWJhODk2ODVmNTRlZGI4YTEyNjIyNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxZWNmMTQ4NzZmYjQwYzk5MzdiZWExM2NlYWZjM2ZhMTkyZWQ3NGExYmZiZDM3OTJlZDU3N2ZkZjhhYzY5NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyN2FiYmUyNTlkN2UzNzk2MzgyMTNhMjZmMWI3N2UyMWRjMjBmMGI1YWVhMDk3MjA2M2UzZDUyMGI2NzY3YTYifQ"
+        },
+        {
+          "resource": "repo://tests/e2e/test_research_reentry.py#L516-L519",
+          "version": "repo-lines-v1:sha256:59c5d4f7a28fd643a1e7a5dfa17097d57790c4d9c317566a6e42f62f3de981f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTYwOTFjYTRhMDAwNWEyYWIyYWY3OWQ0N2M5MjU2NGNhZjIwMzVjNWZjYjBiMmMzNjY2MDdmMDE3M2VlNDRiZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODAxM2YxYTEwZDEyODcxMTg2MzE2YWRhMGFkMGQ0OGMwYTU1ZDBlY2E3MGI5ZjgzN2ZlMDk4NzJhOTFiZWUyNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTg4OGY5YjE1MzAwOGRjOGEyYmUzMGY2NThlMjEyM2IyMjg4NjBmMmFiMGQxNGQ4MWJlODNlZmE1Yjk1OTI4MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWIyNDUxMzMzNjIxZmY1MmM0MjY5MzZiYTI1Y2VmMjY1OTQzMGQwMjc5MDRhZjg3Njk5MjEzNTAyNjE1NTRmNCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.4.3",
+    "at": "2026-09-01T07:14:54.600Z"
+  }
+}

@@ -6,6 +6,38 @@ tags: [reports, review, validation, provenance, privacy, release-gates]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-3712168d87f0554a7f2b407f
+    resource: repo://config/report-en-v1.0.0.json
+  - id: openwiki-source-a0ac04585ccc225dd1e05a5b
+    resource: repo://docs/report-contract.md
+  - id: openwiki-source-edd29824870f407620519c45
+    resource: repo://schemas/report.schema.json
+  - id: openwiki-source-cd34ae8d1f9b12d7e5222c87
+    resource: repo://schemas/review.schema.json
+  - id: openwiki-source-769fb5225befa47f2f4a07b5
+    resource: repo://schemas/validation.schema.json
+  - id: openwiki-source-6274928a2d48517fe1d8b5b0
+    resource: repo://src/patent_factory/audit.py
+  - id: openwiki-source-7460376bf39fa08c6f03e048
+    resource: repo://src/patent_factory/report.py
+  - id: openwiki-source-116890d36a917c7f2cc210dc
+    resource: repo://src/patent_factory/review.py
+  - id: openwiki-source-c3eb6941b02b598c4d65c1f4
+    resource: repo://src/patent_factory/sharing.py
+  - id: openwiki-source-ef94c4f6ce7ef5deb426b558
+    resource: repo://src/patent_factory/state.py
+  - id: openwiki-source-0a502f0f5a47191adce4cfbe
+    resource: repo://src/patent_factory/validation.py
+  - id: openwiki-source-dec1ea289f35229b8527ca90
+    resource: repo://templates/report-en.md
+  - id: openwiki-source-a29741838d80bc096ab7e5b7
+    resource: repo://tests/integration/test_g007_report_review_validation.py
+  - id: openwiki-source-5fa1763d994f656cc5d0a184
+    resource: repo://tests/integration/test_g009_english_report.py
+  - id: openwiki-source-70d1c1261f14bcb70de32cf9
+    resource: repo://tests/integration/test_us016_citation_binding.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # Report Rendering, Review, and Release Validation

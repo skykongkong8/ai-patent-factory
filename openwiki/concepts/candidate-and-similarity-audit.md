@@ -6,6 +6,36 @@ tags: [ideation, shortlisting, similarity-risk, provenance, audit]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-dd2022ef1ac8ff1d59688719
+    resource: repo://config/calibration-trust-v1.0.0.json
+  - id: openwiki-source-07b502238a795bcb7978149f
+    resource: repo://config/simrisk-v1.0.0.json
+  - id: openwiki-source-6388088c4e1c75699d909989
+    resource: repo://docs/ideation-contract.md
+  - id: openwiki-source-eafb50b0eadf24f7ed4a3642
+    resource: repo://docs/simrisk-v1.md
+  - id: openwiki-source-61783e29e3f5996deb2b6cc8
+    resource: repo://schemas/audit.schema.json
+  - id: openwiki-source-366f3f5e110f99218562eefa
+    resource: repo://schemas/candidate.schema.json
+  - id: openwiki-source-87ea46723cec11c247e0854c
+    resource: repo://schemas/feature-map.schema.json
+  - id: openwiki-source-8a86006e1e1792025acb950e
+    resource: repo://schemas/finalist.schema.json
+  - id: openwiki-source-6274928a2d48517fe1d8b5b0
+    resource: repo://src/patent_factory/audit.py
+  - id: openwiki-source-cb17b2e9d5c9181ae4141c17
+    resource: repo://src/patent_factory/corpus.py
+  - id: openwiki-source-7265d7309888be1c7c7ad6a0
+    resource: repo://src/patent_factory/evaluation.py
+  - id: openwiki-source-625c6bb38f074ed9bfab6dd6
+    resource: repo://src/patent_factory/ideation.py
+  - id: openwiki-source-bc82ac6dc54320c987634265
+    resource: repo://src/patent_factory/similarity.py
+  - id: openwiki-source-35492affeecda311b50602df
+    resource: repo://tests/unit/test_g005_similarity.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # Candidates, Shortlisting, Corpus, and Similarity Risk
@@ -14,7 +44,8 @@ This page describes the path from an evidence-bound proposal to a similarity aud
 
 ## Control flow
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
     A["Profile ready plus research bundle"] --> B["ideate validates candidate input"]
     B --> C["candidate-set artifact"]

@@ -6,6 +6,34 @@ tags: [agents, cli, contracts, workflow, state, provenance]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-ffab72096cf278c203460657
+    resource: repo://.claude/commands/audit.md
+  - id: openwiki-source-67680eb23c7f0b6443a2da04
+    resource: repo://.claude/commands/checkpoint.md
+  - id: openwiki-source-fa3da7432981055494677343
+    resource: repo://.claude/commands/draft.md
+  - id: openwiki-source-e1af3184ead3dd1bd51d7ac5
+    resource: repo://.claude/commands/ideate.md
+  - id: openwiki-source-d885ecdfd5ee5aa1be7163b9
+    resource: repo://.claude/commands/research.md
+  - id: openwiki-source-4ea61816a1bf66dfcb2403af
+    resource: repo://.claude/commands/review.md
+  - id: openwiki-source-75df5b30dd6cd5973f41a899
+    resource: repo://.claude/commands/shortlist.md
+  - id: openwiki-source-c1a9676b43a2a0c748e6207b
+    resource: repo://src/patent_factory/cli.py
+  - id: openwiki-source-870325ff4b17b4d6f70a692e
+    resource: repo://src/patent_factory/models.py
+  - id: openwiki-source-93ec389aeb1f9ceb0bfa92c6
+    resource: repo://src/patent_factory/scaffold.py
+  - id: openwiki-source-ef94c4f6ce7ef5deb426b558
+    resource: repo://src/patent_factory/state.py
+  - id: openwiki-source-745cabc751dd0e59ce0097eb
+    resource: repo://tests/unit/test_g008_agent_surfaces.py
+  - id: openwiki-source-b86ddd0585150a81bccbf6f6
+    resource: repo://tests/unit/test_g008_cli_result_contract_docs.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # Agent Commands and CLI Contracts

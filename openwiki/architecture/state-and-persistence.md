@@ -6,6 +6,26 @@ tags: [state-management, sqlite, persistence, artifacts, recovery]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-134622a60158829ac24d4ae0
+    resource: repo://src/patent_factory/artifacts.py
+  - id: openwiki-source-827e198ce49a8101913fa2bd
+    resource: repo://src/patent_factory/database.py
+  - id: openwiki-source-870325ff4b17b4d6f70a692e
+    resource: repo://src/patent_factory/models.py
+  - id: openwiki-source-4d454f3fd05d54e91310a94c
+    resource: repo://src/patent_factory/runs.py
+  - id: openwiki-source-ef94c4f6ce7ef5deb426b558
+    resource: repo://src/patent_factory/state.py
+  - id: openwiki-source-5af31d130f8a427fa707eaa9
+    resource: repo://tests/integration/test_g002_publish_register_integration.py
+  - id: openwiki-source-d515d915b7cbf1a2f1c9ba3b
+    resource: repo://tests/integration/test_g002_snapshot_and_integrity.py
+  - id: openwiki-source-74898cf32795f76dfb82c65a
+    resource: repo://tests/integration/test_g002_transactional_state_kernel.py
+  - id: openwiki-source-080fee2fcc4295c80222d99b
+    resource: repo://tests/integration/test_g005_atomic_gate.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # State Kernel and Persistence

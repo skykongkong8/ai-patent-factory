@@ -6,6 +6,32 @@ tags: [provenance, evidence, hashing, artifacts, citations, lineage]
 verified:
   - by: openwiki/0.4.3
     at: 2026-09-01T07:14:54.600Z
+sources:
+  - id: openwiki-source-61783e29e3f5996deb2b6cc8
+    resource: repo://schemas/audit.schema.json
+  - id: openwiki-source-8a86006e1e1792025acb950e
+    resource: repo://schemas/finalist.schema.json
+  - id: openwiki-source-edd29824870f407620519c45
+    resource: repo://schemas/report.schema.json
+  - id: openwiki-source-134622a60158829ac24d4ae0
+    resource: repo://src/patent_factory/artifacts.py
+  - id: openwiki-source-870325ff4b17b4d6f70a692e
+    resource: repo://src/patent_factory/models.py
+  - id: openwiki-source-5834e3fa19be2c161e60d4c2
+    resource: repo://src/patent_factory/provenance.py
+  - id: openwiki-source-7460376bf39fa08c6f03e048
+    resource: repo://src/patent_factory/report.py
+  - id: openwiki-source-93ec389aeb1f9ceb0bfa92c6
+    resource: repo://src/patent_factory/scaffold.py
+  - id: openwiki-source-ef94c4f6ce7ef5deb426b558
+    resource: repo://src/patent_factory/state.py
+  - id: openwiki-source-8812972b4008cfa7a1ec7b46
+    resource: repo://tests/unit/test_adapter_record_hash_boundary.py
+  - id: openwiki-source-e7954f67c2109ec177265a45
+    resource: repo://tests/unit/test_provenance_contracts.py
+  - id: openwiki-source-76e0fb875a2222d3b682888c
+    resource: repo://tests/unit/test_us016_hedged_labels.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
 ---
 
 # Evidence, Hashes, and Artifact Lineage
