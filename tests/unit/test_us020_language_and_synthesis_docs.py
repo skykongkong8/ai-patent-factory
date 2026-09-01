@@ -3,10 +3,8 @@
 English is the default report language, so a string that hard-codes "Korean"
 while describing a language-agnostic fact is simply wrong on the English path.
 
-The SKILL.md assertions exist because the creative-delta discipline was
-implemented (`ideation.SynthesisTrace`) but never documented: the skill file
-never named `synthesis_trace`, and the "~10-30% delta" guidance survived only
-inside a `scaffold.py` TODO string, where no ideating agent would read it.
+The SKILL.md assertions keep synthesis provenance explicit while Issue #60's
+divergence-first strategy removes the numeric creative-delta fixation heuristic.
 """
 
 import re
@@ -50,17 +48,9 @@ class SynthesisTraceIsDocumentedTests(unittest.TestCase):
             with self.subTest(method=method):
                 self.assertIn(f"`{method}`", SKILL)
 
-    def test_the_skill_carries_the_creative_delta_guidance(self):
-        self.assertIsNotNone(
-            re.search(r"10\s*[-–]\s*30%", SKILL),
-            "the ~10-30% creative delta guidance is missing from the ideation skill",
-        )
-
-    def test_the_delta_guidance_is_marked_a_heuristic_not_a_measured_novelty_claim(self):
-        # CLAUDE.md section 6: the percentage must never read as a measured
-        # property of the invention.
-        self.assertIn("heuristic", SKILL.casefold())
-        self.assertIn("not a measurement", SKILL.casefold())
+    def test_numeric_creative_delta_fixation_is_removed(self):
+        self.assertIsNone(re.search(r"10\s*[-–]\s*30%", SKILL))
+        self.assertIn("do not use a numeric creative-delta target", SKILL.casefold())
 
     def test_the_skill_records_that_the_trace_cannot_bind_the_audit_closest_reference(self):
         # The ordering constraint is the reason no closest-prior-art binding is

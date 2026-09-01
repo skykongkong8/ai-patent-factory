@@ -53,6 +53,59 @@ def shortlist_advisories(finalists: Iterable[Mapping[str, Any]]) -> list[dict[st
     return sorted(advisories, key=lambda item: (item["code"], item["subjects"]))
 
 
+def candidate_advisories(candidates: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Flag homogeneous candidate inputs without blocking publication."""
+
+    items = [item for item in candidates if isinstance(item, Mapping)]
+    advisories: list[dict[str, Any]] = []
+    if len(items) < 2:
+        return advisories
+
+    identities = [
+        str(item.get("candidate_id") or f"candidate[{index}]")
+        for index, item in enumerate(items)
+    ]
+    methods = {
+        str(trace.get("method"))
+        for item in items
+        if isinstance((trace := item.get("synthesis_trace")), Mapping)
+    }
+    if len(methods) == 1:
+        advisories.append(_advisory(
+            "single_synthesis_method", identities,
+            "every candidate uses the same synthesis_trace.method; consider adding another creative operation",
+        ))
+
+    evidence_sets = {
+        tuple(sorted(
+            str(reference.get("evidence_id"))
+            for reference in item.get("evidence_references", [])
+            if isinstance(reference, Mapping) and reference.get("evidence_id")
+        ))
+        for item in items
+    }
+    if len(evidence_sets) == 1:
+        advisories.append(_advisory(
+            "identical_evidence_sets", identities,
+            "every candidate cites the same evidence ID set; evidence coverage may be too narrow",
+        ))
+
+    profile_sets = {
+        tuple(sorted(
+            f"{reference.get('field')}:{reference.get('claim_id')}:{reference.get('kind')}"
+            for reference in item.get("profile_references", [])
+            if isinstance(reference, Mapping) and reference.get("field") and reference.get("claim_id")
+        ))
+        for item in items
+    }
+    if len(profile_sets) == 1:
+        advisories.append(_advisory(
+            "identical_profile_reference_sets", identities,
+            "every candidate cites the same profile fact set; consider varying the user problem/capability angle",
+        ))
+    return sorted(advisories, key=lambda item: (item["code"], item["subjects"]))
+
+
 def audit_advisories(
     corpus_set: Mapping[str, Any], audit: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -86,7 +139,54 @@ def audit_advisories(
     return sorted(advisories, key=lambda item: (item["code"], item["subjects"]))
 
 
+def workbench_advisories(
+    ideas: Iterable[Mapping[str, Any]],
+    relations: Iterable[Mapping[str, Any]],
+    candidate_input: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Flag divergence workbench smells without blocking validation."""
+
+    advisories: list[dict[str, Any]] = []
+    idea_list = [item for item in ideas if isinstance(item, Mapping)]
+    sessions = {str(item.get("session_id")) for item in idea_list if item.get("session_id")}
+    lenses = {str(item.get("lens")) for item in idea_list if item.get("lens")}
+    if len(lenses) == 1 and len(idea_list) > 1:
+        advisories.append(_advisory(
+            "single_lens_workbench",
+            sorted(str(item.get("idea_id", "?")) for item in idea_list),
+            "all workbench ideas use one lens; divergence may be too narrow",
+        ))
+    relation_list = [item for item in relations if isinstance(item, Mapping)]
+    cross_session = False
+    idea_sessions = {str(item.get("idea_id")): str(item.get("session_id")) for item in idea_list}
+    for relation in relation_list:
+        ids = [str(item) for item in relation.get("source_idea_ids", [])]
+        ids.extend(str(item) for item in relation.get("target_idea_ids", []))
+        if len({idea_sessions.get(item) for item in ids if item in idea_sessions}) > 1:
+            cross_session = True
+            break
+    if len(sessions) > 1 and relation_list and not cross_session:
+        advisories.append(_advisory(
+            "no_cross_session_relation",
+            sorted(sessions),
+            "multiple sessions exist but no relation connects ideas across sessions",
+        ))
+    if candidate_input and isinstance(candidate_input.get("candidates"), list):
+        methods = {
+            str(candidate.get("synthesis_trace", {}).get("method"))
+            for candidate in candidate_input["candidates"]
+            if isinstance(candidate, Mapping) and isinstance(candidate.get("synthesis_trace"), Mapping)
+        }
+        if len(methods) == 1 and len(candidate_input["candidates"]) > 1:
+            advisories.append(_advisory(
+                "single_synthesis_method",
+                sorted(methods),
+                "all promoted candidates use the same synthesis method",
+            ))
+    return sorted(advisories, key=lambda item: (item["code"], item["subjects"]))
+
+
 __all__ = [
     "LINT_VERSION", "MIN_CORPUS_RECORDS", "SCORE_EPSILON",
-    "audit_advisories", "shortlist_advisories",
+    "audit_advisories", "candidate_advisories", "shortlist_advisories", "workbench_advisories",
 ]

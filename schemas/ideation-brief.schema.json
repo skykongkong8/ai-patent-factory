@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/ideation-brief.schema.json",
+  "title": "Privacy-minimized ideation workbench brief",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "brief_id",
+    "data_classes",
+    "egress",
+    "evaluation_config_hash",
+    "evidence_cards",
+    "profile",
+    "profile_revision_hash",
+    "profile_revision_id",
+    "research_revision_hash",
+    "research_revision_id",
+    "reideate_seed",
+    "run_id",
+    "semantic_gaps",
+    "version"
+  ],
+  "properties": {
+    "version": {"const": "ideation-brief-v1"},
+    "brief_id": {"type": "string", "pattern": "^ib_[0-9a-f]{20}$"},
+    "run_id": {"$ref": "#/$defs/nonEmpty"},
+    "profile_revision_id": {"$ref": "#/$defs/nonEmpty"},
+    "profile_revision_hash": {"$ref": "#/$defs/hash"},
+    "research_revision_id": {"$ref": "#/$defs/nonEmpty"},
+    "research_revision_hash": {"$ref": "#/$defs/hash"},
+    "evaluation_config_hash": {"$ref": "#/$defs/hash"},
+    "data_classes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["agent_ideation_notes", "profile_fact_hashes", "research_evidence_hashes"]
+      }
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "recipient", "scope", "semantic_content_available"],
+      "properties": {
+        "allowed": {"const": false},
+        "recipient": {"type": "null"},
+        "scope": {"const": "local_cli_only"},
+        "semantic_content_available": {"const": false}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_cards", "problem_cards"],
+      "properties": {
+        "capability_cards": {"type": "array", "items": {"$ref": "#/$defs/profileCard"}},
+        "problem_cards": {"type": "array", "items": {"$ref": "#/$defs/profileCard"}}
+      }
+    },
+    "evidence_cards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/evidenceCard"}
+    },
+    "semantic_gaps": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/hash"}
+    },
+    "reideate_seed": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provided_seed_hash"],
+          "properties": {"provided_seed_hash": {"$ref": "#/$defs/hash"}}
+        },
+        {"$ref": "#/$defs/reideateSeed"}
+      ]
+    }
+  },
+  "$defs": {
+    "nonEmpty": {"type": "string", "minLength": 1},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "profileCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_ids", "field", "kinds", "value_hash"],
+      "properties": {
+        "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmpty"}},
+        "field": {"$ref": "#/$defs/nonEmpty"},
+        "kinds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["problem", "capability"]}},
+        "value_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "evidenceCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content_hash", "evidence_id", "excerpt_hashes", "language", "metadata_hash",
+        "record_hash", "semantic_status", "source_type", "span_hashes"
+      ],
+      "properties": {
+        "content_hash": {"$ref": "#/$defs/hash"},
+        "evidence_id": {"type": "string", "pattern": "^ev_"},
+        "excerpt_hashes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/hash"}},
+        "language": {"type": ["string", "null"]},
+        "metadata_hash": {"$ref": "#/$defs/hash"},
+        "record_hash": {"$ref": "#/$defs/hash"},
+        "semantic_status": {"const": "hash_only_private_boundary"},
+        "source_type": {"type": ["string", "null"]},
+        "span_hashes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/hash"}}
+      }
+    },
+    "feedbackBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feedback_hash", "finalist_id"],
+      "properties": {
+        "feedback_hash": {"$ref": "#/$defs/hash"},
+        "finalist_id": {"$ref": "#/$defs/nonEmpty"}
+      }
+    },
+    "finalistBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "finalist_id"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/nonEmpty"},
+        "finalist_id": {"$ref": "#/$defs/nonEmpty"}
+      }
+    },
+    "reideateSeed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action", "approval_scope_hash", "feedback_bindings", "finalist_bindings", "gate_id",
+        "resolution_hash", "resolution_revision_id", "subject_revision_hash"
+      ],
+      "properties": {
+        "action": {"const": "re_ideate"},
+        "approval_scope_hash": {"$ref": "#/$defs/hash"},
+        "feedback_bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/feedbackBinding"}},
+        "finalist_bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/finalistBinding"}},
+        "gate_id": {"$ref": "#/$defs/nonEmpty"},
+        "resolution_hash": {"$ref": "#/$defs/hash"},
+        "resolution_revision_id": {"$ref": "#/$defs/nonEmpty"},
+        "subject_revision_hash": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

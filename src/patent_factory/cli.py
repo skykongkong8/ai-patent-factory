@@ -18,13 +18,14 @@ from .adapters.manual_web import (
 )
 from .config import load_evaluation_config, load_similarity_config
 from .database import (
-    connect_database, export_profile, ingest, profile_conflict_snapshot, resolve_profile_conflicts,
-    resolve_run_id, utc_now,
+    connect_database, connect_read_only_database, export_profile, ingest, profile_conflict_snapshot,
+    resolve_profile_conflicts, resolve_run_id, utc_now,
 )
 from .decisions import inspect_gate, resolve_gate
 from .evaluation import run_shortlist
 from .ideation import DomainPivotRequiredError, run_ideation
-from .lint import audit_advisories, shortlist_advisories
+from .ideation_workbench import initialize_workbench, scaffold_ideation_brief, validate_workbench
+from .lint import audit_advisories, candidate_advisories, shortlist_advisories
 from .models import GateKind, QueryEnvelope, RunState
 from .paths import contained_input, contained_output, owner_only_file, private_contained_directory, private_root
 from .profile import MAX_DOCUMENT_BYTES, document_facts, folder_facts, interview_facts
@@ -345,6 +346,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-database", type=Path, help="authoritative profile SQLite (default WORKSPACE_ROOT/profile.sqlite3)",
     )
     scaffold_commands.choices["report"].add_argument("--language", choices=("en", "ko"), default="en")
+    ideation_workbench = scaffold_commands.add_parser(
+        "ideation-workbench",
+        help="initialize or read-only validate a non-authoritative ideation workbench",
+    )
+    ideation_workbench.add_argument("--run", type=Path, required=True)
+    ideation_workbench.add_argument("--run-id", required=True)
+    ideation_workbench.add_argument(
+        "--profile-database", type=Path, required=True,
+        help="authoritative profile SQLite database",
+    )
+    mode = ideation_workbench.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--out", type=Path,
+        help="brief-v1.json path under workspace/requests/ideation/RUN_ID",
+    )
+    mode.add_argument(
+        "--validate", type=Path, metavar="WORKBENCH",
+        help="existing workbench directory to validate without writing",
+    )
+    ideation_workbench.add_argument(
+        "--stage", choices=("diverge", "entangle", "promote"),
+        help="required with --validate and forbidden with --out",
+    )
+    ideation_workbench.add_argument("--byte-budget", type=int, default=2_000_000)
+    ideation_workbench.add_argument("--workspace-root", type=Path, default=Path("workspace"))
     feature_map = scaffold_commands.add_parser(
         "feature-map", help="seal a filled feature-map request input by re-deriving every map_id",
     )
@@ -1235,6 +1261,7 @@ def _ideate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "status": "domain_pivot_required",
             }, 6)
     payload = result.as_dict()
+    payload["advisories"] = candidate_advisories(result.artifact.content.get("candidates", []))
     payload.update({"ended_at": utc_now(), "started_at": started_at})
     return payload, 0
 
@@ -1279,13 +1306,50 @@ def _prepare_contained_output(path: Path, root: Path, label: str) -> Path:
 
 def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     started_at = utc_now()
-    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
-    out_path = _prepare_contained_output(args.out, workspace_root, "scaffold output")
     command = args.scaffold_command
     extras: dict[str, Any] = {}
-    if command in {"candidate", "shortlist", "audit-query", "gate-decision"}:
+    out_path: Path | None = None
+    if command == "ideation-workbench" and args.validate is not None:
+        if not args.stage:
+            raise CliError("scaffold ideation-workbench --validate requires --stage")
+        workspace_root = contained_input(
+            args.workspace_root, Path.cwd().resolve(), "workspace root", directory=True,
+        )
+        validate_root = contained_input(args.validate, workspace_root, "ideation workbench", directory=True)
+        run_root = contained_input(args.run, workspace_root, "scaffold run", directory=True)
+        database_path = contained_input(
+            args.run / "factory.sqlite3", workspace_root, "scaffold run database",
+        )
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_read_only_database(database_path) as connection, connect_read_only_database(profile_database) as profile_connection:
+            payload = validate_workbench(
+                validate_root, stage=args.stage, byte_budget=args.byte_budget, connection=connection,
+                profile_connection=profile_connection, run_root=run_root,
+                run_id=normalize(args.run_id), config=load_evaluation_config(),
+            )
+        payload.update({
+            "command": "scaffold", "draft": command, "ended_at": utc_now(),
+            "output_path": None, "started_at": started_at,
+        })
+        return payload, 0
+    if command == "ideation-workbench" and args.stage:
+        raise CliError("scaffold ideation-workbench --stage is only valid with --validate")
+    workspace_root = private_root(args.workspace_root, "workspace root", create=True)
+    if getattr(args, "out", None) is not None:
+        out_path = _prepare_contained_output(args.out, workspace_root, "scaffold output")
+    if command in {"candidate", "shortlist", "audit-query", "gate-decision", "ideation-workbench"}:
         contained_input(args.run, workspace_root, "scaffold run", directory=True)
-        database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "scaffold run database")
+        if command == "ideation-workbench":
+            database_path = contained_input(
+                args.run / "factory.sqlite3", workspace_root, "scaffold run database",
+            )
+        else:
+            database_path = contained_output(
+                args.run / "factory.sqlite3", workspace_root, "scaffold run database",
+            )
         run_id = normalize(args.run_id)
     if command == "candidate":
         profile_database = contained_input(
@@ -1297,6 +1361,19 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 connection, profile_connection, run_id=run_id, count=args.count,
             )
             extras["evidence"] = evidence_binding_table(connection, run_id)
+    elif command == "ideation-workbench":
+        if out_path is None:
+            raise CliError("scaffold ideation-workbench requires --out or --validate")
+        profile_database = contained_input(
+            args.profile_database or args.workspace_root / "profile.sqlite3",
+            workspace_root, "scaffold profile database",
+        )
+        with connect_read_only_database(database_path) as connection, connect_read_only_database(profile_database) as profile_connection:
+            draft = scaffold_ideation_brief(
+                connection, profile_connection, run_id=run_id, config=load_evaluation_config(),
+            )
+            extras.update(initialize_workbench(out_path, draft))
+            draft = None
     elif command == "shortlist":
         with connect_database(database_path) as connection:
             draft = scaffold_shortlist_input(connection, run_id=run_id, config=load_evaluation_config())
@@ -1333,11 +1410,14 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         )
         with connect_database(profile_database) as profile_connection:
             draft = scaffold_report_input(profile_connection, language=args.language)
-    out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    out_path.write_text(
-        json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8",
-    )
-    out_path.chmod(0o600)
+    if out_path is None:
+        raise CliError("scaffold output path required")
+    if draft is not None:
+        out_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+        )
+        out_path.chmod(0o600)
     return ({
         "command": "scaffold",
         "draft": command,
@@ -1345,7 +1425,7 @@ def _scaffold(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "output_path": str(args.out),
         "started_at": started_at,
         "status": "scaffolded",
-        "todo_count": count_todos(draft),
+        "todo_count": count_todos(draft) if draft is not None else 0,
         **extras,
     }, 0)
 

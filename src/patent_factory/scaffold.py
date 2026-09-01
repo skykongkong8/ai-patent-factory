@@ -132,7 +132,10 @@ def scaffold_shortlist_input(
     if not isinstance(candidates, list) or not candidates:
         raise ScaffoldError("scaffold requires a current candidate set — run /ideate first")
     finalists = []
+    selected_ids = set()
     for index, candidate in enumerate(candidates[:3], start=1):
+        candidate_id = candidate.get("candidate_id")
+        selected_ids.add(candidate_id)
         supporting = [
             dict(reference)
             for reference in candidate.get("evidence_references", [])
@@ -159,14 +162,34 @@ def scaffold_shortlist_input(
                 }
                 for axis in ("differentiation", "technical_feasibility", "utility_significance")
             ],
-            "candidate_id": candidate.get("candidate_id"),
+            "candidate_id": candidate_id,
             "priority": index,
             "selection_rationale": TODO + "why this candidate is a finalist",
         })
+    exclusions = [
+        {
+            "candidate_id": candidate.get("candidate_id"),
+            "rationale": TODO + "why this published candidate is not selected as a finalist",
+            "reason_codes": ["not_selected"],
+        }
+        for candidate in candidates
+        if candidate.get("candidate_id") not in selected_ids
+    ]
+    insufficiency = None
+    if len(finalists) < config.minimum_finalists:
+        insufficiency = {
+            "eligible_candidate_ids": [candidate.get("candidate_id") for candidate in candidates[:3]],
+            "limitations": [TODO + "why fewer than three defensible finalists are available"],
+            "missing_evidence": [TODO + "evidence needed before a full shortlist can be defended"],
+            "reason_codes": ["fewer_than_three_defensible"],
+            "recommended_research": [TODO + "bounded research or user input needed next"],
+            "rejected_candidate_ids": [candidate.get("candidate_id") for candidate in candidates[3:]],
+            "unresolved_questions": [TODO + "question blocking a third defensible finalist"],
+        }
     return {
-        "exclusions": [],
+        "exclusions": exclusions,
         "finalists": finalists,
-        "insufficiency": None,
+        "insufficiency": insufficiency,
         "schema_version": "shortlist-input-v1",
     }
 

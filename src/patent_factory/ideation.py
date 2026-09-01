@@ -484,42 +484,42 @@ def _research_evidence(research: ArtifactRevision) -> dict[str, Mapping[str, Any
     return result
 
 
-def run_ideation(
-    connection: sqlite3.Connection,
+@dataclass(frozen=True)
+class CandidateInputValidation:
+    """Pure, publication-free validation result for one candidate-input-v1."""
+
+    request: Mapping[str, Any]
+    candidates: tuple[Candidate, ...]
+    profile_revision_id: str
+    profile_revision_hash: str
+    research_revision_hash: str
+    evaluation_config: Mapping[str, Any]
+    evaluation_config_hash: str
+    profile_context: Mapping[str, Any]
+
+
+def validate_candidate_input(
     *,
-    profile_connection: sqlite3.Connection,
-    run_root: Path,
-    run_id: str,
     profile: Mapping[str, Any],
+    research: ArtifactRevision,
     candidate_input: Mapping[str, Any],
     config: EvaluationConfig,
-    domain_decision_id: str | None = None,
-    fault_at: FaultInjector = None,
-) -> IdeationRun:
-    """Validate and publish one deterministic candidate-set revision without model or network access."""
+) -> CandidateInputValidation:
+    """Validate candidate input without opening a gate or changing run state.
+
+    The authoritative ``run_ideation`` path calls this same function before it
+    publishes anything. Request-layer tools may therefore prove promotion
+    readiness without acquiring a writable state-machine surface.
+    """
 
     canaries = credential_canaries()
-    assert_canaries_absent(
-        candidate_input, canaries,
-        boundary="candidate_input",
-    )
-    authoritative_profile = profile_payload(profile_connection)
-    assert_canaries_absent(
-        authoritative_profile, canaries,
-        boundary="profile_context",
-    )
-    if canonical_json(profile) != canonical_json(authoritative_profile):
-        raise ValueError("profile_context: supplied export does not match authoritative profile database")
-    profile = authoritative_profile
-
-    state, _exports = _state_with_exports(connection, run_root, create_ideation=False)
-    prior = state.snapshot(run_id)
-    if prior.state not in {RunState.RESEARCH_COMPLETE, RunState.RESEARCH_INCOMPLETE, RunState.IDEATION_RUNNING, RunState.CANDIDATES_READY}:
-        raise StateError("ideation requires research_complete or research_incomplete")
-    research = _current_artifact(connection, run_id, "research_bundle")
+    assert_canaries_absent(candidate_input, canaries, boundary="candidate_input")
+    assert_canaries_absent(profile, canaries, boundary="profile_context")
     evidence = _research_evidence(research)
     profile_claim_categories = _profile_claim_categories(profile)
-    profile_revision_id = _text(profile.get("profile_revision"), "profile_context.profile_revision")
+    profile_revision_id = _text(
+        profile.get("profile_revision"), "profile_context.profile_revision",
+    )
     profile_hash = digest(profile)
     config_payload = config.as_dict()
     config_hash = config.content_hash
@@ -534,6 +534,74 @@ def run_ideation(
         canaries,
         boundary="ideation_context",
     )
+    request = _object(candidate_input, "candidate_input")
+    _exact_fields(request, {"candidates", "schema_version"}, "candidate_input")
+    if request["schema_version"] != "candidate-input-v1" or not isinstance(request["candidates"], list):
+        raise ValueError("candidate_input: candidate-input-v1 with candidates array required")
+    candidates = tuple(
+        Candidate.from_dict(
+            value,
+            f"candidate_input.candidates[{index}]",
+            profile_claim_categories=profile_claim_categories,
+            evidence=evidence,
+            profile_revision_hash=profile_hash,
+            research_revision_hash=research.content_hash,
+            evaluation_config_hash=config_hash,
+        )
+        for index, value in enumerate(request["candidates"])
+    )
+    if not candidates:
+        raise ValueError("candidate_input.candidates: at least one candidate required")
+    if len({candidate.candidate_id for candidate in candidates}) != len(candidates):
+        raise ValueError("candidate_input.candidates: duplicate candidates are not allowed")
+    return CandidateInputValidation(
+        request=request,
+        candidates=candidates,
+        profile_revision_id=profile_revision_id,
+        profile_revision_hash=profile_hash,
+        research_revision_hash=research.content_hash,
+        evaluation_config=config_payload,
+        evaluation_config_hash=config_hash,
+        profile_context=profile_context_payload,
+    )
+
+
+def run_ideation(
+    connection: sqlite3.Connection,
+    *,
+    profile_connection: sqlite3.Connection,
+    run_root: Path,
+    run_id: str,
+    profile: Mapping[str, Any],
+    candidate_input: Mapping[str, Any],
+    config: EvaluationConfig,
+    domain_decision_id: str | None = None,
+    fault_at: FaultInjector = None,
+) -> IdeationRun:
+    """Validate and publish one deterministic candidate-set revision without model or network access."""
+
+    authoritative_profile = profile_payload(profile_connection)
+    if canonical_json(profile) != canonical_json(authoritative_profile):
+        raise ValueError("profile_context: supplied export does not match authoritative profile database")
+    profile = authoritative_profile
+
+    state, _exports = _state_with_exports(connection, run_root, create_ideation=False)
+    prior = state.snapshot(run_id)
+    if prior.state not in {RunState.RESEARCH_COMPLETE, RunState.RESEARCH_INCOMPLETE, RunState.IDEATION_RUNNING, RunState.CANDIDATES_READY}:
+        raise StateError("ideation requires research_complete or research_incomplete")
+    research = _current_artifact(connection, run_id, "research_bundle")
+    validated = validate_candidate_input(
+        profile=profile,
+        research=research,
+        candidate_input=candidate_input,
+        config=config,
+    )
+    request = validated.request
+    candidates = validated.candidates
+    profile_hash = validated.profile_revision_hash
+    config_payload = validated.evaluation_config
+    config_hash = validated.evaluation_config_hash
+    profile_context_payload = validated.profile_context
     existing_profile_context = connection.execute(
         "SELECT ar.content_json FROM artifact_revisions ar "
         "JOIN current_artifacts ca ON ca.revision_id=ar.revision_id "
@@ -545,24 +613,6 @@ def run_ideation(
         and canonical_json(json.loads(existing_profile_context["content_json"])) != canonical_json(profile_context_payload)
     ):
         raise ValueError("profile_context: current run is bound to a different profile revision")
-    request = _object(candidate_input, "candidate_input")
-    _exact_fields(request, {"candidates", "schema_version"}, "candidate_input")
-    if request["schema_version"] != "candidate-input-v1" or not isinstance(request["candidates"], list):
-        raise ValueError("candidate_input: candidate-input-v1 with candidates array required")
-    candidates = tuple(
-        Candidate.from_dict(
-            value, f"candidate_input.candidates[{index}]",
-            profile_claim_categories=profile_claim_categories,
-            evidence=evidence, profile_revision_hash=profile_hash,
-            research_revision_hash=research.content_hash, evaluation_config_hash=config_hash,
-        )
-        for index, value in enumerate(request["candidates"])
-    )
-    if not candidates:
-        raise ValueError("candidate_input.candidates: at least one candidate required")
-    if len({candidate.candidate_id for candidate in candidates}) != len(candidates):
-        raise ValueError("candidate_input.candidates: duplicate candidates are not allowed")
-
     profile_context = state.add_revision(
         run_id, "profile_context", profile_context_payload, schema_version="profile-context-v1",
     )
@@ -696,7 +746,8 @@ def candidate_map(revision: ArtifactRevision) -> dict[str, Mapping[str, Any]]:
 
 
 __all__ = [
-    "CANDIDATE_SCHEMA_VERSION", "Candidate", "DomainPivotRequiredError", "EvidenceReference",
-    "IdeationRun", "candidate_map", "run_ideation", "_current_artifact", "_private_exports",
+    "CANDIDATE_SCHEMA_VERSION", "Candidate", "CandidateInputValidation",
+    "DomainPivotRequiredError", "EvidenceReference", "IdeationRun", "candidate_map",
+    "run_ideation", "validate_candidate_input", "_current_artifact", "_private_exports",
     "_research_evidence", "_state_with_exports", "_text", "_texts", "_object", "_exact_fields",
 ]

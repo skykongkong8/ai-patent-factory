@@ -85,9 +85,7 @@ disk, so this file always has the decision, before or after invalidation.
 - **`re_ideate` → `/ideate`.** Read the resolved decision's `feedback` (above); author
   a genuinely different `candidate-input-v1.json` — drop or deprioritize the "boring"
   directions, extend the "interesting" ones. Re-authoring byte-identical candidates
-  does not raise an error; it silently replays the stale ideation context (the
-  upstream artifact the re-branch does not stale), so vary substance, not just
-  wording.
+  raises a hard `StateError`, so vary substance, not just wording.
 - **`re_research` → `/research`.** Read the decided `plan.needed_research` the same
   way; author the second pass targeting those terms. Offline verbs (`research
   fixture` / `research normalize-web` + `research manual`) run as before. A live

@@ -228,3 +228,56 @@ class UnfilledScaffoldFailsLoudlyTests(unittest.TestCase):
         source = (ROOT / "src" / "patent_factory" / "scaffold.py").read_text(encoding="utf-8")
         self.assertIn('"score": TODO + "integer 0-100 for this axis"', source)
         self.assertNotIn('"score": 0,', source)
+
+
+class Issue60ShortlistScaffoldTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.connection = connect_database(self.root / "factory.sqlite3")
+        self.profile_connection, self.profile = ready_profile(self.root / "profile.sqlite3")
+        ready_research(self.connection, self.root)
+        self.config = load_evaluation_config()
+
+    def tearDown(self):
+        self.connection.close()
+        self.profile_connection.close()
+        self.temporary.cleanup()
+
+    def _publish_candidates(self, count):
+        draft = scaffold_candidate_input(
+            self.connection, self.profile_connection, run_id="run", count=count,
+        )
+        return run_ideation(
+            self.connection, profile_connection=self.profile_connection, run_root=self.root,
+            run_id="run", profile=self.profile, candidate_input=filled(draft), config=self.config,
+        )
+
+    def test_shortlist_scaffold_selects_first_three_and_excludes_the_rest(self):
+        ideation = self._publish_candidates(5)
+        draft = scaffold_shortlist_input(self.connection, run_id="run", config=self.config)
+        self.assertEqual([item["candidate_id"] for item in draft["finalists"]], list(ideation.candidate_ids[:3]))
+        self.assertEqual(len(draft["exclusions"]), 2)
+        self.assertEqual(
+            [item["candidate_id"] for item in draft["exclusions"]],
+            list(ideation.candidate_ids[3:]),
+        )
+        self.assertTrue(all(item["reason_codes"] == ["not_selected"] for item in draft["exclusions"]))
+        shortlisted = run_shortlist(
+            self.connection, run_root=self.root, run_id="run",
+            shortlist_input=filled_shortlist(draft), config=self.config,
+        )
+        self.assertEqual(shortlisted.next_state, "finalists_ready")
+
+    def test_shortlist_scaffold_with_two_candidates_can_publish_insufficiency(self):
+        ideation = self._publish_candidates(2)
+        draft = scaffold_shortlist_input(self.connection, run_id="run", config=self.config)
+        self.assertEqual(len(draft["finalists"]), 2)
+        self.assertEqual(draft["exclusions"], [])
+        self.assertIsNotNone(draft["insufficiency"])
+        self.assertEqual(draft["insufficiency"]["eligible_candidate_ids"], list(ideation.candidate_ids))
+        result = run_shortlist(
+            self.connection, run_root=self.root, run_id="run",
+            shortlist_input=filled_shortlist(draft), config=self.config,
+        )
+        self.assertEqual(result.next_state, "insufficient_evidence")

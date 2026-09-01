@@ -280,6 +280,50 @@ Operator-facing consequences:
   afterwards. This is the documented way forward; it requires publishing real
   offline evidence, so it disarms the guard only by satisfying it.
 
+## Ideation workbench
+
+`/ideate` now starts with a non-authoritative workbench under
+`workspace/requests/ideation/RUN_ID/`. Scaffold the minimized brief first, then run
+three read-only validation stages before publishing promoted candidates:
+
+```bash
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage diverge
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage entangle
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage promote
+```
+
+`--out` and `--validate` are mutually exclusive. `--stage` is required with
+`--validate`. Workbench validation is a pre-publish check: it does not create or
+advance run state, gates, artifacts, or exports. Raw workbench idea IDs are local
+and must not be `ca_*`; candidate IDs are created only after the existing `ideate`
+verb accepts `promoted/candidate-input-v1.json`.
+
+The scaffolded private brief is hash-only. It binds profile claims, research
+evidence, coverage gaps, configuration, and any re-ideate resolution without
+copying semantic profile/research text or checkpoint feedback prose. It is not an
+egress approval. Hosted generation is limited to public/user-supplied material or
+a separately approved minimized payload.
+
+A `re_ideate` checkpoint decision seeds the next brief with the resolution hash,
+per-finalist feedback hashes, and finalist/candidate IDs. Re-submitting
+byte-identical promoted candidate content is a hard `StateError`, not a silent replay.
+
 ## Full pipeline verbs
 
 Each stage below takes a versioned `*-input-v1.json` you author under
@@ -289,10 +333,29 @@ validates the input, binds hashes to prior stages, and records state — it neve
 trusts a hand-copied export.
 
 ```bash
-# Candidates and finalists
+# Divergence-first ideation workbench, then candidates and finalists
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage diverge
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage entangle
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage promote
 python3 -m patent_factory ideate    --run RUN --run-id RUN_ID \
   --profile workspace/profile.json --profile-database workspace/profile.sqlite3 \
-  --input workspace/requests/candidate-input-v1.json
+  --input workspace/requests/ideation/RUN_ID/promoted/candidate-input-v1.json
 python3 -m patent_factory shortlist --run RUN --run-id RUN_ID \
   --input workspace/requests/shortlist-input-v1.json
 
