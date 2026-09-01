@@ -60,14 +60,29 @@ hosts or budgets.
 
 ## Ideation and shortlist
 
+Codex calls the same JSON CLI directly. To smoke-test the Claude slash-command
+workflow in this environment, use `openclaude` with the byte-identical command files;
+only use committed public fixtures for that compatibility check unless an exact
+egress approval exists.
+
 ```bash
-python3 -m patent_factory ideate --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3 --input workspace/requests/candidate-input-v1.json
+python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --out workspace/requests/ideation/RUN/brief-v1.json
+python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage diverge
+python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage entangle
+python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage promote
+python3 -m patent_factory ideate --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3 --input workspace/requests/ideation/RUN/promoted/candidate-input-v1.json
 python3 -m patent_factory shortlist --run workspace/runs/RUN --run-id RUN --input workspace/requests/shortlist-input-v1.json
 ```
 
-The input contracts are `candidate-input-v1` and `shortlist-input-v1`. Do not
+The workbench is non-authoritative. Raw idea IDs are local and never `ca_*`; the
+core creates `ca_*` only when `ideate` accepts the promoted candidate input. Do not
 auto-approve `domain_pivot_required`. If three defensible finalists are unavailable,
 preserve `insufficient_evidence`.
+
+The private brief exposes hashes and IDs only; it does not copy profile values,
+research interpretations, evidence text, or checkpoint feedback prose and is not
+hosted-egress authorization. The `openclaude` compatibility smoke must use public
+fixtures or an independently approved minimized payload.
 
 ## Finalist audit
 

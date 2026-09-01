@@ -95,8 +95,8 @@ adding real content, both make `gate decide` fail on an otherwise-complete draft
      current, or the durable `<run>/decision-exports/ar_*.json` file once it is not
      (see the note below) — and author genuinely different candidates
      (drop/deprioritize the "boring" directions, extend the "interesting" ones).
-     Re-authoring byte-identical candidates does not raise an error — it silently
-     replays the stale ideation context instead of producing anything new.
+     Re-authoring byte-identical candidates raises a hard `StateError`;
+     revise the promoted candidate input before re-running `/ideate`.
    - **`re_research` → `next_state: research_running`** — continue to **`/research`**;
      author the second pass from the decided `plan.needed_research`, read the same way
      as `feedback` above. Offline verbs (`research fixture` / `research normalize-web`

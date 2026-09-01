@@ -1,79 +1,128 @@
 ---
 name: ideation
-description: Prepare evidence-bound candidate, shortlist, and report inputs while leaving every transition and gate to the JSON CLI core.
+description: Prepare a divergence-first workbench, promoted candidates, shortlist, and report inputs while leaving every transition and gate to the JSON CLI core.
 ---
 
 # Ideation workflow
 
-This workflow prepares the versioned inputs for `/ideate`, `/shortlist`, and `/draft`.
+This workflow prepares the non-authoritative ideation workbench and the versioned
+inputs for `/ideate`, `/shortlist`, and `/draft`.
 
-## Inputs & where they live
+## Workbench first
 
-Author the versioned request objects under `workspace/requests/`:
-`candidate-input-v1.json`, `shortlist-input-v1.json`, and `report-input-v1.json`
-(templates and field notes in `workspace/README.md`). They are inputs to `ideate`,
-`shortlist`, and `draft`; they are not authoritative state or substitutes for CLI
-exports. ID/hash bindings are copied from prior-stage output, never invented.
+Start `/ideate` with `scaffold ideation-workbench`, not by writing
+`candidate-input-v1.json` directly. The workbench lives under
+`workspace/requests/ideation/RUN_ID/`:
 
-## Rules
+```text
+brief-v1.json
+history/brief-<hash>.json
+sessions/<session-id>/ideas.jsonl
+sessions/<session-id>/relations.jsonl
+sessions/<session-id>/clusters-v1.json
+promoted/candidate-input-v1.json
+promoted/lineage-v1.json
+notes.md
+```
 
-Every candidate traces to a user problem/capability and evidence. Preserve all six
-epistemic labels. `agent_inference` requires rationale; hypotheses and creative
-suggestions must not become facts. Each finalist needs independent differentiation,
-technical-feasibility, and utility-significance axes with score, rationale, confidence,
-supporting and contrary evidence, gaps, and coverage limitations. If three defensible
-finalists are unavailable, preserve `insufficient_evidence` and stop.
+The private brief is a minimized, hash-bound snapshot of the current
+profile/research context. It contains claim/evidence identities and hashes, not
+profile values, research titles/interpretations, evidence text, or feedback prose.
+It therefore does not authorize hosted generation and is not semantically complete
+by itself. Use only user-supplied/public material or a separately approved minimized
+egress payload for hosted generation; otherwise stop before that transfer. If the
+brief content changes, keep the previous body in `history/` and preserve existing
+sessions and notes. Raw ideas, relations, clusters, and notes are creative workbench
+material only; they are not published candidates and they never substitute for CLI
+state.
 
-## `synthesis_trace` — the creative delta
+## Stage validations
 
-Every candidate carries a required `synthesis_trace` object. It is the record of what
-you actually contributed on top of the retrieved prior art, and it is the only place
-that discipline is captured — there is no separate "novelty delta" field, and you must
-not invent one.
+Treat each scaffold or validation boundary as one bounded invocation. Return its
+JSON result and stop; resume the next unfinished stage in a fresh invocation.
 
-- `method` — exactly one of `modify`, `combine`, `adapt`, `constrain`, `transfer`.
-  Anything else is rejected.
-- `evidence_ids` — one or more evidence IDs, each of which must also appear in the
-  candidate's own `evidence_references`. The trace is hash-bound to real retrieved
-  documents; it cannot cite something the candidate did not trace.
-- `narrative` — prose naming which researched mechanisms were combined/adapted and
-  what the delta is. Aim for roughly a **10–30% creative delta**: enough that the
-  candidate is not a restatement of a retrieved document, little enough that it stays
-  anchored to the evidence.
+Run the workbench validator at each boundary:
 
-The 10–30% figure is an **ideation heuristic for how much to invent, not a measurement
-and not a novelty claim**. Never write it, or any derived percentage, into a report as
-if it were a measured property of the invention. Describe concrete differentiating
-features instead.
+```bash
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database PROFILE_DATABASE \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage diverge
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database PROFILE_DATABASE \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage entangle
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database PROFILE_DATABASE \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage promote
+```
 
-Note the ordering constraint: `synthesis_trace.evidence_ids` is restricted to
-research-phase evidence the candidate already references. The audit's *closest* prior
-art is discovered later, during `/audit`, so a trace authored at `/ideate` time cannot
-be required to cite it. The report renders that relationship descriptively instead.
+`diverge` checks the brief, session bindings, JSONL shape, unique workbench idea
+IDs, and optional evidence/profile references. `entangle` additionally checks
+relation and cluster references plus relation graph rules. `promote` additionally
+checks `promoted/candidate-input-v1.json`, `promoted/lineage-v1.json`, candidate
+count, TODO removal, candidate input hash binding, and zero-based candidate-index
+lineage coverage.
 
-Never directly edit candidate/finalist/report exports or SQLite. Stop on domain pivot,
-evidence, coverage, excessive-risk, disclosure, revision, and other gates. This skill may
-recommend but never make the user's pivot or excessive-risk decision. Do not load private
-inputs into hosted context without a current exact egress approval and minimized
-manifest.
+## Raw ideas vs published candidates
+
+Raw idea IDs are local to the workbench and must not start with `ca_`. A raw idea
+may be parked, revised, combined, contrasted, or promoted later. Published
+candidate IDs are created only by the Python core when the existing `ideate` verb
+accepts the promoted `candidate-input-v1.json`.
+
+Every promoted candidate still needs profile references, evidence references, all
+required candidate fields, and a `synthesis_trace`. `synthesis_trace.method` is
+exactly one of `modify`, `combine`, `adapt`, `constrain`, or `transfer`; its
+evidence IDs must also appear in the candidate's own `evidence_references`.
+Treat the trace as a creative-accounting record, not a novelty measurement or a
+legal conclusion. Do not use a numeric creative-delta target during divergence;
+compare mechanisms, inputs, transformations, outputs, validation approaches, and
+evidence neighborhoods as advisory portfolio signals instead. The audit closest
+prior-art reference is discovered later, so
+`/ideate` cannot bind `synthesis_trace` to the closest reference in advance.
+
+Use `scaffold candidate --count COUNT` to create
+`promoted/candidate-input-v1.json`, with `COUNT` from 1 through 12, before filling
+it. Target at least three genuinely supported candidates; counts one or two remain
+valid and deliberately lead the shortlist scaffold toward explicit insufficiency.
+Bind `lineage-v1.json` to the canonical `patent_factory.provenance.digest` of the
+filled candidate input object, not to its raw file bytes.
+
+## Shortlist and later inputs
+
+After `ideate` publishes candidates, use `scaffold shortlist` and then `/shortlist`.
+The shortlist contains finalists and exclusions only; raw workbench ideas and raw
+session dispositions do not belong in the shortlist. Each finalist needs the three
+fixed axes with score, rationale, confidence, supporting/contrary evidence, gaps,
+and coverage limitations. If three defensible finalists are unavailable, preserve
+`insufficient_evidence` and stop.
 
 ## Re-entry after `/checkpoint`
 
-A `re_ideate` checkpoint decision re-enters this stage. Read the resolved decision's
-per-finalist `feedback` (`interesting`/`boring`) before authoring the new
-`candidate-input-v1.json` — via
-`run show --run RUN --run-id RUN_ID --kind gate_resolution` while it is still current,
-or the durable `<run>/decision-exports/ar_<revision_id>.json` file once the first
-`ideate` publish after the decision has invalidated it (`run show`'s `ar.stale=0`
-filter can no longer find it then, even in a fresh session; the exported file is
-unaffected since staleness only touches `artifact_revisions`/`current_artifacts` rows).
-Drop or deprioritize the "boring" directions, extend the "interesting" ones. Vary
-substance, not just wording — re-authoring byte-identical candidates does not error, it
-silently replays the stale ideation context instead of producing anything new. See
-`.claude/skills/checkpoint/SKILL.md`.
+A `re_ideate` checkpoint decision re-enters this stage. Run
+`scaffold ideation-workbench --out .../brief-v1.json` before any new ideate publish;
+the scaffold copies the current resolution hash, per-finalist feedback hashes, and
+finalist/candidate IDs into the new brief while the resolution is current. It does
+not copy `interesting`/`boring` prose. Do not inspect or copy immutable exports to
+reconstruct that seed. Re-submitting byte-identical promoted candidate content raises a hard
+`StateError`; revise the promoted input before re-running `/ideate`.
+
+## Privacy and authority
+
+Never directly edit candidate/finalist/report exports or SQLite. Stop on domain
+pivot, evidence, coverage, excessive-risk, disclosure, revision, and other gates.
+This skill may recommend but never make the user's pivot, disclosure, checkpoint,
+or excessive-risk decision. Do not load private inputs, profile facts, workbench
+briefs, evidence spans, reports, secrets, or canaries into hosted context without a
+current exact egress approval and minimized manifest.
 
 ## Next
 
-`/ideate` → `/shortlist` → `/audit` → `/checkpoint` → `/draft`. After a persisted
-shortlist, the next step is `/audit`; after `/checkpoint` resolves with `approve`,
-`/draft`.
+`/ideate` -> `/shortlist` -> `/audit` -> `/checkpoint` -> `/draft`. After a
+persisted shortlist, the next step is `/audit`; after `/checkpoint` resolves with
+`approve`, the next step is `/draft`.

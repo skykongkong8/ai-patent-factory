@@ -11,6 +11,7 @@ workspace/
   profile.sqlite3   # AUTHORITATIVE profile state — never hand-edit
   profile.json      # deterministic export regenerated from the DB — never hand-edit
   requests/         # the *-input-v1.json you author for each stage (see below)
+    ideation/<RUN_ID>/# non-authoritative /ideate workbench
   runs/<RUN>/
     factory.sqlite3     # authoritative per-run state
     research-exports/   # immutable research bundle manifests
@@ -35,10 +36,68 @@ skeletons — trim/extend per the schema.
 > from a previous command's JSON output**. If you don't have one yet, run the earlier
 > stage first — the core rejects fabricated bindings.
 
-### `candidate-input-v1.json` → `/ideate`
+### `requests/ideation/RUN_ID/` -> `/ideate` workbench
 
-The richest input: ≥3 candidates, each tracing to profile facts and research
-evidence. `claims` needs ≥4 items, `profile_references` ≥2, `evidence_references` ≥1.
+`/ideate` starts with a divergence-first workbench before it publishes any
+candidate state. Scaffold the minimized brief from the current run/profile state:
+
+```bash
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+```
+
+The workbench layout is:
+
+```text
+requests/ideation/RUN_ID/
+  brief-v1.json                 # ideation-brief-v1, hash-bound to current context
+  history/brief-<hash>.json      # prior brief bodies when scaffold input changes
+  sessions/<session-id>/
+    ideas.jsonl                 # idea-node-v1 raw ideas, one JSON object per line
+    relations.jsonl             # derives/combines/contrasts/revises/parks links
+    clusters-v1.json            # known idea IDs grouped for review
+  promoted/
+    candidate-input-v1.json     # promoted candidates for the authoritative ideate verb
+    lineage-v1.json             # candidate index -> source idea/session/relation IDs
+  notes.md                      # free-form, non-authoritative operator notes
+```
+
+Use the stage validator before moving between phases:
+
+```bash
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage diverge
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage entangle
+python3 -m patent_factory scaffold ideation-workbench \
+  --run RUN --run-id RUN_ID \
+  --profile-database workspace/profile.sqlite3 \
+  --validate workspace/requests/ideation/RUN_ID \
+  --stage promote
+```
+
+`ideas.jsonl`, `relations.jsonl`, `clusters-v1.json`, and `notes.md` are not state.
+Raw idea IDs are workbench-local and must not start with `ca_`. The existing
+`ideate` verb is still the only path that publishes candidates and assigns `ca_*`
+IDs; pass it the promoted candidate input only after `--stage promote` succeeds.
+
+### `candidate-input-v1.json` -> `/ideate`
+
+The promoted candidate input contains 1 to 12 candidates when it follows the
+workbench path; this request-layer bound does not change the legacy core's non-empty
+candidate-set contract. Target at least 3 when the evidence supports a real
+shortlist; publishing only 1 or 2 is valid and makes the next shortlist an explicit
+insufficiency result. Each candidate traces to profile
+facts and research evidence. `claims` needs ≥4 items, `profile_references` ≥2,
+`evidence_references` ≥1.
 (The core injects `candidate_id`, `profile_revision_hash`, `research_revision_hash`,
 and `evaluation_config_hash` — you don't supply them.) Full field list:
 `schemas/candidate.schema.json`.
@@ -80,7 +139,7 @@ and `evaluation_config_hash` — you don't supply them.) Full field list:
 }
 ```
 
-### `shortlist-input-v1.json` → `/shortlist`
+### `shortlist-input-v1.json` -> `/shortlist`
 
 Three finalists, each scored on the three fixed axes (`differentiation`,
 `technical_feasibility`, `utility_significance`). Schema: `schemas/finalist.schema.json`.

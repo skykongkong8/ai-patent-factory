@@ -99,8 +99,9 @@ except the READMEs is git-ignored.
 3. **`/research`** — start a run and gather bounded evidence: offline `fixture`,
    agent-gathered web metadata via `normalize-web` + `manual`, or a live
    credentialed KIPRIS keyword batch (`kipris`, KO/EN expansions).
-4. **`/ideate`** → **`/shortlist`** — propose evidence-bound candidates, then pick
-   three defensible finalists.
+4. **`/ideate`** -> **`/shortlist`** — use the divergence-first workbench to
+   explore independent raw ideas, validate entanglement and promotion, publish
+   evidence-bound candidates, then pick three defensible finalists.
 5. **`/audit`** — score each finalist's similarity risk against a KIPRIS corpus.
 6. **`/checkpoint`** — review the per-finalist dossier and resolve the always-raised
    post-audit gate: `approve`, `re_ideate`, `re_research`, or `stop`.
@@ -116,7 +117,7 @@ command comes next. You don't call Python directly for any of this.
 | --- | --- | --- |
 | `/setup` | Profile | Build/enrich the private inventor profile (folder · document · interview). Idempotent. |
 | `/research` | Evidence | Bind the profile into a run and gather bounded fixture/manual evidence. |
-| `/ideate` | Candidates | Validate and persist ≥3 evidence-bound candidate proposals. |
+| `/ideate` | Workbench + candidates | Scaffold a non-authoritative divergence workbench, validate diverge/entangle/promote stages, then persist 1-12 evidence-bound candidates (target at least 3 when supported). |
 | `/shortlist` | Finalists | Persist 3 finalists (each scored on 3 independent axes) or explicit insufficient evidence. |
 | `/audit` | Similarity | Retrieve finalist-specific KIPRIS corpora and score `simrisk-v1.0.0` risk. |
 | `/checkpoint` | Human decision | Explain every finalist's dossier and resolve the always-raised `post_audit_checkpoint` gate (approve/re_ideate/re_research/stop). |
@@ -124,11 +125,18 @@ command comes next. You don't call Python directly for any of this.
 | `/review` | Review + release | Independent reviewer pass, deterministic `validate`, and guarded external `share`. |
 
 Cross-cutting CLI verbs the commands use for you: `scaffold
-{candidate|shortlist|audit-query|gate-decision|report}` (emit a hash-bound draft
-input with every binding pre-filled and the judgment fields left as `TODO(agent)`),
+{ideation-workbench|candidate|shortlist|audit-query|gate-decision|report}` (emit a
+hash-bound workbench brief or a hash-bound draft input with every binding pre-filled
+and the judgment fields left as `TODO(agent)`),
 `gate inspect` / `gate decide` (handle one exact gate) and `delete-run` (safely
 remove one run). All are documented in [SETUP.md](SETUP.md). A committed golden
 end-to-end scenario lives in [`examples/justin/`](examples/justin/README.md).
+
+The private ideation brief is hash-only: it carries current claim/evidence IDs,
+revision bindings, and coverage hashes, but never duplicates profile values,
+research titles/interpretations, evidence text, or checkpoint feedback prose.
+Hosted Claude/OpenClaude generation must therefore use committed public fixtures,
+user-supplied public material, or a separately approved minimized egress payload.
 
 ## Where your files live
 
@@ -140,6 +148,7 @@ workspace/            # generated state + exports (git-ignored except README)
   profile.sqlite3     #   authoritative profile state (never hand-edit)
   profile.json        #   deterministic export of the DB (never hand-edit)
   requests/           #   the versioned *-input-v1.json you author for each stage
+    ideation/<RUN_ID>/#   non-authoritative /ideate workbench: brief, sessions, promotion lineage
   runs/<RUN>/         #   per-run DB + research/report exports
 .claude/
   commands/           # the 8 slash commands above
@@ -163,6 +172,11 @@ leans on — adapted for a patent workflow where correctness matters more than s
   facts and research evidence; finalists bind to candidate revisions; the report
   binds to an approved artifact hash. Change the content and the old gate no longer
   applies.
+- **Ideation diverges before it publishes.** `/ideate` starts with a minimized
+  `ideation-brief-v1` under `workspace/requests/ideation/RUN_ID/`, then validates
+  raw idea sessions (`diverge`), relations/clusters (`entangle`), and promoted
+  candidate input plus lineage (`promote`). Raw workbench ideas never become state
+  until the existing `ideate` verb accepts `promoted/candidate-input-v1.json`.
 - **Gates stop for a human.** `*_required`, `coverage_insufficient`,
   `decision_required`, `insufficient_evidence`, `revision_required`, `stopped`, and
   `error` are hard stops. Resolving one needs a *user-authored* `gate-decision-input-v1`
