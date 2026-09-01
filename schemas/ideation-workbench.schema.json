@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/schemas/ideation-workbench.schema.json",
+  "title": "Ideation divergence workbench records",
+  "$defs": {
+    "nonEmpty": {"type": "string", "minLength": 1},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "rawId": {"type": "string", "pattern": "^(?!ca_).+$"},
+    "stringList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonEmpty"}
+    },
+    "profileReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "field", "kind"],
+      "properties": {
+        "claim_id": {"$ref": "#/$defs/nonEmpty"},
+        "field": {"$ref": "#/$defs/nonEmpty"},
+        "kind": {"enum": ["problem", "capability"]}
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "brief_hash", "creative_status", "evidence_ids", "idea_id", "inputs", "lens",
+        "limitations", "outputs", "profile_references", "rough_mechanism", "schema_version",
+        "session_id", "technical_problem", "title", "transformations", "validation_approach"
+      ],
+      "properties": {
+        "schema_version": {"const": "idea-node-v1"},
+        "idea_id": {"$ref": "#/$defs/rawId"},
+        "session_id": {"$ref": "#/$defs/nonEmpty"},
+        "brief_hash": {"$ref": "#/$defs/hash"},
+        "lens": {"$ref": "#/$defs/nonEmpty"},
+        "title": {"$ref": "#/$defs/nonEmpty"},
+        "technical_problem": {"$ref": "#/$defs/nonEmpty"},
+        "rough_mechanism": {"$ref": "#/$defs/nonEmpty"},
+        "inputs": {"$ref": "#/$defs/stringList"},
+        "transformations": {"$ref": "#/$defs/stringList"},
+        "outputs": {"$ref": "#/$defs/stringList"},
+        "validation_approach": {"$ref": "#/$defs/nonEmpty"},
+        "creative_status": {"const": "creative_suggestion"},
+        "evidence_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^ev_"}},
+        "profile_references": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/profileReference"}},
+        "limitations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/nonEmpty"}}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "brief_hash", "rationale", "relation_id", "schema_version", "session_id",
+        "source_idea_ids", "target_idea_ids", "type"
+      ],
+      "properties": {
+        "schema_version": {"const": "idea-relation-v1"},
+        "relation_id": {"$ref": "#/$defs/rawId"},
+        "session_id": {"$ref": "#/$defs/nonEmpty"},
+        "brief_hash": {"$ref": "#/$defs/hash"},
+        "source_idea_ids": {"$ref": "#/$defs/stringList"},
+        "target_idea_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/rawId"}},
+        "type": {"enum": ["combines", "contrasts", "derives", "parks", "revises"]},
+        "rationale": {"$ref": "#/$defs/nonEmpty"}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brief_hash", "clusters", "schema_version", "session_id"],
+      "properties": {
+        "schema_version": {"const": "idea-clusters-v1"},
+        "session_id": {"$ref": "#/$defs/nonEmpty"},
+        "brief_hash": {"$ref": "#/$defs/hash"},
+        "clusters": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cluster_id", "idea_ids", "rationale"],
+            "properties": {
+              "cluster_id": {"$ref": "#/$defs/rawId"},
+              "idea_ids": {"$ref": "#/$defs/stringList"},
+              "rationale": {"$ref": "#/$defs/nonEmpty"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_input_hash", "records", "schema_version"],
+      "properties": {
+        "schema_version": {"const": "idea-lineage-v1"},
+        "candidate_input_hash": {"$ref": "#/$defs/hash"},
+        "records": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_index", "rationale", "relation_ids", "source_idea_ids", "source_session_ids"],
+            "properties": {
+              "candidate_index": {"type": "integer", "minimum": 0},
+              "source_idea_ids": {"$ref": "#/$defs/stringList"},
+              "source_session_ids": {"$ref": "#/$defs/stringList"},
+              "relation_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/rawId"}},
+              "rationale": {"$ref": "#/$defs/nonEmpty"}
+            }
+          }
+        }
+      }
+    }
+  ]
+}
