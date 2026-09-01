@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
+from urllib.parse import quote
 
 from .paths import owner_only_file
 from .profile import IncomingFact, PROFILE_VERSION, atomic_write_profile
@@ -288,6 +289,40 @@ def connect_database(path: Path, *, busy_timeout_ms: int = BUSY_TIMEOUT_MS, faul
         connection.close()
         raise
     owner_only_file(path)
+    return connection
+
+
+def connect_read_only_database(
+    path: Path, *, busy_timeout_ms: int = BUSY_TIMEOUT_MS,
+) -> sqlite3.Connection:
+    """Open a current authoritative database without migration or write access."""
+
+    if not 1 <= busy_timeout_ms <= 5_000:
+        raise ValueError("busy_timeout_ms must be between 1 and 5000")
+    database = Path(path).resolve(strict=True)
+    connection = sqlite3.connect(
+        f"file:{quote(str(database))}?mode=ro",
+        uri=True,
+        timeout=busy_timeout_ms / 1000,
+        isolation_level=None,
+    )
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")
+    connection.execute("PRAGMA foreign_keys=ON")
+    connection.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version != SCHEMA_VERSION:
+        connection.close()
+        raise ValueError(
+            f"database: read-only operation requires current schema version {SCHEMA_VERSION} "
+            f"(found {version})"
+        )
+    try:
+        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise DatabaseCorruptError("database_corrupt: integrity check failed")
+    except BaseException:
+        connection.close()
+        raise
     return connection
 
 
