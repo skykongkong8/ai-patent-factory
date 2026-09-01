@@ -24,3 +24,11 @@
 
 Initialize: `python3 -m patent_factory init`, then `/setup` or
 `python3 -m patent_factory profile --help`.
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+See [AGENTS.md](AGENTS.md) for OpenWiki agent instructions.
+
+<!-- OPENWIKI:END -->

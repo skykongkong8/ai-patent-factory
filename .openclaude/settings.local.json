@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Workflow(code-review)",
+      "Bash(claude --version)",
+      "Bash(npm ls *)",
+      "Bash(gh pr *)",
+      "Bash(git -C /home/skykongkong/workstation/PERSONAL_PROJECT/ai-patent-factory status --short)",
+      "Bash(git -C /home/skykongkong/workstation/PERSONAL_PROJECT/ai-patent-factory log --oneline -5)"
+    ]
+  }
+}
