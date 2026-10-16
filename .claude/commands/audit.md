@@ -7,12 +7,16 @@ description: Retrieve finalist-specific KIPRIS corpora and score simrisk-v1.0.0 
 Retrieve a per-finalist KIPRIS corpus and score similarity risk. Follow
 `.claude/skills/research/SKILL.md` and `AGENTS.md`.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
-- `workspace/requests/audit-query-input-v1.json` — one query group per finalist.
+- `RUN/requests/audit-query-input-v1.json` — one query group per finalist.
 - `documents/requests/audit-fixture-manifest-v1.json` — the fixture manifest, under the
   documents root.
-- `workspace/requests/feature-map-set-input-v1.json` — reviewed feature maps, for
+- `RUN/requests/feature-map-set-input-v1.json` — reviewed feature maps, for
   scoring.
 
 Templates are in `workspace/README.md`.
@@ -27,7 +31,7 @@ Templates are in `workspace/README.md`.
 
 ```bash
 python3 -m patent_factory scaffold audit-query --run RUN --run-id RUN_ID \
-  --out workspace/requests/audit-query-input-v1.json
+  --out RUN/requests/audit-query-input-v1.json
 ```
 1. Retrieve, then score.
 

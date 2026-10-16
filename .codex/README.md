@@ -1,240 +1,125 @@
-# Codex workflow commands and portable JSON CLI mapping
+# Codex workflow commands
 
-Use the repository's explicit `$patent-*` skills in Codex. They read the same
-stage procedures as Claude Code and call the same `python3 -m patent_factory`
-JSON CLI. The Python core is the sole authority for
-state, gates, and exports, so Codex must not directly modify the SQLite databases, the
-JSON/JSONL/Markdown exports, or the state pointers.
+Use the repository's explicit `$patent-*` skills in Codex. They follow the shared
+Claude Code stage procedures and call the same `python3 -m patent_factory` JSON
+CLI. The [execution contract](workflow.md) defines invocation boundaries and
+helper routing; the Python core owns state, gates, versions, and exports.
 
 ## Run one stage at a time
 
 Open Codex in this repository. The eight entrypoints live under
 `.agents/skills/patent-*/`; their `agents/openai.yaml` files set
-`allow_implicit_invocation: false`. Select one using `$` in the composer (or
-`/skills` in Codex CLI). If new skills do not appear, restart the session.
-See [OpenAI's skill documentation](https://learn.chatgpt.com/docs/build-skills).
+`allow_implicit_invocation: false`. Select one using `$` in the composer or
+`/skills` in Codex CLI. Restart the session if new skills do not appear.
 
 | Claude Code | Codex | Stage result |
 | --- | --- | --- |
-| `/setup` | `$patent-setup` | Build/enrich the inventor profile |
+| `/setup` | `$patent-setup` | Select an inventor and publish profile/topic versions |
 | `/research` | `$patent-research` | Start a run and gather bounded evidence |
-| `/ideate` | `$patent-ideate` | Resume one bounded workbench step or publish validated candidates |
-| `/shortlist` | `$patent-shortlist` | Evaluate and select three supported finalists |
+| `/ideate` | `$patent-ideate` | Complete one workbench step or publish validated candidates |
+| `/shortlist` | `$patent-shortlist` | Select three supported finalists |
 | `/audit` | `$patent-audit` | Retrieve similarity evidence and score it |
 | `/checkpoint` | `$patent-checkpoint` | Present the dossier and apply the user's authored decision |
 | `/draft` | `$patent-draft` | Render the approved invention report |
 | `/review` | `$patent-review` | Independently review, then validate |
 
-For example, send this as a **Codex message**, not a shell command:
+Send this as a Codex message, not a shell command:
 
 ```text
-$patent-setup documents/background.md
+$patent-setup setup with Example Inventor documents/background.md
 ```
 
-This selects the single-document route. Existing unrelated documents are not
-ingested. After setup succeeds, explicitly invoke `$patent-research`; provide
-the intended run directory, run ID, and research mode, or answer the skill's
-questions for missing choices. Later calls may reuse choices already established
-in the session. An ambiguous run or missing input is clarified before mutation.
+This selects the single-document route for the intended inventor. Duplicate names
+need an explicit ID choice. A request to replace a profile uses a fresh empty
+candidate and preserves previous versions and runs. Setup may also prepare the
+selected topic, then returns control before research.
 
-Each invocation reports its result, suggests the next call, and stops. Invoke
-that next skill yourself. A checkpoint approval does not start draft, and a
-request for a later stage does not run its prerequisites automatically.
+Follow [inventor management](../docs/inventor-management.md) for identity lookup,
+replacement, conflict resumption, topic context, archives, and legacy adoption.
+No global current-inventor setting selects work implicitly. The core returns
+IDs, version IDs, and paths; retain these in the handoff to a fresh session.
 
-Ideate retains its internal checkpoints: brief scaffold → divergence validation
-→ entanglement validation → candidate scaffold → promotion validation → publish.
-Invoke `$patent-ideate` again after each checkpoint to resume. An error or gate
-always stops the current invocation.
+Explicitly invoke `$patent-research` with the inventor/topic IDs and intended
+research mode to start a new run. Later stages use that run's fixed context;
+changing an active profile or topic affects future runs only. Place workspace
+requests and workbenches beneath `RUN/requests/`. Use `--run RUN --run-id RUN_ID`
+or a cataloged `--run-id` alone, and include run scope for report scaffolding.
 
-Review includes validation after `reviewed`; `revision_required` hands control
-back for a new `$patent-draft` invocation. External sharing is separately
-requested and gated. There is no `preview` workflow stage.
+Each invocation reports its result, suggests the next call, and stops. A
+checkpoint approval does not start draft. A later stage never runs its
+prerequisites automatically. Ideate has internal boundaries: brief scaffold →
+divergence validation → entanglement validation → candidate scaffold → promotion
+validation → publish. Invoke `$patent-ideate` again after each boundary.
 
-The [Codex execution contract](workflow.md) defines these boundaries and maps
-helper references to the shared `.claude/skills/` procedures. Local
-`source-command-*` migration copies, if present, are not the maintained
-entrypoints. The raw CLI reference below remains available for manual use.
+## Results, gates, and privacy
 
-## Common rules
+Read stdout as the single `cli-result-v1` / `cli-envelope-v1` JSON result; only
+help/version are plain text. Non-zero exits may be safe stop states. Preserve
+`status`, `next_state`, and exact gate/hash/scope fields. User-authored decisions
+must match the current subject; use `gate-decision-input-v2` for the always-raised
+post-audit checkpoint and `v1` for the other supported gates. Never invent the
+user's approval, retained conflict values, reasons, feedback, or decision ID.
+
+The reviewer identity and pass differ from the drafter's. Validate only after
+`reviewed`; `revision_required` returns control for a new draft. External sharing
+is separately requested and disclosure-gated. There is no preview stage.
+
+Passing private input paths to the local CLI does not approve hosted-model
+access. Keep private documents, profile/topic facts, evidence, reports, and
+secrets out of context unless the exact transfer and minimized egress manifest
+are approved. Public-fixture compatibility checks remain separate from private
+runs. Neither a skill nor this guide creates such an approval.
+[AGENTS.md](../AGENTS.md) states the authority and privacy boundaries.
+
+## Portable CLI reference
+
+The managed research bootstrap selects inventor/topic versions and returns a run
+in `research_ready`:
 
 ```bash
-python3 -m patent_factory --version
-python3 -m patent_factory --help
+python3 -m patent_factory run start --inventor INVENTOR_ID --topic TOPIC_ID
 ```
 
-- Read the single sorted JSON object on stdout. Every result carries
-  `schema_version: cli-result-v1` and `envelope_version: cli-envelope-v1`.
-- Only the `help/version` probes are intentionally plain text. Otherwise a missing or
-  invalid argument is an `invalid_arguments` JSON result.
-- Some safe stop states use a non-zero exit, so do not discard the JSON based on exit
-  code alone.
-- On `*_required`, `coverage_insufficient`, `decision_required`, `insufficient_evidence`,
-  `revision_required`, `stopped`, or `error`, stop and report the gate/state/hash.
-- `gate inspect` is read-only. `gate decide` needs a `gate-decision-input-v1` the user
-  authored for the current subject hash and scope. Codex does not create the
-  action/reason/approval/decision ID.
-- Inputs use relative, non-symlink paths under the documents root; runs and versioned
-  requests use ones under the workspace root.
-
-## Setup, profile, run bootstrap
-
-```bash
-python3 -m patent_factory init
-python3 -m patent_factory profile folder documents
-python3 -m patent_factory profile document documents/input.md
-python3 -m patent_factory profile interview --responses documents/responses.json
-```
-
-Choose exactly one of the three profile paths. On `conflict_resolution_required`,
-preserve the batch and wait for the user's decision. Do not directly modify SQLite or
-`profile.json`.
-
-A new private workflow run binds the authoritative profile and starts at
-`research_ready`. When using the default profile paths, the profile options may be
-omitted.
+A legacy installation with no catalog can still bootstrap its global profile
+using the existing portable mapping. Once a catalog exists, assign older data
+explicitly before a legacy write; use managed selection for new work.
 
 ```bash
 python3 -m patent_factory run start --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3
 ```
 
-## Research
+The following mappings apply to the selected run. `RUN` is its returned path;
+the fixture manifest is an explicitly selected document input.
 
 ```bash
-python3 -m patent_factory research fixture documents/kipris.xml --run workspace/runs/RUN --run-id RUN --query QUERY
-python3 -m patent_factory research manual documents/results.json --run workspace/runs/RUN --run-id RUN --query QUERY --allow-host HOST
+python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID --query-input RUN/requests/audit-query-input-v1.json --fixture-manifest documents/requests/audit-fixture-manifest-v1.json
+python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_ID
+python3 -m patent_factory gate decide --run RUN --run-id RUN_ID --gate-id GATE_ID --input RUN/requests/gate-decision-input-v2.json
 ```
 
-A failure is an adapter event / coverage limitation, not evidence. If a credential or
-paid-service gate is pending, no network request is permitted. Do not arbitrarily broaden
-hosts or budgets.
-
-## Ideation and shortlist
-
-Codex calls the same JSON CLI directly. To smoke-test the Claude slash-command
-workflow in this environment, use `openclaude` with the byte-identical command files;
-only use committed public fixtures for that compatibility check unless an exact
-egress approval exists.
+Use the correct gate input version described above. External share separately
+requires `external-report-share-v1`. Do not directly modify SQLite or immutable
+exports to imitate a transition. Do not directly delete run files; safe cleanup
+takes no `run-id`, and its JSON partial-failure status must be preserved:
 
 ```bash
-python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --out workspace/requests/ideation/RUN/brief-v1.json
-python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage diverge
-python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage entangle
-python3 -m patent_factory scaffold ideation-workbench --run workspace/runs/RUN --run-id RUN --profile-database workspace/profile.sqlite3 --validate workspace/requests/ideation/RUN --stage promote
-python3 -m patent_factory ideate --run workspace/runs/RUN --run-id RUN --profile workspace/profile.json --profile-database workspace/profile.sqlite3 --input workspace/requests/ideation/RUN/promoted/candidate-input-v1.json
-python3 -m patent_factory shortlist --run workspace/runs/RUN --run-id RUN --input workspace/requests/shortlist-input-v1.json
+python3 -m patent_factory delete-run --run RUN --workspace-root workspace
 ```
 
-The workbench is non-authoritative. Raw idea IDs are local and never `ca_*`; the
-core creates `ca_*` only when `ideate` accepts the promoted candidate input. Do not
-auto-approve `domain_pivot_required`. If three defensible finalists are unavailable,
-preserve `insufficient_evidence`.
-
-The private brief exposes hashes and IDs only; it does not copy profile values,
-research interpretations, evidence text, or checkpoint feedback prose and is not
-hosted-egress authorization. The `openclaude` compatibility smoke must use public
-fixtures or an independently approved minimized payload.
-
-## Finalist audit
-
-```bash
-python3 -m patent_factory audit retrieve --run workspace/runs/RUN --run-id RUN --query-input workspace/requests/audit-query-input-v1.json --fixture-manifest documents/requests/audit-fixture-manifest-v1.json
-python3 -m patent_factory audit score --run workspace/runs/RUN --run-id RUN --feature-input workspace/requests/feature-map-set-input-v1.json
-```
-
-Use a separate KIPRIS query group per finalist. Leave the `simrisk-v1.0.0` computation to
-the core. On `coverage_insufficient` or `decision_required`, do not proceed to draft.
-`audit score` now always stops at a `post_audit_checkpoint` gate — clean or breaching —
-so `decision_required` (exit 8) is the normal outcome of every audit score call, not
-only a breaching one. There is no more core auto-approval on a clean, low-risk audit;
-whether `R_hi < 75` is what made a given finalist's own `outcome` clean is still decided
-only by the core, but the batch always stops at the checkpoint either way.
-
-## Exact gate inspection / decision
-
-```bash
-python3 -m patent_factory gate inspect --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID
-python3 -m patent_factory gate decide --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID --input workspace/requests/gate-decision-input-v1.json
-```
-
-Legacy gate kinds (`credential`, `coverage`, `domain_pivot`, `sensitive_disclosure`, and
-any pre-existing `excessive_similarity` gate) take `gate-decision-input-v1`. The
-always-raised `post_audit_checkpoint` gate requires `gate-decision-input-v2` instead
-(adds per-finalist `feedback`, and — only for `re_research` — a bounded `plan`); a v1
-payload is rejected outright for that gate kind, and vice versa. Scaffold a pre-filled
-draft first:
-
-```bash
-python3 -m patent_factory scaffold gate-decision --run workspace/runs/RUN --run-id RUN \
-  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
-python3 -m patent_factory gate decide --run workspace/runs/RUN --run-id RUN --gate-id GATE_ID \
-  --input workspace/requests/gate-decision-input-v2.json
-```
-
-After a decision, resume the suspended operation only with the exact `decision_id` the
-core returned and the same original input. Changed content/hash/scope needs a new gate.
-
-## Draft, independent review, validation
-
-```bash
-python3 -m patent_factory draft --run workspace/runs/RUN --run-id RUN --input workspace/requests/report-input-v1.json
-python3 -m patent_factory review --run workspace/runs/RUN --run-id RUN --input workspace/requests/review-input-v1.json
-python3 -m patent_factory validate --run workspace/runs/RUN --run-id RUN
-```
-
-The reviewer identity/pass must differ from the drafter. On `revision_required`, do not
-validate. Only the `complete` of the deterministic validate after `reviewed` counts as
-done. Codex does not directly edit the draft/review/validation exports.
-
-## Guarded external share
-
-```bash
-python3 -m patent_factory share --run workspace/runs/RUN --run-id RUN --input workspace/requests/external-report-share-v1.json
-```
-
-On `sensitive_disclosure_required`, stop. Only when the user has a current decision
-approving the exact recipient, purpose, destination, report hash, and sensitive fields,
-add the core-returned `--decision-id DECISION_ID` to the same command. Directly copying a
-file bypasses the share gate.
-
-## Privacy and hosted egress
-
-Local CLI execution and model-context transfer are separate. Claude Code, Codex, and
-other hosted models are external processors, so do not read raw documents, source spans,
-profile/proprietary facts, reports, or secrets into context. You must have the exact
-recipient/model class, purpose, approved data classes, a current approval for the scope
-and content hash, field minimization, canary checks, and an egress manifest. Neither this
-document nor a Codex session creates such an approval. Secrets are never egressed or
-persisted under any circumstances.
-
-## Cleanup and release checks
-
-Run deletion also uses only the Python core's safe `delete-run` JSON CLI.
+For an existing run at the legacy location, the same safe mapping is:
 
 ```bash
 python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace
 ```
 
-This command takes no `run-id` and returns `cli-result-v1`/`cli-envelope-v1` and a
-deletion report. Report partial failure/status as-is. Do not directly delete SQLite,
-exports, logs, or a sibling run with `rm` or a symlink-following tool.
+## UX differences
 
-Do code cleanup as a separate small diff after behavior-fixing tests, and re-run the
-offline checks below.
+Claude Code invokes `.claude/commands/` slash commands. Codex invokes explicit
+`.agents/skills/patent-*` entrypoints under the same Python authority and gate
+contract. Skills guide invocation; they do not authorize bypasses for direct CLI
+callers.
 
-```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 -m compileall -q src tests
-python3 -m patent_factory --help
-```
-
-## UX differences from Claude Code
-
-- Claude Code uses `.claude/commands/*` slash commands.
-- Codex uses `.agents/skills/patent-*` entrypoints with explicit invocation. These
-  read the shared Claude procedures under the Codex execution contract; helper
-  references never require a `.Codex/skills/` directory.
-- Both surfaces use the same CLI/parser, versioned JSON inputs, SQLite state kernel, gate
-  policy, and validators. Skills are agent instructions, not new Python subcommands
-  or a client-enforced lock on every shell action. Direct CLI callers still follow
-  the repository contract. A Codex-specific UX failure is not grounds for a core
-  bypass or a relaxation of privacy/egress rules.
+For raw CLI examples and release checks, use [SETUP.md](../SETUP.md). Input
+formats are in [documents/README.md](../documents/README.md), and versioned request
+templates are in [workspace/README.md](../workspace/README.md). Local migrated
+`source-command-*` copies are not maintained entrypoints.

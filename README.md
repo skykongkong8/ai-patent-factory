@@ -47,8 +47,8 @@ available as an escape hatch.
 ```
 
 - Run **`init` once first** (below) to create your private roots.
-- **`/research`** also performs the one-time `run start` that binds your profile
-  into a fresh run.
+- **`/research`** also performs the one-time `run start` that fixes the selected
+  inventor profile and topic versions in a fresh run.
 - **`/checkpoint`** is a hard stop after *every* `audit score` — clean or
   breaching. It never auto-approves: present the full per-finalist dossier and
   have the user pick exactly one of **approve** (→ `/draft`), **re_ideate** (→
@@ -95,8 +95,9 @@ except the READMEs is git-ignored.
 1. **Add your material.** Drop background notes and references into `documents/`
    (UTF-8 `.md` / `.txt` / `.json`). Formats and options are in
    [`documents/README.md`](documents/README.md).
-2. **`/setup`** — build your inventor profile from one of three input paths
-   (a folder, a single document, or an interview). Safe to re-run.
+2. **`/setup`** — select or create an inventor, build a versioned profile from a
+   folder, document, or interview response file, and prepare the intended topic.
+   Use replacement mode when a new input should replace all active profile facts.
 3. **`/research`** — start a run and gather bounded evidence: offline `fixture`,
    agent-gathered web metadata via `normalize-web` + `manual`, or a live
    credentialed KIPRIS keyword batch (`kipris`, KO/EN expansions).
@@ -116,14 +117,15 @@ In **Codex**, invoke `$patent-setup`, `$patent-research`, `$patent-ideate`,
 `$patent-shortlist`, `$patent-audit`, `$patent-checkpoint`, `$patent-draft`, and
 `$patent-review` individually. Each call stops before the next workflow stage;
 ideation also retains its internal checkpoints. Start with
-`$patent-setup documents/background.md` to ingest only that document. See the
+`$patent-setup setup with Example Inventor documents/background.md` to select the intended
+inventor and ingest only that document. See the
 [Codex command guide](.codex/README.md) for invocation and resumption details.
 
 ## Commands
 
 | Command | Stage | What it does |
 | --- | --- | --- |
-| `/setup` | Profile | Build/enrich the private inventor profile (folder · document · interview). Idempotent. |
+| `/setup` | Profile + topic | Select an inventor and build, enrich, or replace versioned context (folder · document · interview responses). |
 | `/research` | Evidence | Bind the profile into a run and gather bounded fixture/manual evidence. |
 | `/ideate` | Workbench + candidates | Scaffold a non-authoritative divergence workbench, validate diverge/entangle/promote stages, then persist 1-12 evidence-bound candidates (target at least 3 when supported). |
 | `/shortlist` | Finalists | Persist 3 finalists (each scored on 3 independent axes) or explicit insufficient evidence. |
@@ -146,28 +148,26 @@ research titles/interpretations, evidence text, or checkpoint feedback prose.
 Hosted Claude/OpenClaude generation must therefore use committed public fixtures,
 user-supplied public material, or a separately approved minimized egress payload.
 
-## Where your files live
+## Inventors, topics, and files
 
-```
-documents/            # PRIVATE input you provide (git-ignored except README)
-  README.md           #   → format guide: what to put here and how
-workspace/            # generated state + exports (git-ignored except README)
-  README.md           #   → outputs guide + versioned request templates
-  profile.sqlite3     #   authoritative profile state (never hand-edit)
-  profile.json        #   deterministic export of the DB (never hand-edit)
-  requests/           #   the versioned *-input-v1.json you author for each stage
-    ideation/<RUN_ID>/#   non-authoritative /ideate workbench: brief, sessions, promotion lineage
-  runs/<RUN>/         #   per-run DB + research/report exports
-.claude/
-  commands/           # the 8 slash commands above
-  skills/             # profile · research · ideation · checkpoint · patent-review workflows
-.agents/skills/       # the 8 explicit patent-* Codex entrypoints
-.codex/              # Codex execution contract and command/CLI guide
-SETUP.md              # install + full raw-CLI reference (the escape hatch)
-CLAUDE.md, AGENTS.md  # the agent contract (authority, gates, privacy, no legal calls)
-schemas/, templates/  # JSON Schemas for each input; the Korean report template
-assets/mascot/        # Patkong, the mascot — GIF/PNG + their deterministic stdlib generator
-```
+One operator can manage multiple inventors, each with multiple topics and runs.
+Names may repeat; the core uses IDs. Setup publishes a new profile or topic
+version, and each new run fixes the chosen versions for its entire lifetime.
+Profile replacement activates a new version while preserving earlier versions
+and their runs.
+
+See [Manage inventors, topics, and profile versions](docs/inventor-management.md)
+for selection, replacement, retained inputs, archives, and explicit adoption of
+older global data. The core stores owned inputs under `documents/inventors/`
+and cataloged state under `workspace/inventors/`. Requests and ideation workbenches
+belong beneath the selected run's `requests/` directory. Both private roots are
+git-ignored except their READMEs; use the paths returned by the CLI.
+
+Input formats are in [documents/README.md](documents/README.md), request templates
+in [workspace/README.md](workspace/README.md), and the raw CLI reference in
+[SETUP.md](SETUP.md). The explicit Codex entrypoints live in `.agents/skills/`;
+`.codex/` defines their execution boundary. Shared stage procedures remain under
+`.claude/commands/`.
 
 ## How it works
 
@@ -183,7 +183,7 @@ leans on — adapted for a patent workflow where correctness matters more than s
   binds to an approved artifact hash. Change the content and the old gate no longer
   applies.
 - **Ideation diverges before it publishes.** `/ideate` starts with a minimized
-  `ideation-brief-v1` under `workspace/requests/ideation/RUN_ID/`, then validates
+  `ideation-brief-v1` under `RUN/requests/ideation/`, then validates
   raw idea sessions (`diverge`), relations/clusters (`entangle`), and promoted
   candidate input plus lineage (`promote`). Raw workbench ideas never become state
   until the existing `ideate` verb accepts `promoted/candidate-input-v1.json`.

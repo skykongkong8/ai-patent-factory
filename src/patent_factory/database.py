@@ -13,7 +13,7 @@ from .paths import owner_only_file
 from .profile import IncomingFact, PROFILE_VERSION, atomic_write_profile
 from .provenance import Claim, EpistemicLabel, canonical_json, digest, normalize
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 BUSY_TIMEOUT_MS = 250
 
 SCHEMA_V1 = """
@@ -168,6 +168,15 @@ def _migrate_v7(connection: sqlite3.Connection) -> None:
         "actor TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL)"
     )
 
+
+def _migrate_v8(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS profile_batch_inputs ("
+        "batch_id TEXT PRIMARY KEY REFERENCES ingestion_batches(batch_id),"
+        "payload_json TEXT NOT NULL)"
+    )
+
+
 class DatabaseCorruptError(RuntimeError):
     code = "database_corrupt"
 
@@ -264,6 +273,11 @@ def _migrate(connection: sqlite3.Connection, version: int, fault_at: FaultInject
             connection.execute("PRAGMA user_version=7")
             inject_fault(fault_at, "migration_v7")
             version = 7
+        if version == 7:
+            _migrate_v8(connection)
+            connection.execute("PRAGMA user_version=8")
+            inject_fault(fault_at, "migration_v8")
+            version = 8
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -407,6 +421,10 @@ def ingest(connection: sqlite3.Connection, input_mode: str, incoming: Iterable[I
             pending[fact.field] = existing_json
         if conflicts:
             connection.execute("INSERT INTO ingestion_batches VALUES(?,?,?,?, 'conflict',0)", (batch_id,input_mode,input_digest,len(facts)))
+            connection.execute(
+                "INSERT INTO profile_batch_inputs VALUES(?,?)",
+                (batch_id, canonical_json(_batch_payload(input_mode, facts))),
+            )
             for field, existing_json, incoming_json, source_id in conflicts:
                 conflict_id = "cf_" + digest({"batch_id":batch_id,"field":field,"existing":existing_json,"incoming":incoming_json,"source_id":source_id})[:16]
                 connection.execute("INSERT OR IGNORE INTO profile_conflicts VALUES(?,?,?,?,?,?)", (conflict_id,batch_id,field,existing_json,incoming_json,source_id))
@@ -554,6 +572,24 @@ def resolve_profile_conflicts(
                 )
                 decision_rows.append({"conflict_id": row["conflict_id"], "field": row["field"],
                                       "selected": selected, "selected_value_hash": digest(json.loads(value_json))})
+            retained_input = connection.execute(
+                "SELECT payload_json FROM profile_batch_inputs WHERE batch_id=?", (batch_id,),
+            ).fetchone()
+            if retained_input is not None:
+                for fact in json.loads(retained_input["payload_json"])["facts"]:
+                    value_json = canonical_json(fact["value"])
+                    connection.execute(
+                        "INSERT OR IGNORE INTO profile_facts VALUES(?,?)", (fact["field"], value_json),
+                    )
+                    selected_value = connection.execute(
+                        "SELECT value_json FROM profile_facts WHERE field=?", (fact["field"],),
+                    ).fetchone()["value_json"]
+                    if selected_value == value_json:
+                        claim = fact["claim"]
+                        connection.execute(
+                            "INSERT OR IGNORE INTO profile_claims VALUES(?,?,?,?)",
+                            (fact["field"], claim["claim_id"], canonical_json(claim), batch_id),
+                        )
             connection.execute("DELETE FROM profile_conflicts WHERE batch_id=?", (batch_id,))
         inject_fault(fault_at, "after_conflict_application")
         status = "stopped" if action == "stop" else "conflict_resolution_required" if connection.execute("SELECT 1 FROM profile_conflicts LIMIT 1").fetchone() else "profile_ready"

@@ -4,26 +4,21 @@ This folder holds everything the core produces, plus the **versioned request fil
 you author** to drive each stage. Everything under it **except this README is
 git-ignored**.
 
-## What lives here
+## Managed state and requests
 
-```
-workspace/
-  profile.sqlite3   # AUTHORITATIVE profile state — never hand-edit
-  profile.json      # deterministic export regenerated from the DB — never hand-edit
-  requests/         # the *-input-v1.json you author for each stage (see below)
-    ideation/<RUN_ID>/# non-authoritative /ideate workbench
-  runs/<RUN>/
-    factory.sqlite3     # authoritative per-run state
-    research-exports/   # immutable research bundle manifests
-    …                   # report / review / share exports
-```
+Follow [inventor management](../docs/inventor-management.md) for the authoritative
+catalog, profile/topic version lifecycle, run context, and legacy assignment.
+Managed state lives under `workspace/inventors/`; the core returns each exact
+version and run path. The SQLite catalog and state databases are authoritative;
+exports are deterministic, immutable outputs. Use the CLI to inspect them.
 
-`profile.sqlite3` is the single source of truth; `profile.json` is a byte-for-byte
-export of the committed DB. Do not edit either by hand, and do not bypass
-`conflict_resolution_required` — resolve conflicts through `profile conflict-inspect`
-/ `profile conflict-decide`.
+In the templates and commands below, `RUN` means the selected run's returned
+repository-relative path. Keep every workspace request and ideation workbench
+under `RUN/requests/`, and pass the same run scope to every scaffold, including
+report scaffolding. A cataloged `--run-id` may resolve its path, but explicit IDs
+and paths must agree. Existing legacy exports stay at their original locations.
 
-## Versioned request files (`workspace/requests/`)
+## Versioned request files (`RUN/requests/`)
 
 Each stage takes a versioned `*-input-v1.json`. **You** author these (with Claude's
 help via the slash commands); the core validates them against `schemas/*.json`, binds
@@ -36,7 +31,7 @@ skeletons — trim/extend per the schema.
 > from a previous command's JSON output**. If you don't have one yet, run the earlier
 > stage first — the core rejects fabricated bindings.
 
-### `requests/ideation/RUN_ID/` -> `/ideate` workbench
+### `RUN/requests/ideation/` -> `/ideate` workbench
 
 `/ideate` starts with a divergence-first workbench before it publishes any
 candidate state. Scaffold the minimized brief from the current run/profile state:
@@ -44,14 +39,13 @@ candidate state. Scaffold the minimized brief from the current run/profile state
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+  --out RUN/requests/ideation/brief-v1.json
 ```
 
 The workbench layout is:
 
 ```text
-requests/ideation/RUN_ID/
+RUN/requests/ideation/
   brief-v1.json                 # ideation-brief-v1, hash-bound to current context
   history/brief-<hash>.json      # prior brief bodies when scaffold input changes
   sessions/<session-id>/
@@ -69,18 +63,15 @@ Use the stage validator before moving between phases:
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage diverge
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage entangle
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage promote
 ```
 
@@ -226,9 +217,9 @@ rejected ("map identity does not bind frozen content"). Fill in every judgment
 field first, then derive `map_id` last with:
 
 ```bash
-python3 -m patent_factory scaffold feature-map \
-  --seal workspace/requests/feature-map-set-input-v1.json \
-  --out workspace/requests/feature-map-set-input-v1.json
+python3 -m patent_factory scaffold feature-map --run RUN --run-id RUN_ID \
+  --seal RUN/requests/feature-map-set-input-v1.json \
+  --out RUN/requests/feature-map-set-input-v1.json
 ```
 
 (`scaffold.seal_feature_map_input` re-derives every `map_id` from
@@ -398,7 +389,7 @@ from the pending gate; every judgment field left `TODO(agent)`):
 
 ```bash
 python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
-  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+  --gate-id GATE_ID --out RUN/requests/gate-decision-input-v2.json
 ```
 
 You author `action` (`approve` / `re_ideate` / `re_research` / `stop`), `actor`,

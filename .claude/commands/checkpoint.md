@@ -9,9 +9,13 @@ Every `audit score` now stops here — clean or breaching — before `/draft`. F
 while the gate is pending: nothing here is cached in chat, everything is re-read from
 the CLI.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
-- `workspace/requests/gate-decision-input-v2.json` — the scaffolded draft you and the
+- `RUN/requests/gate-decision-input-v2.json` — the scaffolded draft you and the
   user complete. Template and field notes are in `workspace/README.md`.
 
 ## Steps
@@ -67,9 +71,9 @@ python3 -m patent_factory run show --run RUN --run-id RUN_ID --kind finalist_set
 
 ```bash
 python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
-  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+  --gate-id GATE_ID --out RUN/requests/gate-decision-input-v2.json
 python3 -m patent_factory gate decide --run RUN --run-id RUN_ID --gate-id GATE_ID \
-  --input workspace/requests/gate-decision-input-v2.json
+  --input RUN/requests/gate-decision-input-v2.json
 ```
 
 `gate decide` itself rejects any surviving `TODO(agent)` marker (core-enforced, not a
@@ -88,18 +92,17 @@ adding real content, both make `gate decide` fail on an otherwise-complete draft
 
 4. Report the stdout JSON `status`/`next_state` verbatim, then branch:
 
-   - **`approve` → `next_state: audit_approved`** — continue to **`/draft`**.
-   - **`re_ideate` → `next_state: ideation_running`** — continue to **`/ideate`**; the
-     skill must read this decision's `feedback` — via
-     `run show --run RUN --run-id RUN_ID --kind gate_resolution` if it is still
-     current, or the durable `<run>/decision-exports/ar_*.json` file once it is not
-     (see the note below) — and author genuinely different candidates
+   - **`approve` → `next_state: audit_approved`** — suggest **`/draft`** and stop.
+   - **`re_ideate` → `next_state: ideation_running`** — suggest **`/ideate`** and stop.
+     On that explicit invocation, use the supported
+     `run show --run RUN --run-id RUN_ID --kind gate_resolution` response, subject
+     to the existing private-content approval, to prepare different candidates
      (drop/deprioritize the "boring" directions, extend the "interesting" ones).
      Re-authoring byte-identical candidates raises a hard `StateError`;
      revise the promoted candidate input before re-running `/ideate`.
-   - **`re_research` → `next_state: research_running`** — continue to **`/research`**;
-     author the second pass from the decided `plan.needed_research`, read the same way
-     as `feedback` above. Offline verbs (`research fixture` / `research normalize-web`
+   - **`re_research` → `next_state: research_running`** — suggest **`/research`** and stop.
+     On that explicit invocation, prepare the second pass from the decided
+     `plan.needed_research` through the same supported CLI access as above. Offline verbs (`research fixture` / `research normalize-web`
      + `research manual`) run as before. Live `research kipris`/`research serpapi` on
      this second pass
      ([issue #48](https://github.com/skykongkong8/ai-patent-factory/issues/48))
@@ -107,13 +110,10 @@ adding real content, both make `gate decide` fail on an otherwise-complete draft
      its scope — the plan binding plus the literal second-pass terms — before any
      egress, via `gate decide`.
 
-   **Reading the resolution in a fresh session:** the gate resolution is a DAG
-   descendant of `audit_batch`, so the FIRST `ideate`/`research` publish after the
-   decision invalidates it — `run show`'s `ar.stale=0` filter then can no longer find
-   it. The durable fallback is the exported file at
-   `<run>/decision-exports/ar_<revision_id>.json`: staleness only updates
-   `artifact_revisions`/`current_artifacts` rows, never the exported bytes on disk, so
-   this file always has the decision, before or after invalidation.
+   **Unavailable current resolution:** if supported `run show` cannot return the
+   required resolution after invalidation, report that limitation and stop. Do
+   not read immutable decision exports or SQLite as a fallback. Returned hashes
+   and IDs remain useful for a handoff without exposing private decision prose.
    - **`stop` → `next_state: stopped`** — the run ends here.
 
 ## Stop conditions (do not bypass)
