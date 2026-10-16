@@ -1,0 +1,315 @@
+export const HERO_CLASSES = ['warrior', 'archer', 'pawn'] as const;
+export type HeroClass = (typeof HERO_CLASSES)[number];
+
+// Kept in sync with server/src/types.ts — the state manager assigns round-robin
+// across the full palette. The 5 original entries map 1:1 to Tiny Swords sprite
+// variants; the extra entries reuse an existing sprite base (see
+// `HERO_COLOR_SPRITE_BASE` below). Only the NAME LABEL gets the expanded color
+// — the sprite itself stays its base variant, untinted.
+export const HERO_COLORS = [
+  'blue', 'yellow', 'red', 'black', 'purple',
+  'teal', 'orange', 'green',
+] as const;
+export type HeroColor = (typeof HERO_COLORS)[number];
+
+export const AGENT_SOURCES = ['claude', 'codex'] as const;
+export type AgentSource = (typeof AGENT_SOURCES)[number];
+
+/**
+ * Badge color used wherever we render a source pill (Phaser label, Party Bar,
+ * Detail Panel). Must be **6-char hex** — PartyBar/DetailPanel build the
+ * translucent border/background by concatenating an alpha suffix
+ * (`${color}80` / `${color}14`), which only works on 6-char hex.
+ */
+export const SOURCE_BADGE_COLOR: Record<AgentSource, string> = {
+  claude: '#FF9F4A', // orange
+  codex:  '#7ED9CF', // teal
+};
+
+/**
+ * Hero color tinted for text labels on dark backgrounds (Phaser name tag,
+ * Party Bar, Detail Panel, Activity Feed rows). Bright enough to read
+ * against #1a1a2e.
+ */
+export const HERO_LABEL_COLOR: Record<HeroColor, string> = {
+  blue:   '#88BBFF',
+  yellow: '#FFD700',
+  red:    '#FF8866',
+  black:  '#B8B8D0',
+  purple: '#C48BE8',
+  teal:   '#7ED9CF',
+  orange: '#FF9F4A',
+  green:  '#88E08A',
+};
+
+/**
+ * Sprite variant to actually render for each HeroColor. The extra palette
+ * entries (teal/orange/green) don't have their own sprite sheets — they
+ * piggy-back on an existing one; only the name label reflects the expanded
+ * palette, the sprite itself stays the base variant untouched.
+ */
+export const HERO_COLOR_SPRITE_BASE: Record<HeroColor, 'blue' | 'yellow' | 'red' | 'black' | 'purple'> = {
+  blue:   'blue',
+  yellow: 'yellow',
+  red:    'red',
+  black:  'black',
+  purple: 'purple',
+  teal:   'blue',
+  orange: 'yellow',
+  green:  'yellow',
+};
+
+export type AgentActivity =
+  | 'reading'
+  | 'editing'
+  | 'thinking'
+  | 'bash'
+  | 'idle'
+  | 'git'
+  | 'debugging'
+  | 'reviewing';
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  timestamp: number;
+  input: Record<string, unknown>;
+}
+
+/**
+ * Occupancy of the model's context window after the latest response.
+ * Kept in sync with server/src/types.ts.
+ */
+export interface ContextUsage {
+  /** Tokens in the context after the latest response (prompt + output). */
+  used: number;
+  /** Highest `used` observed during the session (survives compactions). */
+  peak: number;
+  /** Model context window in tokens; null when unknown. */
+  window: number | null;
+  /** How `window` was determined. */
+  windowSource: 'reported' | 'configured' | 'inferred' | 'default';
+  /** Context compactions detected (explicit marker or a large drop). */
+  compactions: number;
+  lastCompactionAt?: number;
+  /** Timestamp (ms) of the sample `used` comes from. */
+  updatedAt: number;
+}
+
+/** A skill whose instructions were loaded into the agent's context. */
+export interface SkillUsage {
+  /** Canonical name, e.g. `superpowers:brainstorming` or `pdf`. */
+  name: string;
+  /** Owning plugin when known (e.g. `superpowers`). */
+  plugin?: string;
+  /** How many times the skill body entered the context. */
+  loads: number;
+  /** Estimated tokens the skill bodies injected (chars / 4). */
+  loadTokens: number;
+  /** Assistant messages Claude Code attributed to this skill. */
+  attributedMessages: number;
+  /** Output tokens of those attributed messages. */
+  attributedOutputTokens: number;
+  firstUsedAt: number;
+  lastUsedAt: number;
+}
+
+/** A plugin or MCP server the agent called tools through. */
+export interface PluginUsage {
+  /** Plugin id (`chrome-devtools-mcp`) or MCP server name. */
+  name: string;
+  kind: 'plugin' | 'mcp';
+  calls: number;
+  /** Estimated tokens its tool results pushed into the context (chars / 4). */
+  resultTokens: number;
+  lastUsedAt: number;
+}
+
+/** Skills installed on disk for one provider: how much context they would cost if always loaded. */
+export interface SkillInventory {
+  count: number;
+  tokens: number;
+}
+
+export interface AgentState {
+  id: string;
+  name: string;
+  heroClass: HeroClass;
+  heroColor: HeroColor;
+  status: 'active' | 'waiting' | 'idle' | 'completed' | 'error';
+  currentActivity: AgentActivity;
+  currentFile?: string;
+  currentCommand?: string;
+  tokenUsage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  cost: number;
+  sessionStart: number;
+  toolCalls: ToolCall[];
+  errors: string[];
+  filesModified: string[];
+  lastEvent: number;
+  lastMessage?: string;
+  lastErrorAt?: number;
+  busy?: boolean;
+  currentTask?: string;
+  cwd: string;
+  configDir: string;
+  source: AgentSource;
+  /** Raw model id from Claude Code (e.g. `claude-opus-4-6`). Undefined for Codex. */
+  model?: string;
+  /** True for Claude Code subagents (Task tool). Set by the server once it
+   * sends the flag; until then `isSubagentAgent()` falls back to the id prefix. */
+  isSubagent?: boolean;
+  /** Context-window occupancy; undefined until the first usage sample. */
+  context?: ContextUsage;
+  /** Skills loaded this session. Optional on the client for snapshots from older servers. */
+  skills?: SkillUsage[];
+  /** Plugins / MCP servers called this session. Optional for the same reason. */
+  plugins?: PluginUsage[];
+  /** Skill the latest assistant message was attributed to (Claude) or the last one loaded in the turn (Codex). */
+  activeSkill?: string;
+  /** Session id of the parent agent, for subagents. */
+  parentId?: string;
+  /** Subagent role, e.g. `Explore`, `general-purpose`, or a Codex agent path basename. */
+  subagentType?: string;
+  /** Estimated tokens the subagent's final result pushed into the parent context. */
+  returnedTokens?: number;
+}
+
+/** Estimated token count for a text of `chars` characters (≈ 4 chars per token, rounded up). */
+export function estimateTokens(chars: number): number {
+  return chars > 0 ? Math.ceil(chars / 4) : 0;
+}
+
+/** Percentage of the context window in use, or null when the window is unknown. */
+export function contextPct(c: ContextUsage | undefined): number | null {
+  if (c === undefined || c.window === null || c.window <= 0) return null;
+  return Math.max(0, (c.used * 100) / c.window);
+}
+
+export type ContextLevel = 'ok' | 'warn' | 'hot' | 'critical';
+
+/** Saturation level for a context percentage: <60 ok, <80 warn, <90 hot, otherwise critical. */
+export function contextLevel(pct: number): ContextLevel {
+  if (pct >= 90) return 'critical';
+  if (pct >= 80) return 'hot';
+  if (pct >= 60) return 'warn';
+  return 'ok';
+}
+
+/** Color per saturation level — shared by the Phaser bar, Party Bar, Detail Panel and Top Bar. */
+export const CONTEXT_LEVEL_COLOR: Record<ContextLevel, string> = {
+  ok:       '#7ED9A0',
+  warn:     '#FFD27A',
+  hot:      '#FF9F4A',
+  critical: '#FF6B6B',
+};
+
+/** `superpowers:brainstorming` → `brainstorming`; standalone names are returned unchanged. */
+export function skillShortName(name: string): string {
+  const i = name.lastIndexOf(':');
+  return i === -1 ? name : name.slice(i + 1);
+}
+
+/** Compact token count: 999 → `999`, 1234 → `1.2k`, 1_200_000 → `1.2M`. */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * Whether an agent is a subagent (spawned via the Task tool) rather than a
+ * top-level session. Prefers the explicit server flag; falls back to the
+ * `agent-` session-id prefix the server uses internally, so this is correct
+ * even before the flag ships. Codex subagents (spawned with `spawn_agent`)
+ * carry the explicit flag only — their ids have no prefix. Used to suppress
+ * per-subagent notifications and to nest heroes under their parent.
+ */
+export function isSubagentAgent(a: Pick<AgentState, 'id' | 'isSubagent'>): boolean {
+  if (typeof a.isSubagent === 'boolean') return a.isSubagent;
+  return a.id.startsWith('agent-');
+}
+
+/**
+ * The single label to show for an agent across the UI (Party Bar, Detail Panel).
+ * When the agent is actively working we surface the tool activity
+ * (reading / editing / …); otherwise the lifecycle status IS the meaningful
+ * state, so we show that instead. This keeps every view in sync — without it,
+ * a `waiting`/`completed` agent (whose `currentActivity` the server sets to
+ * `idle`) would read as "idle" everywhere except the hero label.
+ */
+export function displayActivity(agent: Pick<AgentState, 'status' | 'currentActivity'>): string {
+  switch (agent.status) {
+    case 'waiting': return 'waiting';
+    case 'completed': return 'completed';
+    case 'error': return 'error';
+    case 'idle': return 'idle';
+    case 'active': return agent.currentActivity;
+  }
+}
+
+/**
+ * Compact badge for the model id (e.g. `claude-opus-4-6` → `OPUS`). Returns
+ * null for Codex and for Claude sessions whose JSONL predates `message.model`,
+ * so the UI can skip the badge entirely rather than rendering a placeholder.
+ * The color echoes the activity palette used on the Phaser canvas so a reader
+ * builds one mental mapping across views.
+ */
+export interface ModelBadge {
+  /** Short, uppercase label (e.g. `OPUS`). */
+  short: string;
+  /** Hex color, 6-char, suitable for the same `${c}80` / `${c}14` treatment as source badges. */
+  color: string;
+}
+
+/** Curated colors for the model families we know; new families fall through to the hashed palette. */
+const KNOWN_MODEL_COLORS: ReadonlyArray<{ key: string; color: string }> = [
+  { key: 'fable',  color: '#8FE8B0' },
+  { key: 'opus',   color: '#C48BE8' },
+  { key: 'sonnet', color: '#88BBFF' },
+  { key: 'haiku',  color: '#FFD27A' },
+];
+
+/** Palette for unknown families — distinct from the curated colors above. */
+const FALLBACK_MODEL_COLORS: ReadonlyArray<string> = ['#E8A38F', '#8FDCE8', '#D6E88F', '#E88FCB'];
+
+export function modelBadge(model: string | undefined): ModelBadge | null {
+  if (model === undefined || model.length === 0) return null;
+  const id = model.toLowerCase();
+  for (const { key, color } of KNOWN_MODEL_COLORS) {
+    if (id.includes(key)) return { short: key.toUpperCase(), color };
+  }
+  // Unknown model: extract the family name — the first alphabetic run after a
+  // `claude-`/`claude.` marker (handles Bedrock-style `us.anthropic.claude-...`),
+  // or the first alphabetic run of the whole id for non-Claude providers.
+  const family = id.match(/claude[.-]([a-z]+)/)?.[1] ?? id.match(/[a-z]+/)?.[0];
+  if (family === undefined || family === 'claude') return null;
+  let hash = 0;
+  for (let i = 0; i < family.length; i++) hash = (hash * 31 + family.charCodeAt(i)) >>> 0;
+  return {
+    short: family.slice(0, 8).toUpperCase(),
+    color: FALLBACK_MODEL_COLORS[hash % FALLBACK_MODEL_COLORS.length]!,
+  };
+}
+
+export interface ActivityLogEntry {
+  agentId: string;
+  action: string;
+  detail: string;
+  timestamp: number;
+}
+
+export type WsEvent =
+  | { type: 'agent:update'; agent: AgentState }
+  | { type: 'agent:new'; agent: AgentState }
+  | { type: 'agent:complete'; id: string }
+  | { type: 'activity:log'; agentId: string; action: string; detail: string; timestamp: number }
+  | {
+      type: 'snapshot';
+      agents: AgentState[];
+      configDirs: string[];
+      /** Skills installed on disk per provider (what they would cost if always loaded). */
+      skillInventory?: Partial<Record<AgentSource, SkillInventory>>;
+    }
+  /** Pushed after a server rescan finds the installed skills changed (new plugin, new skill). */
+  | { type: 'inventory:update'; skillInventory: Partial<Record<AgentSource, SkillInventory>> };

@@ -1,0 +1,554 @@
+:root {
+  --feed-bg: rgba(26, 26, 46, 0.9);
+  --feed-border: rgba(196, 163, 90, 0.4);
+  --feed-gold: #C4A35A;
+  --feed-pergamena: #F5E6C8;
+  --feed-blue: #7B9EC4;
+  --feed-path: #9ec4f5;
+  --feed-error: rgba(139, 37, 0, 0.12);
+  --feed-error-strong: #8B2500;
+  --feed-row-min-height: 44px;
+  --feed-avatar-size: 80px;
+  --feed-row-gap: 16px;
+}
+
+.activity-feed {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--feed-bg);
+  border-top: 1px solid var(--feed-border);
+  font-family: 'Fira Code', ui-monospace, monospace;
+  font-size: 14px;
+  color: var(--feed-pergamena);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  transition: height 0.18s ease;
+}
+
+.activity-feed.fold-full    { height: 390px; }
+.activity-feed.fold-compact { height: 150px; }
+.activity-feed.fold-closed  { height: 32px;  }
+
+/* === Header === */
+.feed-header { display: flex; flex-direction: column; flex-shrink: 0; }
+.feed-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(196, 163, 90, 0.2);
+  flex-wrap: nowrap;
+}
+.feed-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(196, 163, 90, 0.15);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.feed-title {
+  font-family: 'Cinzel', serif;
+  color: var(--feed-gold);
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.feed-new-badge {
+  background: var(--feed-gold);
+  color: #1a1a2e;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  font-family: 'Fira Code', monospace;
+  animation: feed-pulse 1.6s ease-in-out infinite;
+}
+@keyframes feed-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+.feed-spacer { flex: 1; }
+
+.feed-tabs {
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 2px;
+}
+.feed-tab {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--feed-pergamena);
+  opacity: 0.6;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.feed-tab.active {
+  background: rgba(196, 163, 90, 0.3);
+  color: #fff;
+  opacity: 1;
+  font-weight: bold;
+}
+
+.feed-fold-buttons { display: flex; gap: 4px; }
+.feed-fold-btn {
+  width: 26px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(196, 163, 90, 0.12);
+  border: 1px solid rgba(196, 163, 90, 0.25);
+  border-radius: 3px;
+  color: var(--feed-pergamena);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.feed-fold-btn.active {
+  background: rgba(196, 163, 90, 0.3);
+  border-color: rgba(196, 163, 90, 0.6);
+}
+.feed-fold-btn:focus-visible {
+  outline: 2px solid var(--feed-gold);
+  outline-offset: 1px;
+}
+
+.feed-pill {
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: rgba(123, 158, 196, 0.15);
+  color: #9bb5d6;
+  border: 1px solid rgba(123, 158, 196, 0.3);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.feed-pill.on {
+  background: rgba(196, 163, 90, 0.3);
+  color: #fff;
+  border-color: var(--feed-gold);
+  font-weight: bold;
+}
+.feed-pill.errors    { background: rgba(139, 37, 0, 0.18); color: #ffaaaa; border-color: rgba(139, 37, 0, 0.5); }
+.feed-pill.errors.on { background: rgba(139, 37, 0, 0.4);  color: #fff;    border-color: var(--feed-error-strong); }
+
+.feed-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(196, 163, 90, 0.2);
+  border: 1px solid rgba(196, 163, 90, 0.4);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--feed-pergamena);
+}
+.feed-chip-close {
+  background: none; border: none; color: var(--feed-pergamena);
+  opacity: 0.6; cursor: pointer; font-size: 14px; line-height: 1;
+  padding: 0 2px; font-family: inherit;
+}
+.feed-chip-close:hover { opacity: 1; }
+
+/* === List === */
+.feed-list-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.feed-list {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(196, 163, 90, 0.4) transparent;
+}
+.feed-list::-webkit-scrollbar { width: 6px; }
+.feed-list::-webkit-scrollbar-thumb { background: rgba(196, 163, 90, 0.4); border-radius: 3px; }
+.feed-list::-webkit-scrollbar-track { background: transparent; }
+
+.feed-jump-latest {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  z-index: 2;
+  background: var(--feed-gold);
+  color: #1a1a2e;
+  border: none;
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* === Entry === */
+.feed-entry {
+  display: grid;
+  grid-template-columns: var(--feed-avatar-size) minmax(0, 1fr);
+  gap: var(--feed-row-gap);
+  padding: 10px 14px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  position: relative;
+  animation: feed-fade-in 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-entry { animation: none; }
+  .feed-new-badge { animation: none; }
+}
+@keyframes feed-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+.feed-entry.is-error { background: var(--feed-error); }
+.feed-entry.is-message {
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background: rgba(123, 158, 196, 0.05);
+}
+.feed-entry.is-message .feed-row-avatar { margin-top: 2px; }
+
+.feed-row-avatar {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-block;
+  line-height: 0;
+  width: var(--feed-avatar-size);
+  height: var(--feed-avatar-size);
+  flex-shrink: 0;
+}
+.feed-row-avatar:focus-visible {
+  outline: 2px solid var(--feed-gold);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.feed-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.feed-row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+.feed-agent-name {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--feed-gold);
+  font-weight: bold;
+  font-family: inherit;
+  font-size: 12px;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-agent-name:hover { text-decoration: underline; }
+
+.feed-action-pill {
+  background: rgba(123, 158, 196, 0.2);
+  color: var(--feed-blue);
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.feed-action-pill.is-error {
+  background: rgba(139, 37, 0, 0.4);
+  color: #ffaaaa;
+}
+.feed-action-pill.is-reply {
+  background: rgba(196, 163, 90, 0.3);
+  color: var(--feed-gold);
+}
+.feed-action-pill.is-prompt {
+  background: rgba(158, 196, 245, 0.2);
+  color: var(--feed-path);
+}
+
+.feed-source-badge,
+.feed-model-badge {
+  font-family: 'Fira Code', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.feed-time {
+  color: #888;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.feed-detail {
+  font-size: 16px;
+  color: var(--feed-pergamena);
+  opacity: 0.95;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+  display: block;
+}
+.feed-detail.is-path { color: var(--feed-path); }
+.feed-detail.is-path:hover { text-decoration: underline; color: #fff; }
+.feed-detail.is-path-unresolved { color: var(--feed-path); opacity: 0.7; }
+.feed-detail.is-message {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+  word-break: break-word;
+  max-height: 8.5em;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(196, 163, 90, 0.4) transparent;
+}
+.feed-detail.is-message::-webkit-scrollbar { width: 4px; }
+.feed-detail.is-message::-webkit-scrollbar-thumb { background: rgba(196, 163, 90, 0.4); border-radius: 2px; }
+.feed-detail.is-message.is-reply { color: var(--feed-pergamena); }
+.feed-detail.is-message.is-prompt { color: #d8e3f2; font-style: italic; }
+/* Markdown rendering inside message cells: keep everything inline so the
+   detail flows as a single line group. `p` is already stripped via a
+   fragment renderer in ActivityRow, but guard the rest so lists/code
+   blocks don't blow up the row height. Every child element inherits
+   the container's font-size so markdown ('**', '#', '`') doesn't
+   balloon headings or shrink inline code. */
+.feed-detail.is-message *,
+.feed-detail.is-message h1,
+.feed-detail.is-message h2,
+.feed-detail.is-message h3,
+.feed-detail.is-message h4,
+.feed-detail.is-message h5,
+.feed-detail.is-message h6 {
+  font-size: inherit;
+  line-height: inherit;
+}
+.feed-detail.is-message h1,
+.feed-detail.is-message h2,
+.feed-detail.is-message h3,
+.feed-detail.is-message h4,
+.feed-detail.is-message h5,
+.feed-detail.is-message h6 {
+  margin: 0;
+  font-weight: bold;
+  display: inline;
+}
+.feed-detail.is-message code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-family: 'Fira Code', ui-monospace, monospace;
+}
+.feed-detail.is-message pre {
+  margin: 4px 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.feed-detail.is-message pre code {
+  background: transparent;
+  padding: 0;
+}
+.feed-detail.is-message ul,
+.feed-detail.is-message ol {
+  margin: 2px 0;
+  padding-left: 1.2em;
+}
+.feed-detail.is-message a {
+  color: var(--feed-path);
+  text-decoration: underline;
+}
+.feed-detail.is-message strong { color: #fff; }
+.feed-detail.is-message em { color: #d8d0b8; }
+.feed-detail.is-message blockquote {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.2);
+  opacity: 0.85;
+}
+
+/* === Group (By Agent) === */
+.feed-group {
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.feed-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--feed-row-gap);
+  padding: 10px 14px;
+  background: rgba(196, 163, 90, 0.06);
+  border-bottom: 1px dashed rgba(196, 163, 90, 0.25);
+}
+.feed-group-avatar {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+  width: var(--feed-avatar-size);
+  height: var(--feed-avatar-size);
+  flex-shrink: 0;
+}
+.feed-group-avatar-placeholder {
+  width: var(--feed-avatar-size);
+  height: var(--feed-avatar-size);
+  display: inline-block;
+}
+.feed-group-name {
+  color: var(--feed-gold);
+  font-weight: bold;
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+}
+.feed-group-activity {
+  color: var(--feed-blue);
+  font-size: 11px;
+  opacity: 0.8;
+}
+.feed-group-body { padding: 2px 0 4px 16px; }
+.feed-group-more,
+.feed-group-less {
+  background: none; border: none;
+  color: var(--feed-blue);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 30px;
+}
+.feed-group-more:hover,
+.feed-group-less:hover { text-decoration: underline; }
+
+/* === Empty state === */
+.feed-empty {
+  text-align: center;
+  padding: 24px 14px;
+  color: #999;
+}
+.feed-empty-hint {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* === Context menu === */
+.feed-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+.feed-menu {
+  position: fixed;
+  z-index: 201;
+  background: rgba(26, 26, 46, 0.98);
+  border: 1px solid var(--feed-border);
+  border-radius: 4px;
+  padding: 4px 0;
+  margin: 0;
+  list-style: none;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-family: inherit;
+  font-size: 12px;
+}
+.feed-menu li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 14px;
+  color: var(--feed-pergamena);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.feed-menu li button:hover {
+  background: rgba(196, 163, 90, 0.2);
+}
+
+/* === Responsive (tablet portrait and below) === */
+@media (max-width: 600px) {
+  .activity-feed {
+    --feed-avatar-size: 56px;
+    --feed-row-gap: 12px;
+  }
+  .activity-feed.fold-full    { height: 360px; }
+  .activity-feed.fold-compact { height: 108px; }
+  .feed-filter-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .feed-agent-name { max-width: 90px; }
+  .feed-row-meta { font-size: 10px; }
+  .feed-detail { font-size: 15px; }
+  .feed-time { font-size: 10px; }
+}
+
+/* === Highlight (pill-matched) and selection states === */
+.feed-entry.is-highlighted {
+  background: rgba(196, 163, 90, 0.06);
+  border-left: 3px solid var(--feed-gold);
+  padding-left: 11px;
+}
+.feed-entry.is-highlighted.hl-errors   { border-left-color: var(--feed-error-strong); background: rgba(139, 37, 0, 0.08); }
+.feed-entry.is-highlighted.hl-edits    { border-left-color: var(--feed-blue);         background: rgba(123, 158, 196, 0.08); }
+.feed-entry.is-highlighted.hl-bash     { border-left-color: var(--feed-gold);         background: rgba(196, 163, 90, 0.08); }
+.feed-entry.is-highlighted.hl-reads    { border-left-color: #9a7ac4;                  background: rgba(154, 122, 196, 0.08); }
+.feed-entry.is-highlighted.hl-messages { border-left-color: #e08a3f;                  background: rgba(224, 138, 63, 0.08); }
+.feed-entry.is-highlighted.hl-agent    { border-left-color: #7ac49a;                  background: rgba(122, 196, 154, 0.08); }
+.feed-entry.is-highlighted.hl-skills   { border-left-color: #7BD4C5;                  background: rgba(123, 212, 197, 0.08); }
+.feed-entry.is-highlighted.hl-other    { border-left-color: #888;                     background: rgba(136, 136, 136, 0.06); }
+
+/* Selection feedback on the feed cell is intentionally absent — the hero
+   halo in Phaser and the PartyBar row already convey which agent is
+   selected, and the click target here only needs to react visually while
+   pressed (handled natively). */
+
+/* Category pill styling for agent/other/reads/messages (errors/edits/bash reuse existing) */
+.feed-pill.messages    { background: rgba(224, 138, 63, 0.15); color: #f0c99a; border-color: rgba(224, 138, 63, 0.4); }
+.feed-pill.messages.on { background: rgba(224, 138, 63, 0.35); color: #fff;    border-color: #e08a3f; }
+.feed-pill.agent       { background: rgba(122, 196, 154, 0.15); color: #9eddbb; border-color: rgba(122, 196, 154, 0.4); }
+.feed-pill.agent.on    { background: rgba(122, 196, 154, 0.35); color: #fff;    border-color: #7ac49a; }
+.feed-pill.skills      { background: rgba(123, 212, 197, 0.15); color: #a9e6dc; border-color: rgba(123, 212, 197, 0.4); }
+.feed-pill.skills.on   { background: rgba(123, 212, 197, 0.35); color: #fff;    border-color: #7BD4C5; }
+.feed-pill.other       { background: rgba(136, 136, 136, 0.15); color: #bbb;    border-color: rgba(136, 136, 136, 0.4); }
+.feed-pill.other.on    { background: rgba(136, 136, 136, 0.35); color: #fff;    border-color: #aaa; }
+.feed-pill.reads       { background: rgba(154, 122, 196, 0.15); color: #bda5dc; border-color: rgba(154, 122, 196, 0.4); }
+.feed-pill.reads.on    { background: rgba(154, 122, 196, 0.35); color: #fff;    border-color: #9a7ac4; }

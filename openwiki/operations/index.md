@@ -1,4 +1,4 @@
 # Files
 
-- [Privacy, Credentials, and External Sharing](privacy-and-egress.md) - Explains the local privacy boundary, owner-only roots, secret and canary handling, data classes and retention, credential gates, and hash-scoped approval required before a report can leave a private run.
-- [Configuration, Run Operations, and Recovery](recovery-and-run-maintenance.md) - Safe procedures for versioned configuration, private credentials, run inspection and deletion, deterministic exports, filesystem containment, artifact recovery, and fault-safe retries. Use this page when an operation stops, must be audited, or needs to be resumed without bypassing persistence and privacy controls.
+- [CLI Surface, Private Workspace, and Scaffolded Inputs](cli-private-workspace-and-scaffolds.md) - Safe operation of the local CLI, its JSON result envelope, private documents and workspace roots, run inspection, hash-bound request scaffolds, gates, and supported cleanup.
+- [Reliability, Recovery, and Release Evidence](reliability-recovery-and-release-evidence.md) - Operational model for immutable artifact publication, crash recovery, idempotent replay, bounded research retries, safe run deletion, and redacted release evidence.

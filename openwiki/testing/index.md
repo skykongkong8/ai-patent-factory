@@ -1,3 +1,3 @@
 # Files
 
-- [Testing Strategy and Behavioral Contracts](contracts-and-golden-journeys.md) - Maps the repository's tests to the behavioral boundaries that protect state, schemas, adapters, privacy, release evidence, and the committed end-to-end journey. Use this page to choose focused tests for contract changes and to understand what the golden path proves.
+- [Verification Strategy and High-Value Test Boundaries](verification-strategy.md) - A contract-oriented guide for selecting unit, integration, end-to-end, and release checks for the stateful, privacy-sensitive patent workflow. It maps change surfaces to focused test modules and the required offline release baseline.

@@ -1,0 +1,31 @@
+:root {
+  font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color: #f3f6fa;
+  color-scheme: dark;
+}
+.topbar { height: 58px; background: #0b1f3af2; border-color: #57bca666; font-family: inherit; }
+.topbar-logo-button { left: 18px; top: 4px; }
+.topbar-logo { width: 205px; height: 52px; filter: none; }
+.topbar-stats { gap: 14px; }
+.topbar-stat-label { color: #a9b8d0; }
+.topbar-stat-value.active { color: #a9e8d8; }
+.topbar-stat-value.error { color: #ff9d8a; }
+.topbar-effect-btn { border-color: #57bca655; min-height: 30px; }
+.factory-caption { position: absolute; top: 82px; left: 290px; display: grid; gap: 7px; pointer-events: none; }
+.factory-caption strong { color: #ffc94b; letter-spacing: 3px; font: 12px monospace; }
+.factory-caption span { color: #f3f6fa; font-size: 17px; }
+.factory-caption small { color: #a9b8d0; font-size: 12px; }
+.factory-empty { position: absolute; top: 47%; left: 50%; transform: translate(-50%, -50%); display: grid; gap: 12px; padding: 26px 32px; background: #0b1f3aeb; border: 1px solid #57bca6; text-align: center; border-radius: 8px; max-width: 90vw; }
+.factory-empty strong { color: #ffc94b; font-size: 20px; }
+.factory-empty span { color: #c7d3e1; font-size: 14px; }
+.factory-disconnected { position: absolute; top: 66px; right: 20px; max-width: 330px; padding: 12px 16px; background: #0b1f3a; border: 1px solid #ff9d8a; color: #ffcabd; font-size: 13px; }
+.detail-panel, .feed-container, .partybar, .settings-modal, .tutorial-modal { background-color: #0b1f3af2; border-color: #57bca666; font-family: inherit; }
+.tutorial-title, .settings-title { color: #ffc94b; font-family: inherit; }
+.tutorial-logo { width: 240px; height: 64px; }
+.tutorial-text { line-height: 1.8; color: #c7d3e1; }
+.tutorial-close-btn { background: #ffc94b; color: #0b1f3a; border: 0; border-radius: 4px; padding: 12px 24px; font-weight: 700; cursor: pointer; }
+:focus-visible { outline: 2px solid #ffc94b; outline-offset: 3px; }
+@media (max-width: 1200px) { .topbar-stat { gap: 3px; } .topbar-stats { gap: 9px; } .topbar-logo { width: 165px; } }
+@media (max-width: 900px) { .topbar-logo { width: 180px; } .factory-caption { left: 105px; top: 80px; } .factory-caption span { font-size: 14px; } }
+@media (max-width: 640px) { .topbar { height: 52px; } .topbar-logo { width: 170px; height: 44px; } .factory-caption { top: 68px; } .factory-caption small { display: none; } .factory-empty { width: 90vw; padding: 18px; } .factory-disconnected { top: 115px; left: 18px; right: 18px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }

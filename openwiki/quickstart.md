@@ -1,208 +1,95 @@
 ---
-type: operational quickstart
-title: Quickstart
-description: Initialize the private input and workspace roots, then route an inventor profile through bounded research, candidate selection, similarity audit, human checkpoint, report drafting, review, and optional sharing. Use this page to identify authoritative state, safe re-entry points, and hard stops.
-tags: [quickstart, workflow, privacy, gates, operations]
+type: "Reference"
+title: "AI Patent Factory: Agent Quickstart"
+openwiki_generated: true
 verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-01T07:14:54.600Z
+  - by: openwiki/0.6.0
+    at: 2026-10-16T03:36:32.329Z
 sources:
-  - id: openwiki-source-ffab72096cf278c203460657
-    resource: repo://.claude/commands/audit.md
-  - id: openwiki-source-67680eb23c7f0b6443a2da04
-    resource: repo://.claude/commands/checkpoint.md
-  - id: openwiki-source-fa3da7432981055494677343
-    resource: repo://.claude/commands/draft.md
-  - id: openwiki-source-e1af3184ead3dd1bd51d7ac5
-    resource: repo://.claude/commands/ideate.md
-  - id: openwiki-source-d885ecdfd5ee5aa1be7163b9
-    resource: repo://.claude/commands/research.md
-  - id: openwiki-source-4ea61816a1bf66dfcb2403af
-    resource: repo://.claude/commands/review.md
-  - id: openwiki-source-c02f3b64628d24a3cce3627f
-    resource: repo://.claude/commands/setup.md
-  - id: openwiki-source-75df5b30dd6cd5973f41a899
-    resource: repo://.claude/commands/shortlist.md
-  - id: openwiki-source-7e1b4c37597b6c2a7138fda2
-    resource: repo://documents/README.md
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
+  - id: openwiki-source-a2371d6362e5db4bc834ad03
+    resource: repo://CLAUDE.md
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
   - id: openwiki-source-5096bfb21b732fa2f0beecbd
     resource: repo://SETUP.md
-  - id: openwiki-source-71562bc26e066b1b7bf897f1
-    resource: repo://workspace/README.md
-generated: { by: "openwiki/0.4.3", at: "2026-09-01T07:14:54.600Z" }
+  - id: openwiki-source-c1a9676b43a2a0c748e6207b
+    resource: repo://src/patent_factory/cli.py
+  - id: openwiki-source-ef94c4f6ce7ef5deb426b558
+    resource: repo://src/patent_factory/state.py
+generated: { by: "openwiki/0.6.0", at: "2026-10-16T03:36:32.329Z" }
 ---
 
-# Quickstart
 
-This is the shortest supported route from private invention material to a reviewed,
-evidence-bound report. The system is local-first: the Python CLI owns state, gates,
-hash bindings, transitions, and exports; Claude Code slash commands are the guided
-interface. Local execution does **not** authorize sending private text to a hosted model
-or another recipient.
+# AI Patent Factory: Agent Quickstart
 
-## 1. Initialize safely
+This is the maintainer and coding-agent entrypoint, not a replacement for the CLI reference. Start with the system boundary below, then use the **narrowest linked page** for the behavior you intend to change. Read source and tests as the final authority.
 
-Prerequisites are CPython 3.11+, a terminal, and no third-party runtime packages. From
-the repository root, verify the CLI and initialize once:
+## Non-negotiable operating boundary
 
-```bash
-python3 -m patent_factory --version
-python3 -m patent_factory init
-```
+The local Python CLI/core (`python3 -m patent_factory`) is authoritative for workflow **state, gates, invalidation, idempotency, and exports**. Slash commands, Codex skills, scripts, and other agent wrappers may guide a user, prepare a request, invoke the CLI, and explain its JSON result; they must not become a second state engine.
 
-`init` creates owner-only `documents/` and `workspace/` (or alternate roots supplied by
-`init --documents DIR --workspace DIR`) and nothing else. Put UTF-8 `.md`, `.txt`, or
-`.json` material under `documents/`; PDF, DOCX, and image files must first be converted.
-Paths must remain beneath the documents root, with no absolute paths, `..`, symlinks,
-non-regular files, or documents over 2,000,000 bytes. Never put
-`KIPRIS_PLUS_API_KEY` in a document; keep credentials in the environment.
+- Do **not** directly edit SQLite databases, `profile.json`, immutable exports, artifact pointers, or share receipts. Do not use SQL, file copying, or arbitrary scripts to create a transition, repair a run, approve a gate, or publish an artifact. Use the supported CLI inspection and cleanup surfaces instead.
+- A scaffolded request and the ideation workbench are inputs, not authority. Hash bindings and schemas are rechecked by the core when a stage publishes its artifact.
+- A gate result is a hard stop. Preserve its `gate_id`, subject hash, offered actions, and next state. Never auto-approve it or invent a decision, approval scope, reason, or `decision_id`; only a user-authored decision for the exact current subject and scope can be accepted by the core.
+- Parse the CLI's JSON envelope—especially `status`, `next_state`, identifiers, and `failure_code`—rather than inferring state from a file or treating every nonzero exit as a crash. Except for `--help` and `--version`, the CLI produces one versioned JSON object even for handled argument errors.
 
-- `documents/` is private user input: notes, references, interview responses, research
-  fixtures, manual results, and the audit fixture manifest.
-- `workspace/` is generated state and authored request inputs. `profile.sqlite3` is the
-  authoritative profile database and `profile.json` is its deterministic export.
-  Per-run authoritative state lives under `workspace/runs/<RUN>/factory.sqlite3`, with
-  immutable research and other artifact exports alongside it.
+> **Privacy and legal limit.** Private source text and profile text remain local unless there is exact current approval for the external recipient, purpose, approved data class/content hash, and scope, together with a minimized egress manifest. A local CLI invocation or use of a hosted coding agent is not approval to put private material in model context. The factory organizes invention material and records bounded similarity research; it must not make legal conclusions about patentability, novelty, inventive step, validity, or non-infringement/FTO.
 
-Do not hand-edit SQLite, JSON exports, state pointers, or decision exports. Add or revise
-inputs through the commands; the core validates request schemas and binds IDs and hashes
-to prior revisions. For the deeper ownership model, see [System Overview and Ownership](/openwiki/architecture/system-overview.md), [Agent Commands and CLI Contracts](/openwiki/architecture/agent-and-cli-surfaces.md), and [State Kernel and Persistence](/openwiki/architecture/state-and-persistence.md).
+## Orient before changing anything
 
-## 2. Recommended slash-command route
+1. Read [`AGENTS.md`](../AGENTS.md), [`README.md`](../README.md), [`SETUP.md`](../SETUP.md), and [`CLAUDE.md`](../CLAUDE.md). Confirm the installed contract with `python3 -m patent_factory --version` and `python3 -m patent_factory --help`.
+2. Classify the change by its **authority boundary**: core state/provenance, private inputs and CLI behavior, a workflow stage, a network adapter, privacy/egress, or verification/recovery. Use the routing table rather than reading unrelated pipeline code.
+3. Trace the public CLI verb to its core handler and state transition, then read the closest integration test before editing. For a change to a stage input, trace the scaffold, schema, validator, artifact dependencies, invalidation effects, and the resume/gate path—not just the parser argument.
+4. Make the smallest change that keeps the core authoritative. If a behavior needs a new workflow capability, design the validated core operation, state transition, artifact/dependency bindings, gate policy, and tests before adding guidance in a wrapper.
 
-Use the slash commands in order. At each step, report the CLI JSON `status` and
-`next_state` rather than inferring success from prose or exit code.
+Normal use begins by creating private `documents/` and `workspace/` roots. The profile database is authoritative for profile facts; each started run has its own `factory.sqlite3` for the run lifecycle, artifacts, evidence, decisions, and exports. Use `run status`, `run show`, and `gate inspect` to observe current state rather than reading the databases or exports directly.
 
-```mermaid
-flowchart TD
-  A["init private roots"] --> B["/setup: build profile"]
-  B --> C["/research: start run and gather bounded evidence"]
-  C --> D["/ideate: propose evidence-bound candidates"]
-  D --> E["/shortlist: select three finalists"]
-  E --> F["/audit: retrieve corpus and score similarity risk"]
-  F --> G["/checkpoint: user chooses action"]
-  G -->|approve| H["/draft: render report"]
-  G -->|re_ideate| D
-  G -->|re_research| C
-  G -->|stop| Z["stopped"]
-  H --> I["/review: independent review"]
-  I -->|reviewed| J["validate: complete"]
-  I -->|revision_required| H
-  J --> K["optional guarded share"]
-```
+## End-to-end mental map
 
-This shows the normal control flow and the two deliberate post-audit re-entry paths.
+The guided pipeline is `/setup` → `/research` → `/ideate` → `/shortlist` → `/audit` → `/checkpoint` → `/draft` → `/review`.
 
-### Profile: `/setup`
+1. **Profile and run bootstrap:** private documents or an interview become conflict-checked profile facts; `run start` binds a current profile into a new research-ready run.
+2. **Evidence:** research persists bounded fixture/manual evidence or uses an explicitly credentialed live adapter. Adapter failures and thin coverage remain limitations; they are not evidence.
+3. **Ideas and finalists:** the divergence-first workbench is deliberately non-authoritative until validated promoted input is submitted. Candidates must bind profile facts and research evidence; shortlisting produces three scored finalists or an explicit insufficiency outcome.
+4. **Similarity audit and human checkpoint:** finalist-specific retrieval creates the audit corpus, then scoring raises the post-audit checkpoint even when the score is clean. The human chooses `approve`, `re_ideate`, `re_research`, or `stop`; no wrapper may skip directly to drafting.
+5. **Private report and controlled release:** a bound report is independently reviewed. `revision_required` returns to drafting; only a reviewed report can be deterministically validated and completed. External sharing is a separate exact-scope disclosure operation, not a copy of a completed report.
 
-Place the user's material in `documents/`, then ask them to choose exactly one input
-path: a folder, one document, or an interactive/scripted interview. The command runs
-one of:
+This lifecycle is a dependency graph as well as a sequence. Replacing an upstream current artifact invalidates dependent revisions and makes approvals tied to affected hashes stale. A repeated idempotency coordinate replays its recorded current result; it does not authorize a second publication.
 
-```bash
-python3 -m patent_factory profile folder documents
-python3 -m patent_factory profile document documents/background.md
-python3 -m patent_factory profile interview --responses documents/interview.json
-```
+## Route the change to the narrowest page
 
-The profile is merged idempotently, so adding material and rerunning is safe. If a batch
-conflicts with existing facts, the whole batch is held at
-`conflict_resolution_required`; preserve its `batch_id`, inspect it, and wait for the
-user's versioned decision. Do not choose a value or bypass the conflict.
+| If the change concerns… | Read this page first | Then trace / prove |
+| --- | --- | --- |
+| Run states, transactions, SQLite schema/migrations, artifact revisions, dependency invalidation, gates, atomic exports, or idempotency | [Transactional State, Artifact DAG, and Gates](/openwiki/architecture/state-and-provenance-kernel.md) | The transition/gate policy and transactional-kernel tests, including fault and replay cases. |
+| The division between slash-command/Codex guidance, the JSON CLI, local roots, and service boundaries | [System Overview and Runtime Boundaries](/openwiki/architecture/system-overview.md) | The relevant CLI handler and the wrapper or skill that invokes it. |
+| Private roots, contained paths, CLI envelopes, scaffolds, request files, status/exit handling, run inspection, or safe cleanup | [CLI Surface, Private Workspace, and Scaffolded Inputs](/openwiki/operations/cli-private-workspace-and-scaffolds.md) | Path validation and the exact request/schema contract; do not hand-copy bindings. |
+| KIPRIS Plus, SerpApi Google Patents, manual web imports, credential handling, request budgets, host allowlists, normalization, quotas, or adapter failures | [Research Adapters and Network Egress](/openwiki/integrations/research-adapters-and-network-egress.md) | The adapter contract, query envelope, persisted observation/failure mapping, and egress-before-state checks. |
+| Profile document/interview intake, fact provenance, conflicts, deterministic profile export, or profile-to-run binding | [Profile Ingestion and Run Bootstrap](/openwiki/workflows/profile-and-run-bootstrap.md) | Conflict resolution and the authoritative-profile verification performed before a run starts. |
+| Fixture/manual/live research, evidence persistence, bundle publication, incompleteness, or a supported research re-entry | [Research Intake, Persistence, and Re-entry](/openwiki/workflows/research-and-evidence-intake.md) | Research-state permissions, idempotency coordinates, and any credential/re-entry gate. |
+| Hash-only ideation briefs, workbench divergence/entanglement/promotion, candidate publication, domain pivots, or finalist selection | [Ideation Workbench, Candidate Publication, and Shortlisting](/openwiki/workflows/ideation-and-finalist-selection.md) | The distinction between non-authoritative workbench files and core-published candidates/finalists. |
+| Audit query inputs, finalist-specific corpora, reviewed feature maps, scoring, coverage outcomes, or the mandatory post-audit decision | [Similarity Audit and Post-Audit Human Checkpoint](/openwiki/workflows/similarity-audit-and-human-checkpoint.md) | The checkpoint branch and the exact resolution artifact, not an inferred “clear” score. |
+| Report bindings/rendering, reviewer independence, deterministic validation, redaction/revision loops, or exact-scope sharing | [Report Publication, Independent Review, Validation, and Sharing](/openwiki/workflows/report-review-validation-and-sharing.md) | The current report/review/validation bindings and, for sharing, the sensitive-disclosure decision. |
+| Hosted-model use, sensitive data classes, credentials, canary scrubbing, disclosure approval, or the legal boundary | [Privacy, Authority, and Legal Boundaries](/openwiki/concepts/privacy-and-authority-boundaries.md) | Whether any contemplated transfer has exact approval; absent that, keep the work local. |
+| Which unit, integration, end-to-end, or release-evidence tests should change with an implementation | [Verification Strategy and High-Value Test Boundaries](/openwiki/testing/verification-strategy.md) | The focused regression first, then the documented offline release suite. |
+| Crash recovery, concurrent publication, replay versus retry, run deletion, or release/calibration evidence | [Reliability, Recovery, and Release Evidence](/openwiki/operations/reliability-recovery-and-release-evidence.md) | Fault-injection/concurrency coverage and the recorded recovery result. |
 
-### Evidence and run: `/research`
+## Safe agent loop
 
-`/research` starts a fresh run and binds the authoritative profile into
-`research_ready`, then performs one bounded operation: offline `fixture`, imported
-`manual` results, or live credentialed `kipris`. Web research is performed out of band
-and imported offline through `research normalize-web` followed by `research manual`.
-A live KIPRIS attempt requires `KIPRIS_PLUS_API_KEY`; a missing or rejected credential
-opens `credential_required` before egress. Preserve `gate_id` and resume the same
-command only after the user decides with the core-issued `decision_id`.
+**Before invoking a mutating stage:** obtain the current run state through the CLI, use a scaffold when one exists, and keep inputs under their configured private root. Treat the scaffold's hashes as values to preserve, not fields to regenerate creatively.
 
-A research source failure is an adapter event, not evidence. `research_incomplete` can
-mean the adapter succeeded but added no new records because all results deduplicated;
-read `incomplete_reason` before deciding whether to add an unseen reference. Research
-publishes a deterministic bundle manifest under the run's owner-only
-`research-exports/`. A completed run cannot be researched again by a general direct
-call; only audit coverage expansion or the checkpoint's bounded `re_research` branch
-can re-enter research.
+**After each invocation:** retain the full JSON result. A complete stage may advance normally; `conflict_resolution_required`, `credential_required`, `domain_pivot_required`, `insufficient_evidence`, `coverage_insufficient`, `decision_required`, `revision_required`, `sensitive_disclosure_required`, `stopped`, `incomplete`, and `error` each require the behavior named by their workflow page. In particular, every `audit score` normally stops at `decision_required` for the post-audit checkpoint.
 
-### Candidates, finalists, and audit: `/ideate` → `/shortlist` → `/audit`
+**When a gate is pending:** inspect the exact gate, return control for the required human decision, then resume only as the core directs with the exact returned `decision_id` and the same bound input. Content or scope changes deliberately invalidate older approvals.
 
-Use `scaffold candidate` and `scaffold shortlist` to prefill bindings, then author the
-judgment and inventive fields. Candidates must be evidence-bound (and distinguish facts
-from inference); a shortlist must contain three finalists, each scored independently on
-`differentiation`, `technical_feasibility`, and `utility_significance`. If three
- defensible finalists cannot be supported, preserve `insufficient_evidence` rather than
-manufacturing them.
+**When implementation changes:** preserve deterministic serialization and the JSON envelope, add or update focused tests at the affected boundary, and run the repository's documented offline verification before release. Do not test live credentials by default, and do not report a `pytest` run as the project suite: the repository's standard-library `unittest` discovery is the authoritative test command.
 
-`/audit` retrieves a finalist-specific KIPRIS corpus from a reviewed query input and
-fixture manifest, or through the explicitly approved live path, then scores with the
-fixed `simrisk-v1.0.0` scorer. Do not recompute scores, labels, corpus, or feature maps.
-A thin corpus raises `coverage_insufficient`; inspect and resolve its gate before
-continuing. For the complete evidence and similarity model, see [Candidates, Shortlisting, Corpus, and Similarity Risk](/openwiki/concepts/candidate-and-similarity-audit.md), [Evidence, Hashes, and Artifact Lineage](/openwiki/concepts/provenance-and-artifacts.md), and [Research Retrieval and External Adapters](/openwiki/integrations/research-and-adapters.md).
+## Fast escalation rules
 
-## 3. The mandatory human checkpoint
+- **It looks like a state problem:** stop editing files and route to the state/provenance page. An apparent export mismatch, stale input, or retry should be resolved through the core's inspection/replay/recovery behavior.
+- **It needs private text in an agent or external system:** stop unless the exact transfer approval and minimized manifest already exist; consult the privacy page before discussing implementation details in an external context.
+- **It needs an approval to continue:** stop. A status or an agent recommendation is never approval.
+- **It looks legally decisive:** relabel it as bounded research evidence or similarity within the retrieved corpus and route the decision to a qualified patent professional. The system must not turn it into a patentability, novelty, validity, or non-infringement/FTO conclusion.
 
-Every `audit score` ends at `decision_required`, even when coverage is complete and the
-risk is clean. It is a normal hard stop, not a failure and not permission to draft.
-`/checkpoint` reads the pending gate and CLI exports, composes one dossier per finalist,
-and elicits exactly one user action:
-
-- `approve` → `audit_approved` → `/draft`;
-- `re_ideate` → `ideation_running` → `/ideate`, using the user's per-finalist feedback;
-- `re_research` → `research_running` → `/research`, using a bounded plan;
-- `stop` → `stopped`.
-
-The user must provide `interesting`/`boring` feedback for all three finalists on every
-action. `re_research` additionally requires `plan.needed_research`. Scaffold with
-`gate-decision-input-v2`; all `TODO(agent)` markers, the action, reason, actor, and
-feedback must be resolved before `gate decide`. On approving breaches, the user supplies
-one `retain_with_warning` reason per breaching finalist; the warning itself is
-core-derived. Never auto-approve, invent feedback, or fabricate `gate_id` or
-`decision_id`. Gate mechanics and re-entry semantics are detailed in [Gates, Human Decisions, and Re-entry](/openwiki/workflows/gated-decisions.md).
-
-## 4. Draft, independently review, and release
-
-Only an `audit_approved` run may draft. Scaffold a hash-bound `report-input-v2.json`,
-choose English (`"language": "en"`, the default) or Korean, and run `/draft`. The core
-renders the eleven sections and bindings; the wrapper does not edit the report.
-`/review` must use a reviewer identity and pass different from the drafter and the exact
-report hash. If review returns `revision_required`, return to `/draft`; do not validate.
-Only `validate` returning `complete` finishes the workflow. External `share` is always
-a separate operation: a sensitive scope raises `sensitive_disclosure_required`, which
-must be decided by the user (`approve`, `redact`, or `stop`) before resuming with the
-same input and `--decision-id`. See [Report Rendering, Review, and Release Validation](/openwiki/architecture/report-review-validation.md) and [Privacy, Credentials, and External Sharing](/openwiki/operations/privacy-and-egress.md).
-
-## 5. Inspect state and use the raw CLI when needed
-
-The slash commands are the recommended surface. For a fresh session or debugging,
-inspect the run and its exact pending gate from CLI-owned state:
-
-```bash
-python3 -m patent_factory run status --run RUN --run-id RUN_ID
-python3 -m patent_factory run show --run RUN --run-id RUN_ID --kind candidate_set
-python3 -m patent_factory run show --run RUN --run-id RUN_ID --kind finalist_set
-python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_ID
-```
-
-`SETUP.md` is the raw CLI escape hatch for scripting and non-slash runtimes. Every
-command emits one sorted JSON `cli-result-v1` / `cli-envelope-v1` object; safe stops may
-use non-zero exits, so read `status`, `next_state`, and failure details. Common meanings
-are: `2` invalid input/path (fix and rerun), `3` profile conflict, `4` incomplete
-recoverable stage, `5` credential or shortlist evidence gate, `7` coverage gate, `8`
-post-audit decision, `9` sensitive disclosure, and `10` review revision. A hard stop is
-not an invitation to copy an export or edit the database: preserve `gate_id`,
-`subject_revision_hash`, `actions`, and `next_state`, obtain the user's exact decision,
-then resume with the same input and core-issued `decision_id`.
-
-For operational cleanup, deterministic exports, recovery, and safe run deletion, see [Configuration, Run Operations, and Recovery](/openwiki/operations/recovery-and-run-maintenance.md). For the complete journey and re-entry narrative, see [End-to-End Invention Workflow](/openwiki/workflows/end-to-end-pipeline.md); for behavioral contracts and the offline golden journey, see [Testing Strategy and Behavioral Contracts](/openwiki/testing/contracts-and-golden-journeys.md).
-
-## Scope reminder
-
-The output is invention-organizing support material, not legal advice. Similarity results
-are research aids within the retrieved corpus and do not conclude patentability,
-novelty, inventive step, validity, or non-infringement/FTO.
+For raw syntax and examples, use the operational CLI page and [`SETUP.md`](../SETUP.md). For a behavioral change, prefer the linked architecture or workflow page plus its focused tests over copying a command sequence from this quickstart.

@@ -1,0 +1,26 @@
+{
+  "name": "patkong-factory-visualization",
+  "version": "0.3.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "dev:server": "cd server && bun run dev",
+    "dev:client": "cd client && bun run dev",
+    "start": "bun run scripts/start.ts",
+    "check:assets": "bun run scripts/check-assets.ts",
+    "demo": "bun run scripts/demo.ts",
+    "test": "bun test",
+    "build": "cd client && bun run build",
+    "typecheck": "bun run --cwd client typecheck",
+    "assets:generate": "python3 scripts/generate-factory.py"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

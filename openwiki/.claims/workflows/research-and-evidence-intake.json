@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:dc847b3d416da6907d7982e4039cacec71cfabf5e075a81bf01e90238dbf4bcc",
+  "claims": [
+    {
+      "id": "claim_889aedd8fa4d4ac188a25c390638b769",
+      "statement": "The `research` CLI provides deterministic fixture intake, manual JSON import, offline `normalize-web` conversion, credentialed KIPRIS batch research, and credentialed SerpApi Google Patents research; fixture and manual routes then use the same authoritative runner and bundle publication path.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/cli.py#L1028-L1225",
+          "version": "repo-lines-v1:sha256:e693d4bdc6d81f70cdfeda532e4e3fd6597377c2ea64c64b788e36458c6ae51f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTk4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI5NTM4ODFiNGRlYTYxNTk5ZGYwNDVlYmNjOGE5ZGQzZjE3YmJlMjU0Y2Y5YzZmNzk4OGIyMDRhNGExZTVmZjcxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiOWVhMzdhN2FmOGJkZGViNDg0Mjc5MWFlZDI2ZThlNTBkZTYxNjZiNzQ1MzA0ZjhiOTkyZGQ0MDM0M2NmYTM5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhMTRlMGQ0ZWZhODI1NWMzMjhlN2E1MGEwN2Y2NGVjY2VjYjgyODcyNTY3ZDU0MjlhNzkyMzMxYmJjZDEzYTM5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxYzgwOGVjZmE0MjhkNmE5MWE2YjgyMmIxM2VkYTFmOTFlZTkzZjBmZjFlMTdlMzNlMDQ4ZGRkZWU4MDEzNTdmIn0"
+        },
+        {
+          "resource": "repo://src/patent_factory/cli.py#L198-L290",
+          "version": "repo-lines-v1:sha256:c9a4bed5785a377083af606ce52e7117a314437658dbd30de84064a6acdbbeb2:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlYzJmNDc1YTFhOWQzNmFmMWMyOTA5MDZiZDkxODk2NmMyOTM4YTQwOWM1MGZmMjJhMWNiY2QxZTkxOWU0YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOTFkODNhNTFjZGRmYWRmZTdhNTY5MmEyOWRhMjc3ZTE4YjAwOWE3MzQxYzQ5MDBhMTkxMzkzYTdkOWZiOGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjOTIxY2UyMTNjMTI2MjI0N2VjOTdjY2M2N2ZiMjRiMWM0ZjNhZTE0Y2VjNjllNWY0OGNmYmM3ZjAyYzM3OGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0YWM2NzczMDEwM2E0OWU4MzVlNjM4MGMyN2NlMGQ0MWMxNmQ1NzA0M2UyYzA1ZTJjMmE4YTJlYTVmOTUxZTAifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/cli.py#L625-L813",
+          "version": "repo-lines-v1:sha256:05730ad97d04618beb446bd0b392c14f4796863581ee38cd3ce9aca8ede1a12a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTg5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkZTk0M2FhMTgwZjQwMTAyMzEzZGZlYTQyYTRhZTdhOGM4OTIwNWY4NzRhOTYxYmY5NmU0ZjU4NWM5NDk1OWU2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJmNDhlNGY1MDg3NGQyNDdiZmY5NzA0NjM2YTE4MTQ0NTVlYmZiMzIzNTczY2Y1NzY1ZTE2M2IxNmZiMDRjNTEyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzYzI0NmYyYzUwZDVhNmQwMjdkYTFjN2NlY2NkYjFjYzRkN2Y1ZjM2NTQ3NDlmMDdkMTVkZDQzMWY4MDQ0NjBkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a7968528fff4ea4be59e5069295ae90",
+      "statement": "Manual-web intake is a closed public-metadata boundary: records and web rows are constrained to declared fields, canonical HTTPS allowlisted URLs, required identity/provenance, non-placeholder hashes, and normalized string lists; web-row normalization deterministically computes span and content hashes and round-trips through the same sanitizer.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/adapters/manual_web.py#L17-L88",
+          "version": "repo-lines-v1:sha256:c7f00aab6ba05af3961819044b8f87901b659f2d415b128f06886247bf023021:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzZDVmOWE4NjZmMTJmZjA3NDcxNDQ2MDkyZGNkZWY4NjQzNWQ3ODIwMWE2Yzc4YzBlZDkxZTU4MTc0YjllMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyNmViMGRkMGUwZjA4YmJmN2ExNzRhOGU5Nzk4NjIzZmI1MzNjNTBmZTczMzcyMmVhZjkzMjc5ZGExZTdkY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEzMjRiNjY5YTRmZmViOTA4ZjdmYzFjMmQ5ZDFhNTM0Yjk4OWJhYTNiYmQ1NWI0Zjk0ZDI3OTUyMmM5NWQwZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwYWE1NmI1OGFmZjc3Y2Y1NDA5Zjg0MTNhYWM3ZDg0YTdmM2Y0MWVlN2NjZGI3MjY4NmYzNDM2YmE2NzQ0OWEifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/adapters/manual_web.py#L91-L151",
+          "version": "repo-lines-v1:sha256:6f2380507bf5292f634ed8e25a3ceba0966cb04cd73d3462031d7ec39299035c:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5MDVkODFmZmZlN2NiMjYwMTViZjA2OWYzMTI5MmVlMmM4YTlmNjk5NzQ4MDQ2YzgzNmVmZjZjMTMzNzYyYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NGZmMWI4Yjg3NDA0NzFjMzNmMjQxYzkyN2Y5NjEyNzUyZTkwYzhhMDg0M2U3YjVkMWZlNTBiOTE3NThhYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmNWFmNDA2Njg0NjY3ZDQyZDhhOTllOTg5Zjg1Zjc0MmExNTNkOGIxYzlkNGZhNWY2NWZlOTJjYmVjMzc5NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhZjFiYTgyNWIyZmJhZGQ2YmRhMWUwMjJjYmNlMDlkMWIyYzc3NmVhNDdjMzE4NjgzNmUzNjViN2RjNDhjZGEifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/cli.py#L706-L740",
+          "version": "repo-lines-v1:sha256:77b67c4fbbb03db45ee7c72dff85e08ff80d82f4b7391a6ab2b121933986e444:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlMDZlZTZjZjBhNTgxODI5NWNkMTY0YzVlYzYwMGQ3Y2FhOTJmYzhkZGFkYmFhMTYxOWIxYTc1ZTc0YWI5M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZDllMTUyMmQ0MjE0NDEzMTk4NGE4YTk3OGEwYzU3ZDE1YTI0MTgwZWZhMWE2Y2U2NWYxOTI4OTI1ZmE4NTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhNjUwYTE4MzFkODg5ZDE2OTVjZDNkZWQ3OThmMGI3MDI3NTAwZGZlMWZhMjRlYzE1NTcyOTZlMjE0YzcwZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0NjU5NTU0YzM0OGI3ZDU0YzYwMzZiMmZkM2ZlNzhlYmU1YWY1YzJhNzJjZTU1ZGViY2Q5OTMwYzBmZGU2MGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cb8194b3fe65442f8aba1e90b9dc934b",
+      "statement": "A `QueryEnvelope` validates bounded HTTPS request parameters and canonicalizes them into `request_body()`, whose digest forms `request_fingerprint`; `ResearchStore` derives its query identity from that fingerprint only after any adapter envelope-preparation hook has run.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/models.py#L66-L153",
+          "version": "repo-lines-v1:sha256:862d574fca8a99b11706b32b1a718d6a0e6ebb5475b0dfb333e2885214cdb0ec:eyJzZWxlY3RlZExpbmVDb3VudCI6ODgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4YzkyYjY3NTY2ZDJmMWM4ZTk5YTZkZDFlZWQ1YTMxNGUwYjdjNDFhNGE2ZWNkZjI3YjBhODQ2NjcwMjRjMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjMmFjMGUxNDllOTg2ODI5YTcxOTNjZGVlODZlY2EyMjQzYjYyNjM1MTkyYWRjMmI4YTQ0YmFlNzdjZjIzMzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L813-L839",
+          "version": "repo-lines-v1:sha256:e4789f202c5a85a7e4a4cad2d73f62a8ecae141745f98d7e21a42d9d2dcebfca:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMWRlNzZkY2FlNGQ1NmVmYTJmNmE1YTY1NzhlYzFlY2ZjZDk1NmQwN2UwMTQ4OWIwNWU5MTcyZjE1MDIyYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjYmJhNmEzMzk1NmQ1YmJkMDFlODdkMTkwYjhiMjc4NTdiOGY2MDEzOTVkNzBjMjVmZDBmMjUxYjkxZjE0ZTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5NmNjMzI4YzI3MmRiNmZjYzI3MDk4NTc0ZDZmYzEwMzNjOGI5YmY0YTU0YzdlZDc0MGY0N2ZkNTczZmE0ODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2ZmU3OWNkZDk1YjA4MWIxMGRhNWQyZWQ0MDJiNzI0ZjdkNDhlN2JmMmM5NThmOWZjMjA0NDNkYmE0ZTMwNTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f4e7d661b3ee4e8383b7a1a113137b8f",
+      "statement": "Keyword planning deterministically normalizes and de-duplicates origin, synonym, discovered, classification, applicant, and inventor terms within depth and call limits, while bibliography planning separately emits exact application-number projections.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L703-L797",
+          "version": "repo-lines-v1:sha256:c598703f3d319071ef0fef7a9224888cc662cf6cdf50037c51efc9c0f29c9b34:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0Y2E3NDI2N2U0ZDdjZWE4NTk4ZjNiNzNkMjc5OWZmYTYzYTUyNDllYjcyMTM4ZDY4YzJkOGUzZThmZDU3ZGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhNDlkMGVjY2QwMmM0ZThlMTlhMzkyMWExMTQ0NmQyNWYyZGE1MGExNGJmOTZmOWMxNjI0NGE2NWU3OWFlMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmOGNmNmU2MjBjMDg2ZDAzMTIyYzIxNThkMTY2ODZkMmIzYzBkZGE3YjY1ZDdkMjc4YjVkNWFlOGE2MDMxMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmN2E2ZjIwNzc3NmJjMDEyODA4NTljZGQyODQ2MmQ4NDhhZTI2MDA0MGExODdiMDkxYTZhYzgyMzU3YzkzM2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_27743011d9a5475581a017f03931bcd7",
+      "statement": "The hashed `page_cap` is deliberately frozen at five for request-fingerprint and credential-gate replay compatibility, while the KIPRIS CLI's opt-in `--paging` passes an unhashed `effective_pages` value of one or five and enforces a 100-request cross-field budget.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/cli.py#L625-L651",
+          "version": "repo-lines-v1:sha256:4b52a9640632b4ffea6d2e5659780ca558d2a79b44e41751b363311bcd2f57d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlOTQzYWExODBmNDAxMDIzMTNkZmVhNDJhNGFlN2E4Yzg5MjA1Zjg3NGE5NjFiZjk2ZTRmNTg1Yzk0OTU5ZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhYzRjMmQ5OGYyYjZlN2VlZGE3OTZiMTU5MjlmOWUwYWM5N2M0NTUwYzVjZmZhYWIxNzZjNzI2NzAyOTlmNzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkZWFhMzdmNWIxOGNmMzc3NzZjYzkxYzI3YzY4MjY0MDU0YmI1OWRiZTE0OWIxMzkwNDViYmU4MDZkOGExOWMifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/models.py#L75-L86",
+          "version": "repo-lines-v1:sha256:658e3944a2d10e00c4e11179e2eccee36412ce3866e880b82fc543d9e1d7e453:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5YmU4ODlkOTg2NTM4NjAxNDIzYThmMTViYjhlYjI2NzhiNjgyMmJkMDBkMjE0MWM5Yzk4ZDljMmMzM2I2NmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4Yjg1ZGExZDE5M2EwZTI5ZGQ3ZmZkMDhkMTk0Mjc5ZTEwOTBiODExZDMxY2QxMzgwYzM0NDk1YWI5YTQxMmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJiZjY5Y2EyNjMwM2ZkY2Y3Njg1MDI4YzM0MzY5NjQ4MDM3MTMxMGEzZjBkNGE0NWNkYjQ3OTU2MGQ4NDFmODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkYjBjN2UyM2NkZDg0ZGE1MmZkNDZjYmRlNTI4YWVkYjkyMzBhZDFmMWQ1ZDAzMzI1MDExYjllZGVmOGMxYWYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L19-L78",
+          "version": "repo-lines-v1:sha256:3a9b4c7dced16e566d47598c05fce9e3d2f428d7a7d9a7695296c35187568070:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4YmYwOTk4NmE3YWM5ZGQ5NjI1MmViODc3YWM5M2I3NjQ2ZTg3NGIzOTIwMDY4N2ZjZmE5NGFkYjQ4ZDdkMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1MDA0YTNmMWZjYjMzNjA4OTQ3Zjc3NTBkOGNiNWQyNTU4OGM1MmVlZGUxYmU1OTU2MDNkYWMxZTRhYWQ5MjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b141d7204d3e47f687ed9601a53993c1",
+      "statement": "`execute_paginated()` follows cursors until a page limit, result accounting exhaustion, failure, or missing cursor; it preserves page one's historical idempotency key, gives later pages distinct envelopes and key suffixes, and uses a constant KIPRIS page window so offsets do not overlap or skip earlier windows.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/retrieval.py#L64-L163",
+          "version": "repo-lines-v1:sha256:9b65f2e789baf64f63cdb3c88fdfc2d11f7fe7928695491ee837be43dd9ab267:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkZWU2MzQ2MmVjMGM4MTgwNmE5MGIxMzZlMDBjMDBkMmU4MmM3NjE0OGU3N2E3ZGY1ZWMyOWUyMTZmNzBmYzc4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzZGZmZTg4NjMzMmU4MzgxNGI3YjMzYjYxN2Y4M2M5NGFhNjYxNmMwMDUzZTc5NDkwZjQyMzJkZTI1MDg4NWU3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhODFlMDliY2ZhNGRmODg2YWQxYWM5OGMwNjljZjk4M2YzNGVmZTMyZWRkODk3NjcyZjcxZTUxYTZmNGZlZTliIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhODViYTdiNzYzODJkNzhkMzg1YzY4ZDk5ZjkwZDg0MjRiY2ZhODViOTYxNWZmMWY1NjExODA0MDljZTU1ZDZjIn0"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_pagination.py#L198-L280",
+          "version": "repo-lines-v1:sha256:4f15bae01a84d52c4254727f9b6844b85ddd5be4419e36f69affe4d7404996d3:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZmYwNzI2NjdjM2Q3YjhjMTI4MGViZTQ1YzMzYTc5ZDUzMzZmNTAxYWY4MTBkYzg3ZTMxYTZiM2FmMGU3YTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyNDYzMTE3Y2Q2OWJlOGY5YzMxNzlhM2QwYzAwYjk3ZTQyOWYxOWIzZWVlYmUxMTg4YjkxMGZiYjNjMmUxZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFhZGZmZmY5ZmE5MThiYTkwMWFlYzZjMDVkNGY4NDAxODI2NzFiNmFmNjYwZDgyM2NjZWVkMjFmMmI0OTk0MTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmMjM3ZTc0NjQ1ZjEzNTM5NWU4ZDcxMTZkNjg1MDAyMjliYTI5NjY2NzQ5MjMzNjJlZTIwNzEwOGUwZWUxYmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cde01db0692d41e3b3d7642a433f2f37",
+      "statement": "`ResearchStore.execute()` replays an identical idempotency-key/query pair without adapter transport and otherwise writes the query, adapter event, observations, evidence/edges or limitation, and operation record inside one immediate transaction.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L800-L950",
+          "version": "repo-lines-v1:sha256:c9a417d2fa1497c00b5d04a12a368fdf8435ecbc391189780752e82de02fa9aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzYTM3NDQxNWU0YzEwYjlmODRhYzU0MDU2MzFkNjIyZmYxNDMyOWJjMTgzZmMwNjNjMDU5NmRmMWRiYjc0NzRmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4YWZhODA0OTBiNWJjZTE4YjU3ZjRmZDUyNzc5NmQwOGYxZDFhOTJiMTNlOTFiODlhNDgwYWU4NDcxNjRjYjgwIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlOWJhOTBjZTk4ZTcyM2MyMGVmM2MxZDZjOGI2NTQ1ODA1ZGM4ZDhkMzg2NTk1NTFlOTQ3YThjZjVmMjY3MGM4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiZjM3MjM1MzM2MjA2MzE0NzZkMWU3ODdjZTM5ZDI2YWJmNzMxYmEyYTMxYTkyYzEzYWMyYWVmYWZjNzViMDQ3In0"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L131-L139",
+          "version": "repo-lines-v1:sha256:f5c81ffe1ab582512ed7d4854ecef06f7a50c0e6ae3d1374f1ba31c59b5ae651:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjdhOGQyMjAyYzA3NDE3MjViYmUyNjFkOGRlMmNkNDI5N2VkNTBjNzk0NWUxYThiN2EyOGM2MWYyNzI5ZmMyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY3ODQ1ZDdiMDIyOGY2ZjU0ODI0NWUzMTQ2MGM4ZGMxMzJlZDI1MTVkMzdiZjQ4NTdkMjk1ZTJhOGZiOGQyNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWM2NjIyNWRhNjdiZWRmMmU1MDY1MTNlZTgzNWQzOGE3MDNmZGI4M2VjM2QxYWU0OTJhMjMyOGQxNWNiNzhkOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmI2MmJkMzM3Yjk3NDk4MTBiYWVkNzRmMjExOTdhNWViZWFhYWFjY2RjMDM1M2NmZGNiOTc3OGQ5YzBhNjA2ZCJ9"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L195-L203",
+          "version": "repo-lines-v1:sha256:ecd131a817397caabe2b0a78f232438d9652e0636216468373becdfdb8e9fee7:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODBlNTNjMDEzMGQ0MGQ0NjE4NDc4Y2JkNTg4ZjBmMDM5MzBmOTFmMmI3NzBhYTE2NTQwNjZjYjhjYzVjODA4MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDU2NDI1OTVhMTA3Zjk0NjUyNWY1YzIzNTE3MTFjOTYwMmIyYTBjMzZkNjFmYjM2ZWE0OTFjMGMwOWI4ZjE3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTQxN2JmNGMwZWE0NGI1NzQ1ZDk2OWNiYzI0OWQyYzQzMTc0MGVkYzQ1NWE2Yjk2NDIwODgwMTU3NTA0YWRkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDg2ZTA5N2JlMGE1ODliOGMzNjEyZWNkM2ExNThmMjQ2Nzg3NTIyYjFlZmFjMDc3ZTYxNmRjZDBkNjRhZDhiYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_7480f11b776047acae2be08afa38add5",
+      "statement": "Evidence identity is `evidence_revision_id(source_locator, content_hash)`: duplicate identities are collapsed in one adapter result and stored once per run across queries, while each retrieval still retains its own observation and ranked query-to-evidence edge; different source locators remain distinct identities even with the same content hash.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L902-L930",
+          "version": "repo-lines-v1:sha256:31bb96f9eae1471863bda5dcaed47a7913842898b36f5746e9562db7679c80e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhZDU1ZDJkNTc5ZmJiMDgwN2I1ZmI5ZDhlZGRjOGRmMTk1MWI3OGRkODY1MDE3NTEwZmNhZGI1MDU3YWJjNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3Y2I0NzRjMTg4ZmNkMGFkZDE2ZWFmNDNkZWUyMzdkNzdiMjRmMDU5MGMwM2JlMzlkODQyYWI0MmJkZDI0OWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmMzU3ZmVlOGFlOTRiZjMxNzZkNWEzNjkxOGRjOGRkYjMyYTNlNTA0NDNhMjIzZGE2MDM2NzA5ZGY3ZTdlNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyMWM5ZTAwYzQzYjdjYzk0ZGZiMDEwMjRhMTQwZGIwYTlmNWI0ZWI4MTA1NTgyYWY2MGU0NzVlODIwZTlhN2EifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L151-L172",
+          "version": "repo-lines-v1:sha256:dc7d53d5b583cc35dc890bf5f49de43931d2425c649552d586a9f3b816797148:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MDQyZWNhZTM0MDNlNmE4NTgzNjFhYWJlNDI4NjJkNDdkNjk4MGQ4OTcxZjA5ZTViY2Y3M2ViYWE3ODY3MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZmIyNGI2YjFlNjgwNWMyZWYzNDNlOTA1MmRkMThjMTllYzYxNjU5OWViOThmMzU0Zjg1YzNkNTY0NDNjMjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZjY1MDRjYjMwMTEyNDUzNGU1NzExZTg0ZmQwNmM0MDJmMmFhMjM1NzEzYjFiZjU3N2FmZThkNTlmMWY4ZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1NmU2YzExMGVkYjc5Zjg0ODNjOTY0ZWY3ZTc3NGZmMTdkODNiMDYxNjRhZTAzOGZhNTQ3OTI0NTNlZjYxY2YifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L87-L98",
+          "version": "repo-lines-v1:sha256:8f3fe5ea5e31855b46a43c637e66068e40c83b05dc9e28b28612501d89a874cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlOTlkMjM1MGQxYWIyMDk1MWI1NmU1ZjdlZTk3NzJiNDVjNTZhMTAxODZlNmNlZThkNmM0ZDRhY2FhMWMwOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4ZmIyNGI2YjFlNjgwNWMyZWYzNDNlOTA1MmRkMThjMTllYzYxNjU5OWViOThmMzU0Zjg1YzNkNTY0NDNjMjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1YzBiZGExZTE3ZjI3OTFlMjY3NmM1YjcwNmQ4NTk2MDliZGFkNjQyOTI4ZWVmNTY0MDkxZGMwNmJkN2Y5ZjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmNzYxYjQxMDUwNmY3NDQ0ZGM4ZTdhYzRiYzkzNzg5NjY5MWUyNjhlYzFjZWFiMDhlMDM1OWUzY2RiNjhmNzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1d1a2f33d61c445d90f7511480597664",
+      "statement": "A failed adapter result cannot contain evidence records; the store persists a failure observation and `coverage_limitations` entry instead, while a successful empty response receives an explicit no-evidence observation and no edge.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/models.py#L233-L258",
+          "version": "repo-lines-v1:sha256:a3b3a13d111664d4a274a177ebca56889b4ee414872dfa79c1728ae0b1e78a49:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YjE3Zjk3MWE4YzgzNGJjNzdmMzg4NDU3Njk1Y2M5ZGJlZTkxOTExZGM5YTMxZmZiMmY2MmVhMmViODU0MDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhNTY2N2EzYmFlODdlZTVlYjc0YWY5NjNlNTk5MmJlNWU2ZGM0Mzc3NzE2ZDBhM2UxYmNmYzMxNjY5OWE2MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L886-L900",
+          "version": "repo-lines-v1:sha256:a95705021c7d1ea57eb939176fb7c44a8215a73fc9b28ef31e7aa37fee6e76b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwN2UzZDkyYzI5ZTM0MDlmYjUyODFjMzNlYzdhNDU5MWZiYzVmMDM3ZWQ3ZWY2MDk5ZTY2ZTYyZjA1ZTU5YmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkM2Y0NWY2MWZhYzViYmYxNDk1NjFmMzZlZDFhZGU4OWE0MDM4NzgwOGY3MzBmODYyZWNkOWE2OThmZTUyMTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkZjhlOTY4YWEzNTA1YzEyOTU2ZmUxMmIzOTc4MzI1NWVmOWYzNDI1ZTEwYzM5NGYwZGMzYWQyNjVmZDQ0YzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmYmExOTMyMGIwYzc4Y2FiYmU2NjIyODgwOGEzNTIyMjM4YmU4ZGU2YWYwOTY2ODcwNDNhYmE2NjNlZjUwNzQifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L931-L949",
+          "version": "repo-lines-v1:sha256:6f7ab2404f0018072748b26ef1b836a224de3e64ff9ae59f384e47bdcf08ddb5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjOGQyNjZhMTRiYzM0ZWUxZTM2NTEyYzQzYjc3MzQ0Njg1MzdlZjM4ZDU0MzNhOGU0YjMyYmMwODg4MDU1Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1OWQ2NWY5NzNiN2RjOGNhZWQzNWE5OWQ1ZDVlZGQ2N2ZmZGI2ZjY1NDI0MjVjNjVkMGEyYWY3MjcyNWExMGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMTIzZGU3MjQ4NTJmZDhlZTM1OTBlMWYwMDlmYjg4YjBhN2E0YjE0NGQ3M2YxNTUyM2E5YzQ1NTJlZmVhZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MDZmN2I4MzI0NTMwZDE3NWI4MmViOTU2YzhkNmNiZjU3NTY1NWI0ZTdkNjg5YjJiZTcyY2JmYjZmZmEwOTkifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L100-L129",
+          "version": "repo-lines-v1:sha256:f5fc003720fcc67eb43c4edca3b6649e7612b9476bf971b275a330437f96e330:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYjY2MjdhNTYyMTAyNzllODZhMGFhMjYwMTdhMjUwYTk5ZTQ3NDM0YTAxMWE2MGJkOTgzNWI5NThlYmU0YzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzZTk1OTk3MjI2YmQ5YjA2MGU5NzdhZTExMTU4MGU0NGY4YWQ4MGZhMWYxZjg1ODRiZjViMTI3ODRjMTA5YmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiOTk5ZjNhMWM5NjM4Yjg2ZjE3N2VmZmJlMTViZWU2ZDUzZGQxOTZhMGNhMmYwNjUwMTFjYTU5YTJiZjMyYmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyOWVlODhmMzZhMGQyYTRiODYzMmQ3NDVjYzVjZTJhZWIwM2NlNjljNjNiOTZiOTMzNDkwNjE0NTdlNzZlZmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_271621bf4bf04da390179135947cb37e",
+      "statement": "Research manifests are scoped to non-audit planned queries and bundle deterministic queries, events, evidence, observations, edges, and coverage limitations; the runner publishes that bundle as an immutable private export registered through `StateStore`.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L1358-L1405",
+          "version": "repo-lines-v1:sha256:dc8353422f4d79b47b9587375472e57b53e71fc4d9c624db3c2bc7213c7adce4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNzA0NjRiNjUwMWQ2NmRjNWM4ZmUwNDYxZTU1NGI2ODYyNTRlMWI0OWJlNDEyYmU5MDQwZDRlY2Y4ZGQyOTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4MTdlODlkYzljZDhkZjUyMDI3YmJkOWFkNjhjZTYwOGUyZmFiZDNiYjhkNjExNzgwN2JiYTdhNjQ4NDg5ZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4MmE0NzZiNTQ2MDBlNzBkMTc4MmFhZWRhZWU1NjQxNDc0MDcwOTQxMjhiYjExYmY1MmQwNWIzNzhmNjFkYTcifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L952-L1027",
+          "version": "repo-lines-v1:sha256:6fc87ff145bff3039e616a51137c22b2a7c86f67fae12955d75f5a2ef0dd3585:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZjUyYWMxMjY1M2NlZjA3ZThhYTI2MDI0OWRhYWI5NmQ2YWJkODdmMDZiNmZkNjZkY2JiOTNiNWQxMWI4MTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2ZDdlZGNhZDg2Mzc4Y2Q2NTA2MjIzMWIyOTc0MTc4MjExYjNlMWI4MDA1M2E4Yzk2YWFiNzM2Mzg5YzQxZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMmUyOGE0NDBlYjVkNDBiMjA0MGI5ZTc5YWRjYzBmYjg3ZjFkMWJjZmI5NTA2ZjgyMDUxMjRjZWQzNDI4MmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyZjI0ODZlMTU2MGM1YWYwOTgyZjhiNDJjNmNjMGFmMjc2NmU0NjA5OWUxMDMyYmUzODBlOWIyYzMzNGVjZGQifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/state.py#L520-L610",
+          "version": "repo-lines-v1:sha256:0d49f9386dcaa0247f2a33b6b432719273e7176f8f28e6e13c73bf0f3db21cb8:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkNGVjNGQ1OTQ2ZDY3NmVhZDIwNThjY2VjNmM2YjU5MzJlMDI1ZjQwNmE3YzhiMzQ2NmZiYTg4NzBjNWFmMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5YmY2OWViMzJiMGU5YThjYWY1MzRlZjc1ZDQ3ODI1MDgyODE2NjUyMWU3Y2UyYWMyYjFkMWFlNTliOWIyNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU3Y2MzMzRjNDg5MzEwNjhkZGU0YWUyMDcyMGIyYTk2ODdlNjYyNDc3OWEwY2I1OWE4MGZjMjZlZWIzMTJiYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmOTYwMTZiZDg3YjE1MDEwNTNlZDc2OWU2ZDQ3NzJhOGIwM2NkYjMxNTNjYWY0YTg0M2U5MjEwNzdiMThlNDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c50cde5264ae4234b2c805274efa219e",
+      "statement": "A single research operation reaches `research_complete` only for a successful execution with evidence, and a batch does so if any page succeeds with evidence; otherwise a bundle is still published at `research_incomplete`, while non-auth batch failures are retained and an `auth` failure suspends a credential gate.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/models.py#L10-L37",
+          "version": "repo-lines-v1:sha256:fc875564842f33bb2e8bf652f59b82269e35336af1a159baa2073f4c910bf9a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3MWFhMmIxMDBkM2QwM2U3ZWJlZGJhNjRiNDc4NTc5MzYwYWE0N2U2YTY0OGViZDExNzg0M2Y4MmE4NWVmNWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2M2JlYjNjYjMzOTZhMjk5NWM5ZjNiMWVjMTQ2MWE3N2ZhNTA0N2U2ZGIwYWM4ODY5MWUxZTMyYzQwYjcyM2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2NjkxMWZlNTNiZWM2NjA1ZWQzMmQ5MTUyNzAyNzRlYjczMTc4MjgxNmM1M2VkOTExMjRkNjlhNjRhNDUzOGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMTAwNGZlNDE5Njk4MWNkN2U2YmY3NzI2ZmY0MzNhZjFkMGM2Y2RlMjc2OWNkYmZkZjEzNGE5NTMzYzhiOTMifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L1330-L1383",
+          "version": "repo-lines-v1:sha256:1ee6666015300a2647c6453ccca6f2d2b728a05e097ae931f1423d1fe0a230e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzZWY1MWJhMTBkMGUxZDU0MjE5MDQyYzJiNWI5MDA5ZGU2Mzk2ZTE4MDJhZWQ2Mzg2NTJlMWVlNjI1YzJmYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNzQwMjkzZWM2MDNmYzMwMGNiNGM3MmRlNzUzMjkxYTZhYmVkYzY0ZTJmNzQyOGJkZDM1YWVkYTVmMzcwOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzMjBjOGM4MDMxNTZlMGRkM2E1M2Q0MmVhZmUzODkzNTZmMzgwNjMxYTA4NTlkNzJmMjk4MTAyNjRjZWZhMTIifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L1587-L1666",
+          "version": "repo-lines-v1:sha256:d34c5d2bd3d2d91ed1e1213c8946c5da654b2ae9b31c79813161a0a3ec7ad7e4:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YTc3YWVhZjgxNjk2NjM5MjQzYWNlZmY0NTEyMDgwOTVlNzk4NWZmYjFlNmE2ZGQ3NmUwMzJiZDk5YTY4ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlNzQwMjkzZWM2MDNmYzMwMGNiNGM3MmRlNzUzMjkxYTZhYmVkYzY0ZTJmNzQyOGJkZDM1YWVkYTVmMzcwOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzMjBjOGM4MDMxNTZlMGRkM2E1M2Q0MmVhZmUzODkzNTZmMzgwNjMxYTA4NTlkNzJmMjk4MTAyNjRjZWZhMTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_898b7aa3ad4748d5b595a007e874bbbd",
+      "statement": "For credentialed research, the runner persists a request revision and binds a gate decision to the exact operation, revision hash, approval scope, and suspension state; batch approval scopes expose live page/result/request ceilings, and both resume validation and the paging loop prevent escalation beyond those ceilings.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L1088-L1194",
+          "version": "repo-lines-v1:sha256:67e16633f9e2cc92293cf9dbde71f1d1f887810c77f3afd6ec4a60c624931edf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyNzYwY2NmZDkzZmU2MjA4MTFkZmMwMDUyMWUwMDFkNmQxNWRjOGM2YjM4MGU3NWUwOWMwYTkwMzU1MzRkZGYwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxNDVkZDZmZWY5NTQxZTY5MzA0ZDg0N2IxOTYwYzNmZTA0ZGVhMGJlMTc1MGRhNGE5ZDcxNzNhNDFkZjhiYzA3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2NzM0NDQ4ZTRmMmM4ZTg1NzFiODExZGQ3ZDk3MDEyY2UwOTVkYTRmM2E3ZDM1ZjY5OTNkNDkzZWRhOGMxNWY0In0"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L1500-L1568",
+          "version": "repo-lines-v1:sha256:000e7d4faa2db8b80a0ab814990e237ea432dfa1cd8a297e9788eae4775bf9c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0Nzg3OGM2NzE3NjJiYmFjY2JiZTA2N2YzMzMwM2FmYTJjOTMxMGQ3ZGZiOGZmM2UzYzAwYTZmOGE2ZDJiNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiN2I1YTJkMzIzMmRjODZkZWY4ODJkOTM4ZmMzNWJlM2M5N2EyODNkYjk1Yzk3MzA3N2Y4ZGY5YTYxMWYwODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0ZjY0ZjAwNjY3ODg1YzkyNzA1NjBmYWFmMTg3ZDFlZGVjYjlmNTA0MzM1ZjFiMGJhMjExNWJlZmMzMTQ4NjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzOWU4YTU1Y2EzYjQ1OWNlOTc5OTMyZTljNTZhMGEyMTU0ZTM5YzkxNWJkNWFmMmExM2QzOTU1MTc5ZDQ3YjYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/retrieval.py#L91-L114",
+          "version": "repo-lines-v1:sha256:75afeb45ee343f121c558bc242a3e3d41cb42d79000272b4eed1080f0035925b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5MmY0YjgzODRhYjU2NjgzYjcyY2VmNGZhNmNmYjg2NDI2ZTBjM2YxOTUwMGEzYTRmNTM4NDM5NDgzNTBjMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMGRkY2Q5YjdlYmE4MTI4YjNmNWQ0ODg4YTg4MDZmOWJiM2YyYjg5MzdiOWI0ZGJkNDFhMDkxYzk3YWQ4MjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiZjQyM2Q5OTg4OWM3MjcyZjJhZDUxZjBlNDcxOWU4NzIzMmVlZTFkYzdhZGQ2NDIwNjRlZjNmZjUyNDA2ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczN2JlNWU2ZDlmOTFjM2M4MGM1ODRlYmRlOTQ3NTdjMjJkNjllMjgyNDJkODk0YjAyYTEyNjY4NDA1MjMxZGUifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/state.py#L791-L817",
+          "version": "repo-lines-v1:sha256:f997bca1a973ba2efd2a7780427fc15795f7052e7c0bbf92e95a606a6a767f98:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3MjQyZWMzN2JhYzc5NTdiOGZmYTY0NzE4ZGY2NGI0ZDIxNmNkMjJhZWViODg5OTU1NTAxZDdiMjgyZjA4MTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1ZWRhOTRjYzZmZmNlM2U4N2I5MWEzNmJkM2ViYzA3M2VmMmU3MzlmNzZlMjY5MGMyYmM4MWQzMjc0OWExODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE4ZjBmYzRjNWJkN2RlZTFlOTgxZTczZWY0MWVjNGRiZDk0NzVlNzg3NDBmNjNlNWFiNTZmNmZlNzQzYWQ0NjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3NzA4YTc4NTIyZDVjMGY2NDkyNjBiMmFmN2EzNTljMzdhZmExMzk2YjkzMjZkOWY4N2VkNTk3YWRhMzY3N2UifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/state.py#L943-L959",
+          "version": "repo-lines-v1:sha256:b03564c5bd6ae862e4ca4a6b2808a0b3539a9981b43118b6f2963802c287a168:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4NzRjNGM5MWUzNDkxMjRjNDU0ZWZmOTRiN2E3ZDU5MmQyZGE5MjJmNjFmNTBhZTA3NGQwNjU1ZjkzYTQ1MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjMWU1NmE5ODEyZDMwYWQ3MDc5YjQxY2JjMmFmOTgzMDY2ZmM2NzAwYjc1ZjdlN2FmMDkzNmRkMjdiNTlmOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmN2I0OTdjOTE4ZTc2MDJlYzE1Yzg5MmE3MDM4Y2Q0YjlhZWJlM2I3YTQwNDM1MWY2MTBmNmZlNDI1NDE3MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e05c6352de8e48bf8f878f319db44c7f",
+      "statement": "The SerpApi CLI performs quota preflight only after local state and decision validation and skips it for stored replays or a second pass that must be force-gated; confirmed low monthly quota records a quota-stop revision and preserves or creates a manual-import template instead of spending a search or fabricating evidence.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/cli.py#L1072-L1160",
+          "version": "repo-lines-v1:sha256:9568e24cec8bcebc71f5e35028d0a15a7725b1969624d47d42199f6b6cdac296:eyJzZWxlY3RlZExpbmVDb3VudCI6ODksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMWY3NjdiY2ZjN2IyZDhmOGNjZjYyZTI0NjU3MmY0M2I5NzQwYTcyNmMyZDE3NThkOGQ1MmRmMGNhMTM3NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDEwNWUwYTY4NTIxYzNkMzMyNjE1MzkwZTg1OWUzOWNmMjQxMjc0YTdkNzgxZDE5NmEzYWRhMDdiMTBmZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2ZDM0ZmVhY2Q3ZDE4OTIyMmUwNmI4NjYzNzNjZTQwYzFiOTYxN2Y5OGJmZDhiOTNkOTY4MDg2YzZlMmRhYjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhMTQzMTBjNjk1MDgyMmE2MzAyYzJlMDU1NjgwMGVmNzYxZmIzMDA2MmQ0OWUzZjNjMjRiYTAwM2M1MDVlZTYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/cli.py#L1190-L1225",
+          "version": "repo-lines-v1:sha256:5cdbed3cbcfd1d506fe3e997bb08a64ece9475f15b80c76cc51e7e1334912cf0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliY2Q2NDkzMjcwMmIzNGFjZWQwZjQzNmVhMDZkNjI5MGFkMzE0ODIzYjNiNTA4YjhjNTJmMGI4YWE3YmJmMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5ZWEzN2E3YWY4YmRkZWI0ODQyNzkxYWVkMjZlOGU1MGRlNjE2NmI3NDUzMDRmOGI5OTJkZDQwMzQzY2ZhMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVjMzRhODZlYjhhY2ZlMTNlMDQyMDYxZmY3MWY5MDdjMzQ3YjY0YzQzMjg3MzA1NDYxZTBjZDFkMmYzZTgxNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjODA4ZWNmYTQyOGQ2YTkxYTZiODIyYjEzZWRhMWY5MWVlOTNmMGZmMWUxN2UzM2UwNDhkZGRlZTgwMTM1N2YifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/cli.py#L936-L1025",
+          "version": "repo-lines-v1:sha256:4865950577c7e2ee22ac8e5aff8138cd26288ae3b5e9cd51d5b1e0122f01bc5b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3YTY2M2E2ZTgwOTY2Yjc1NjE0OGY4MjczNDk3NTE1MjQwYmM0ZTQxZTYyZTZhNzM5MjBhZDRhOTQzNWY1NDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzM2U3M2YzZjBmNmQwMTkyNjUzMTE4NzI4MjFhNjQzNzhmMDE1MjI1YjYwN2ZmOTgwNTQ0ZTk2MjJjNWQ1MTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2MmM2NDUxNDBmYmE1NDQxYjYxMTdmYzFhODAwYzY2NGMxYjRhNjZjNmU1ODEzMGNlYzNiOTk4NzZmOTlmNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzNGZmYTJjYWU1MjUwZTE4ZGVkNTA2YTk5ZmM5ZTI2MmJkMzQ1NWM0OGRkYTFhMTc5OGI0YWVhYTg4OGRhMzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ff8bc1d753d74f4da5491016a3cadbd0",
+      "statement": "A live re-research anchor exists only for the latest persisted `re_research` decision with no later `research_complete`; its plan and hash are read from the resolution artifact, and live execution refuses stale, absent/unbounded, or hash-mismatched plans before egress.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/decisions.py#L136-L150",
+          "version": "repo-lines-v1:sha256:a88ed209f878a4ffd8e39a00c06e6fbdf8a1242c292942a39c6d75c3ae7a66c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3YjZmODZiMGJkYWQwNjE2MGZhZWZhMGU4YWM0MzE3OGVjNTljOTMxODEwNGQ3MDE1ZjdkZGI0NWRkMzJhZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllNzBjNTk3NDdjYjcwNTg3ZmUxMDdkMGJmZDI1Yjc4NWZiMjFmNzg1ZjFiMGEzMWIyYzZjMTE0M2QwYTllNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1NjNjOTlkZjhjMTQ2YjFhZTAwOGY4OWFlODg4YzJlYTAyMmVkNjE2MDY2YTlhY2JhNjdhYTU2MWU5ZmJjOGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4ZDg0ZWRmZjhiZmU5NTZmYjdlMTQxNjgzN2VmOWYzMmEzYmFmNGUzYTFkZjJhYWZlMjI4ZTZmNTQ4NDU4NDQifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L379-L476",
+          "version": "repo-lines-v1:sha256:bd5cb3b9b2c0b7f65c34bebcdb400871833e164d24df26430b038cdc7d165a7d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmMzcyOTQwNTNjMDUyODNhZDE4NWFhYzNkNGEyZDYyNDFkNGE3MTJmZGJkNmE4ZDY1YzU4YWU1MjA4NDI3MGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyNDI2MjQwMmU1ZTU3ZWNiMGI3MjgzNzVmMjZiNGI5MWM2OThjYTg4NjE3ODNjYTkxMDk4NGRlNDkwNWY5NzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2NjAwZTRhMmQ1N2FjYTE1MjUzYTdlMTIwYTk3NTgyMDBiYTEzMTY2ZjM2MDQyNDhmYjFiOWZjMTMzNTg2MzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ba44d0ee7084e5391ff0338fe092134",
+      "statement": "A credentialed request under a valid re-research anchor force-raises a fresh credential gate when no new decision is supplied, and the approval scope exposes the recorded plan, plan hash, anchor decision, and literal second-pass terms rather than silently reusing a first-pass approval.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L1030-L1066",
+          "version": "repo-lines-v1:sha256:d9bc5504270e41b05d7690b7d7ecd8ffbf26ff1c547703b9ce612e52c24279bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4NmFkMTlkZjUxYTUyOTAzZjYzMmY0OTdjZTBlOTNkNjJkYTNlYjQ3NWY1NmJmNzk2OTMwZGU3NDg4YWI0MGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlMjUzYTRhNzlkNzQ3NDEzZjJjY2VkYTE0YjU2YTE4ZWJlNWM0ZTI3OGI0NjM5ZjE3MWNiMTVkOTBjMjcxNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2NmYyNjk5ODM1NTAwYTdkOGZhOTI3MTIwODMzMzI3ZGJjNzAxZjkyMzcyYzJjYzgxMGRhOGY1ZGI1YmVlN2EifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L1482-L1568",
+          "version": "repo-lines-v1:sha256:23be6ebd7af2c0e49d99bf48b5e24deb41fb1c36a85f516d589ecfda880a759a:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMGFhMGM0MGNmNmFjYmZiMjc3Njc4NzhmYTliMDc1NGJlNDYxMmY0MzdlNThhMzU0OTdjMGNhNzczOWEyMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiN2I1YTJkMzIzMmRjODZkZWY4ODJkOTM4ZmMzNWJlM2M5N2EyODNkYjk1Yzk3MzA3N2Y4ZGY5YTYxMWYwODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5ZDgxNDY2YjdiZjRhMzg4MGZhZjM0N2VhMDhjMTMwMmU5ZDZjYTRkMzhlYmIyZGRjZDVhNTU3MTY4MTZjY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzOWU4YTU1Y2EzYjQ1OWNlOTc5OTMyZTljNTZhMGEyMTU0ZTM5YzkxNWJkNWFmMmExM2QzOTU1MTc5ZDQ3YjYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L624-L643",
+          "version": "repo-lines-v1:sha256:5877714afc97d47a33e4cdc955ab4eb1b987ec9b49e3301145829cd3b2ab4d55:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhYTM3ZDgzN2ZmZGQ2YmUwNTljMjU2N2VkYWU5YjZhODVkOTRkNDA4NmYyOGUyODE4NmYyMjJkMWFkZGNkM2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZWI0MTE5OGQ5NmExMDE1ZDM0ZWI2YTFlZTAwZTc2Y2IxNTYyY2NkNGNhMDcxM2E3YTMyM2JjMTA2NmJiYmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5MzY5YmFlMjkzYzNiMGY2YWYzODE4YzJkMzhkMTYwNzc5NTJmN2I2YWQ0MDRhZDQ1ZDFlMzU5NzQ1YmI1YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_reentry_guard.py#L500-L575",
+          "version": "repo-lines-v1:sha256:c6eb94c22437ae2469d097aab7ba3752d16365b10376d939f3ab73c7f2bdb39a:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNjU2MTUzMTA5ZTllN2NiYmMwOTNmNjIzNDhlZjM0NDRmZmMyNDVkM2Y1NTY1MGMyMTUyM2RhNTA4OWM3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNDBjNTAxMzY2Yzg0OTc2NmZlYTcwNjhhY2U5NTcyMTgyMTIxZDAyYjYwNTZjM2E2NTM1MjY5MTE5NzU1YjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YmJjOGQwOTA1MGQ5YzczZTQwNTM1ZjUwZmYyYWFlYWJiNGMwOWNmNDYxNGIwYzNiOTdmMGI0NzgwNzIxYjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhNWVjYzk5MTY4NWNmM2Q1NTJkZTI0Yzc1MTI1NDVhYTM2NGRiZWY4ZjhkN2VlYWM5YmZjZGQzNzY0Y2EzZTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0b27b12e61834d8ca4c1a6061d54f22b",
+      "statement": "Live re-research salts request coordinates with the checkpoint decision ID and protects published attempt coordinates: derived retries can advance to `-rN`, explicitly pinned spent coordinates are refused before egress, and replay with the same decision that published the coordinate remains supported without transport.",
+      "evidence": [
+        {
+          "resource": "repo://src/patent_factory/research.py#L328-L375",
+          "version": "repo-lines-v1:sha256:5fe561c95a129f5049a71d06ccdf21a832c11d979e887fa96d0214517c1f1ede:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5YTIwNjQwNzQzY2U4MGRkMmYzYzQyZmI4YmQxZGI0NTlmM2I5MDY3MzcyYzI5NmUxOTQzOThhOGExNjJhN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxYjA3ZTRlMDQxNzdlZDliMTAyMTM0OTYxOWEwYWYyZDdjYWMwYjAzNjJhZjVjYWI3OWNjNDA4M2U5ZTZlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L479-L503",
+          "version": "repo-lines-v1:sha256:d123cd16a1de5d131999db206db239ec92325c14761bd7dc710a693c98bb2045:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5MzRmNjFjNGY2M2YxMjBiYWM3NmMwNGI0Y2Y4MTdmZmM4N2EwYTJkOTMyMjFhY2QxMTIzNTNmZGM2NTJjZTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5NDBkMWMxNGU2ZDc1MWMyYzE5NDM0N2UwNWI5MGNlYmZkYmY5ZWRjODAwODVmZDRiNTE1YWViYzkyOTc3OTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhZGMwYTFhNzA3MzkzOTNmMGExODA0NWMxOTI5ODkzMDdiNjhhNmIzMmFkMTIwMTAwZWQ3MGI0MjY5YzY0MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkNzMxNTY3ODQzNWY5MDlkNDQ2OTNlMmU5MjAxZTc0MGMxMzc5NmEyM2NlYjA0NjE2MjhhZTZhMDhiYTJjZDEifQ"
+        },
+        {
+          "resource": "repo://src/patent_factory/research.py#L558-L621",
+          "version": "repo-lines-v1:sha256:51683fe5c363a9b8850f1579d5ac25b1c2f5b4661ef4ef4ff1fc294b0ce372da:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlOWU2YjEyYzIxODI4ZjVlNmU5ZTExMTA5NDZlOWQ5OTE1NDYxODMzMzU1Njk4NTFjZGE0ZTMzZWNlMDYwN2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5N2UxOTk2MDRjYWIyZTNhYjk2YTczNTA5YzcyNjMzNTE3MmI5MDliYjQ1MWUzMDdjMTBmNWVhMTllNDg3NDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmODUxY2QwNmZmZDQyNTIyYmI3NjkxNmJiMjE1NjY4ZWI1YTZlNWM5MWJhOTdmY2RlMzIxMDA5ZDczOGEwYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ZWNiNGIyMWRmYmM2ZDE5ZDg0MGRlMzgwNDQzOGRlYmFiZjljM2I4MzUxZDkzOTg5N2YwYjY2ZTBjNzRlZjgifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_reentry_guard.py#L1008-L1066",
+          "version": "repo-lines-v1:sha256:d8d8d322689c45e45c970fccab517378a5ea45e1029551f874a9e2aeb667c7ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmNDA0NDEwMDFlZjFmZjhhN2Y2Mjc5Njc5MGMyYmJiNjcwZGVjZTg0ODNjYjdkMGVmZmRhZDZkZGViOTAyYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwMDU1MjBiMDk1YWUxZWI4NTdkMjYyODk4MmNjODA0MzliNmJiNGVmZDQwMTMzMjEzNjBkMzIyNDA1OTE4MDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlZGY3ZWZiOGFkZTU5YTc2OTdlNmUxZDY4YzllZWNkMzU2YjdiZWM3Y2VkYzAwZGY4NDc2YTBhZWQzYmI3OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmMzI4ZDY5M2FiZDQ5YTU1OWU0ODNmYzJlMzcyNzA5NjdkZmYwZWZlNTYzNGQzMzExNDUzMjRmZGMwZTc5ZWQifQ"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_reentry_guard.py#L796-L854",
+          "version": "repo-lines-v1:sha256:c42ee48911abf890f7ac8e6f2fcf9759ad1ac70f3dbd0c509b06b56423965d82:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMjNjZGJlNTRjYmY5MDZmNmZhZjNmMWE1MDNmNmI4MGIxYjRhNzkxZDBmM2UwYTkyYzBjODIxNGRhYTQ0OTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkYWFjMWY5NzhmZTkzNjJiM2Y2NmQ3NGZiNDE3M2UxNGFlNGU5NDk3ZmQ5ZWY5ZjI4OWJmMTZhMTUxYTgzMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwYzNhYWMxZTRkYzE4NTZlODM5ZDI5MTAwNzhhYzQyMjViYzZiNzAwYzdlNjE2ZjBkYWFmNGMxNTE5OGQ1MzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlYjc0MTg1YTA2ZGVlNTc3NDllMzI0YjY0ZDk2N2NkZDRlNmE1NjIxNGFkMzE1ZmFiYzBjYzVkOGU2ZDM0YTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_81315ac924ed4359a1a624bfd504fbc3",
+      "statement": "Focused integration tests cover private fixture/manual research, persistence and rollback, non-overlapping pagination and credential ceiling clamps, plus stale or incomplete re-research force-gating, spent-coordinate protection, and offline recovery.",
+      "evidence": [
+        {
+          "resource": "repo://tests/integration/test_g003_research_cli.py#L76-L276",
+          "version": "repo-lines-v1:sha256:16798e52a6c2facf86020213c2d7624d6d4c013c40d213349e17b2cfcc38b0a5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiYTk1OTExMDA1NWE3ZmE0M2IzMzVhYjFhZWE3ZWYzZGFmZmViMGMzYWIwNDNlNjZiMTIwYjY1ZDBkNDQxOTQ0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0ODI1MWIzM2VhODc5ZmM4MzNhZThhODUxMjQyMGQzZjAwMTA3MDFlMTIwNmM2ZmQ5OTJiYWViYzFlYTg2YTJkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5OWVlZDM0Njg2Y2FkMTZiM2U2MTBmODBjZmJlMGZlNTkwODY5OTI5NWQxNGEyMDEwNDZiMmMwMzU2MGEyYWUzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzOGVlODhiMzc4YjgzZWNiMWZlMDA3ZThhNjNmZjJiNDk1NjY0MDFhM2FhYTc2ZjI0MjcxMzJjMzdiMDc4ZDQ3In0"
+        },
+        {
+          "resource": "repo://tests/integration/test_g003_research_persistence.py#L87-L210",
+          "version": "repo-lines-v1:sha256:46218bffa072093b87c700b678eeb7f88c01f1f2a02d0925c4160a51285a5f0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwZTk5ZDIzNTBkMWFiMjA5NTFiNTZlNWY3ZWU5NzcyYjQ1YzU2YTEwMTg2ZTZjZWU4ZDZjNGQ0YWNhYTFjMDk2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxZjdjYjQyYjYzNzcxZTM5NzY3NjgxY2IwODQxM2Y3YzFiZjAxZTcxNzE0ZjQ5YzJkMWM0MmQxYTllNmVmMDQxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzNWMwYmRhMWUxN2YyNzkxZTI2NzZjNWI3MDZkODU5NjA5YmRhZDY0MjkyOGVlZjU2NDA5MWRjMDZiZDdmOWY4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjMjU5ODY1ZTFlODg4OTAzM2E3MDdmMDIyYTYzYWQ0NjVlZWIyNmRkYmE4NTlmNjRlNWI5MTIwNDQ4ZWU3NDQ5In0"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_pagination.py#L151-L626",
+          "version": "repo-lines-v1:sha256:4def57cd9622a022fc06baabc5036c5463588f0bc2473ede309a3e674a57e24d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDc2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1OTg1YzI4ZmJlZTM5YjZjNGMzNDE3YmU0OWYxOWE2ZTA0ZDk4YzZlN2RiMjIxZTc5MWJhMTc0MTdmNzQ4NjQ5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhZDc5MTY0MDQ0MzMzZWNmY2M2ODAyOTA1YWQzYTM0NDcxNTdmNTNiMmQ0NGE5MDI4ODBlMTM5NzJiMGE1NGRlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIyOTYwMzZlYmE2NjJiNDBlMDUwYzQyNGEyZWYyMDQ0YjZkNTU2NGM1ZTJjNGMxNzk5NWJlZWUxMWMxYWUwNzA4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MzU0ZGNjOTc0Mzc4ZTZhMDI3Y2Y1NTY5ZWUzYjZkMmFhMjNkNTg4OGE2OGRlZDk3MWU5NDdkOWNjOTdlNGU2In0"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_reentry_guard.py#L358-L685",
+          "version": "repo-lines-v1:sha256:cb4f3fe3deeae11978ffac74d068628ec0e42dbe99ca4bde06868d39571a5add:eyJzZWxlY3RlZExpbmVDb3VudCI6MzI4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMmZkZGE2NjU0YTNhMDMxZGYxYzE3MTY4MTQ2NWUyYzE4OGNjZjYwODgzNTQ2MzdhOTY4ZDQxNzRiZjRhYmEwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhOTFjYWQzNjUxOTU5MWFmNjNkODQwMjFkYmUzMGViYmJjMGE0ZGRmZjcxMmYyZTAzNTRjZDkxNDRhYTA1ODk1IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI5NzI5MDBmZWMyNjVjNDYxY2E2MTc2NmRmOTEzODBmZWExZWVmM2JjYzNkMzE0YWFiNjY3ZjdmYzA0NjFhMDUzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmMGU1OGNkZDJlMzE1Yjc1YmFjMzllZDFjNzk0MTUwYzMyNTc3ZDAyZTFkODgzYzAyNWYzZTQ5MzY5MTlmMmM4In0"
+        },
+        {
+          "resource": "repo://tests/integration/test_research_reentry_guard.py#L763-L1084",
+          "version": "repo-lines-v1:sha256:c2f6146c25437941ec90ff225782e363cef1ded475979e76d451d11fae907b5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlMGE0NjY5NmYxMzcyZTkyNDg1NWZmZmMzN2MwOTVmYmMzZmJmMDRhZmNhOGQzYWVlMTdiNjA2YmM2MTE2YzZmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1OTA5YTUzYTYxOGQwMjhlMWQzMDAwYzBhN2FiY2VlY2JlNWZiMzdmNGU1MTFlZmU0NjY0M2ZhZDZlNjY4NzJmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjZWZjMDFjODAwNmZmNzk2ZTVmMDk4ZDEwMTI4NTk5ZWZkMzAwZjZlYzA3MzNhMDAyYzdiZTY4ZDUzYmEwNDhmIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzZDQxMzQwY2MyMzlhMTU5Y2U5YjYwMjJlOWY2MzIyODMyZTJlYWQ3NmNhZTllNDc1NGQyMTBlYjhmYjZkNWU4In0"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.6.0",
+    "at": "2026-10-16T03:36:32.329Z"
+  }
+}
