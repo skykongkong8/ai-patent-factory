@@ -8,12 +8,13 @@
 leaves the belt without its hash-bound seal. (The seal binds hashes, not verdicts — decisions
 stay yours.)</sub></p>
 
-*A local-first workflow for turning your own inventions into a rigorous, evidence-bound invention report — English by default, Korean optional — driven from Claude Code slash commands.*
+*A local-first workflow for turning your own inventions into a rigorous, evidence-bound invention report — English by default, Korean optional — driven from Claude Code slash commands or explicit Codex skills.*
 
 Everything runs on your machine. The private Python CLI (`patent_factory`) is the
 single source of truth for state, gates, and exports; Claude Code drives it
-through guided slash commands so you never have to remember raw arguments. Your
-documents never leave your disk unless *you* explicitly approve an external share.
+through guided slash commands, and Codex through explicit stage skills, so you
+never have to remember raw arguments. Your documents never leave your disk unless
+*you* explicitly approve an external share.
 
 > This tool produces **invention-organizing** material, not legal advice. It never
 > concludes patentability, novelty, inventive step, validity, or non-infringement/FTO.
@@ -111,6 +112,13 @@ except the READMEs is git-ignored.
 Each command tells you exactly which input it needs, where to put it, and which
 command comes next. You don't call Python directly for any of this.
 
+In **Codex**, invoke `$patent-setup`, `$patent-research`, `$patent-ideate`,
+`$patent-shortlist`, `$patent-audit`, `$patent-checkpoint`, `$patent-draft`, and
+`$patent-review` individually. Each call stops before the next workflow stage;
+ideation also retains its internal checkpoints. Start with
+`$patent-setup documents/background.md` to ingest only that document. See the
+[Codex command guide](.codex/README.md) for invocation and resumption details.
+
 ## Commands
 
 | Command | Stage | What it does |
@@ -153,6 +161,8 @@ workspace/            # generated state + exports (git-ignored except README)
 .claude/
   commands/           # the 8 slash commands above
   skills/             # profile · research · ideation · checkpoint · patent-review workflows
+.agents/skills/       # the 8 explicit patent-* Codex entrypoints
+.codex/              # Codex execution contract and command/CLI guide
 SETUP.md              # install + full raw-CLI reference (the escape hatch)
 CLAUDE.md, AGENTS.md  # the agent contract (authority, gates, privacy, no legal calls)
 schemas/, templates/  # JSON Schemas for each input; the Korean report template
@@ -194,8 +204,8 @@ leans on — adapted for a patent workflow where correctness matters more than s
 ## Advanced / manual (raw CLI)
 
 Slash commands are the recommended surface, but every stage is a plain
-`python3 -m patent_factory <verb> …` call underneath. If you are scripting, using a
-runtime without slash commands (e.g. Codex — see [`.codex/README.md`](.codex/README.md)),
+`python3 -m patent_factory <verb> …` call underneath. If you are scripting,
+using the CLI directly alongside [Codex skills](.codex/README.md),
 or debugging, the **full CLI reference lives in [SETUP.md](SETUP.md)**: install,
 the three profile paths, input formats and path-safety rules, the
 `KIPRIS_PLUS_API_KEY` credential check, and the research/audit/report/share verbs

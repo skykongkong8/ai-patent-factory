@@ -1,9 +1,59 @@
-# Codex portable JSON CLI mapping
+# Codex workflow commands and portable JSON CLI mapping
 
-Codex does not run Claude slash commands. Instead it calls the same
-`python3 -m patent_factory` JSON CLI directly. The Python core is the sole authority for
+Use the repository's explicit `$patent-*` skills in Codex. They read the same
+stage procedures as Claude Code and call the same `python3 -m patent_factory`
+JSON CLI. The Python core is the sole authority for
 state, gates, and exports, so Codex must not directly modify the SQLite databases, the
 JSON/JSONL/Markdown exports, or the state pointers.
+
+## Run one stage at a time
+
+Open Codex in this repository. The eight entrypoints live under
+`.agents/skills/patent-*/`; their `agents/openai.yaml` files set
+`allow_implicit_invocation: false`. Select one using `$` in the composer (or
+`/skills` in Codex CLI). If new skills do not appear, restart the session.
+See [OpenAI's skill documentation](https://learn.chatgpt.com/docs/build-skills).
+
+| Claude Code | Codex | Stage result |
+| --- | --- | --- |
+| `/setup` | `$patent-setup` | Build/enrich the inventor profile |
+| `/research` | `$patent-research` | Start a run and gather bounded evidence |
+| `/ideate` | `$patent-ideate` | Resume one bounded workbench step or publish validated candidates |
+| `/shortlist` | `$patent-shortlist` | Evaluate and select three supported finalists |
+| `/audit` | `$patent-audit` | Retrieve similarity evidence and score it |
+| `/checkpoint` | `$patent-checkpoint` | Present the dossier and apply the user's authored decision |
+| `/draft` | `$patent-draft` | Render the approved invention report |
+| `/review` | `$patent-review` | Independently review, then validate |
+
+For example, send this as a **Codex message**, not a shell command:
+
+```text
+$patent-setup documents/background.md
+```
+
+This selects the single-document route. Existing unrelated documents are not
+ingested. After setup succeeds, explicitly invoke `$patent-research`; provide
+the intended run directory, run ID, and research mode, or answer the skill's
+questions for missing choices. Later calls may reuse choices already established
+in the session. An ambiguous run or missing input is clarified before mutation.
+
+Each invocation reports its result, suggests the next call, and stops. Invoke
+that next skill yourself. A checkpoint approval does not start draft, and a
+request for a later stage does not run its prerequisites automatically.
+
+Ideate retains its internal checkpoints: brief scaffold → divergence validation
+→ entanglement validation → candidate scaffold → promotion validation → publish.
+Invoke `$patent-ideate` again after each checkpoint to resume. An error or gate
+always stops the current invocation.
+
+Review includes validation after `reviewed`; `revision_required` hands control
+back for a new `$patent-draft` invocation. External sharing is separately
+requested and gated. There is no `preview` workflow stage.
+
+The [Codex execution contract](workflow.md) defines these boundaries and maps
+helper references to the shared `.claude/skills/` procedures. Local
+`source-command-*` migration copies, if present, are not the maintained
+entrypoints. The raw CLI reference below remains available for manual use.
 
 ## Common rules
 
@@ -179,11 +229,12 @@ python3 -m patent_factory --help
 
 ## UX differences from Claude Code
 
-- Claude Code: the `.claude/commands/*` slash commands and `.claude/skills/*` are the
-  canonical UX.
-- Codex: a best-effort portable smoke surface that calls this document's commands
-  directly. Do not assume slash-command auto argument collection or skill-discovery
-  parity.
+- Claude Code uses `.claude/commands/*` slash commands.
+- Codex uses `.agents/skills/patent-*` entrypoints with explicit invocation. These
+  read the shared Claude procedures under the Codex execution contract; helper
+  references never require a `.Codex/skills/` directory.
 - Both surfaces use the same CLI/parser, versioned JSON inputs, SQLite state kernel, gate
-  policy, and validators. A Codex-specific UX failure may be recorded as a limitation but
-  is not grounds for a core bypass or a relaxation of privacy/egress rules.
+  policy, and validators. Skills are agent instructions, not new Python subcommands
+  or a client-enforced lock on every shell action. Direct CLI callers still follow
+  the repository contract. A Codex-specific UX failure is not grounds for a core
+  bypass or a relaxation of privacy/egress rules.

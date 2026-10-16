@@ -88,6 +88,15 @@ python3 -m patent_factory --help
 
 Do code cleanup as a separate, small change after behavior-fixing tests.
 
+## Codex workflow entrypoints
+
+In Codex, use the repository's `.agents/skills/patent-*` entrypoints and follow
+[the Codex execution contract](.codex/workflow.md). Each pipeline stage requires
+a fresh explicit user request and ends by returning control to the user; a
+next-step suggestion or an automatically selected legacy helper never authorizes
+another stage. This preserves user control across sessions and local migration
+copies. Stage procedures remain shared with `.claude/commands/`.
+
 <!-- OPENWIKI:START -->
 
 ## OpenWiki

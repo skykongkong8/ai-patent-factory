@@ -106,7 +106,6 @@ class AgentSurfaceConformanceTests(unittest.TestCase):
             "delete-run",
             "SQLite",
             "UX differences",
-            "best-effort",
         ):
             self.assertIn(required, content)
         self.assertIn("python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace", content)
