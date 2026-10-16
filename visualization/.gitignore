@@ -1,0 +1,7 @@
+node_modules/
+client/dist/
+*.tsbuildinfo
+.env
+.env.*
+server/data/maps/slot-*.json
+server/data/maps/active-slot.json

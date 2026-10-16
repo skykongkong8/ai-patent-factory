@@ -1,0 +1,106 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ActionFilter } from '../components/activityFeedUtils';
+
+export type FoldState = 'full' | 'compact' | 'closed';
+export type ViewMode = 'all' | 'byAgent';
+
+export interface FeedPrefs {
+  foldState: FoldState;
+  viewMode: ViewMode;
+  activeHighlights: ActionFilter[];
+  agentFilter: string | null;
+}
+
+export const DEFAULT_PREFS: FeedPrefs = {
+  foldState: 'compact',
+  viewMode: 'all',
+  activeHighlights: [],
+  agentFilter: null,
+};
+
+const STORAGE_KEY = 'agentquest:activityFeed:prefs';
+const WRITE_DEBOUNCE_MS = 200;
+
+const FOLD_STATES: FoldState[] = ['full', 'compact', 'closed'];
+const VIEW_MODES: ViewMode[] = ['all', 'byAgent'];
+const FILTERS: ActionFilter[] = ['errors', 'edits', 'bash', 'reads', 'messages', 'agent', 'other'];
+
+function isFoldState(v: unknown): v is FoldState {
+  return typeof v === 'string' && (FOLD_STATES as string[]).includes(v);
+}
+function isViewMode(v: unknown): v is ViewMode {
+  return typeof v === 'string' && (VIEW_MODES as string[]).includes(v);
+}
+function isFilter(v: unknown): v is ActionFilter {
+  return typeof v === 'string' && (FILTERS as string[]).includes(v);
+}
+
+export function parsePrefs(raw: string | null): FeedPrefs {
+  if (raw === null) return DEFAULT_PREFS;
+  let obj: unknown;
+  try { obj = JSON.parse(raw); } catch { return DEFAULT_PREFS; }
+  if (obj === null || typeof obj !== 'object') return DEFAULT_PREFS;
+  const o = obj as Record<string, unknown>;
+  const highlightsRaw = Array.isArray(o.activeHighlights)
+    ? o.activeHighlights
+    : Array.isArray(o.activeFilters)
+      ? o.activeFilters
+      : null;
+  return {
+    foldState: isFoldState(o.foldState) ? o.foldState : DEFAULT_PREFS.foldState,
+    viewMode: isViewMode(o.viewMode) ? o.viewMode : DEFAULT_PREFS.viewMode,
+    activeHighlights: highlightsRaw !== null
+      ? highlightsRaw.filter(isFilter)
+      : DEFAULT_PREFS.activeHighlights,
+    agentFilter: typeof o.agentFilter === 'string' && o.agentFilter.length > 0
+      ? o.agentFilter
+      : null,
+  };
+}
+
+export function mergePrefs(base: FeedPrefs, patch: Partial<FeedPrefs>): FeedPrefs {
+  return { ...base, ...patch };
+}
+
+export function useFeedPrefs(): [FeedPrefs, (patch: Partial<FeedPrefs>) => void] {
+  const [prefs, setPrefs] = useState<FeedPrefs>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PREFS;
+    return parsePrefs(window.localStorage.getItem(STORAGE_KEY));
+  });
+
+  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingValue = useRef<FeedPrefs | null>(null);
+
+  useEffect(() => {
+    if (writeTimer.current !== null) clearTimeout(writeTimer.current);
+    pendingValue.current = prefs;
+    writeTimer.current = setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+      } catch { /* quota or private mode — silently ignore */ }
+      pendingValue.current = null;
+    }, WRITE_DEBOUNCE_MS);
+    return () => {
+      if (writeTimer.current !== null) clearTimeout(writeTimer.current);
+    };
+  }, [prefs]);
+
+  // Flush pending write on unmount so a fast close/navigation doesn't lose the
+  // last user change. Separate effect keeps the debounce loop above clean.
+  useEffect(() => {
+    return () => {
+      if (pendingValue.current !== null) {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingValue.current));
+        } catch { /* quota or private mode — silently ignore */ }
+        pendingValue.current = null;
+      }
+    };
+  }, []);
+
+  const update = useCallback((patch: Partial<FeedPrefs>) => {
+    setPrefs((prev) => mergePrefs(prev, patch));
+  }, []);
+
+  return [prefs, update];
+}

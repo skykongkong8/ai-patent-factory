@@ -19,6 +19,13 @@ python3 -m patent_factory init
 `init` creates `documents/` (private input) and `workspace/` (generated state and
 exports). Override locations with `init --documents DIR --workspace DIR` if needed.
 
+### Optional browser observation
+
+For optional browser observation, see [visualization/README.md](visualization/README.md).
+From `visualization/`, run `bun install --frozen-lockfile` followed by `bun start`,
+then open http://127.0.0.1:4445. `Ctrl+C` stops it. `bun run demo` uses only synthetic
+logs. This optional Bun UI adds no Python dependency and executes no workflow stage.
+
 ### How to read CLI output
 
 - Every command prints **one sorted JSON object** on stdout, carrying

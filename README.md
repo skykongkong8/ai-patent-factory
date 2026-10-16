@@ -201,6 +201,23 @@ leans on — adapted for a patent workflow where correctness matters more than s
 - **Determinism.** Given the same committed state, exports regenerate byte-for-byte;
   the offline `fixture` research path needs no network or credentials.
 
+## Optional agent activity UI
+
+The [Patkong Factory dashboard](visualization/README.md) visualizes this project's
+Codex and Claude Code sessions as robots moving between factory rooms. It runs
+locally, alongside the existing CLI, and shows activity and session details.
+
+```bash
+cd visualization
+bun install --frozen-lockfile
+bun start
+```
+
+Open **http://127.0.0.1:4445**; use `bun run demo` instead of `bun start` for public
+synthetic sessions. Stop with `Ctrl+C`. Bun 1.1+ is required only for this optional
+UI. Activity and inferred session status do not represent pipeline completion or
+gate approval. See the UI guide for data handling, configuration and tests.
+
 ## Advanced / manual (raw CLI)
 
 Slash commands are the recommended surface, but every stage is a plain
