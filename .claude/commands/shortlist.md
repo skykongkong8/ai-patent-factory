@@ -7,9 +7,13 @@ description: Persist three finalists (three axes each) or explicit insufficient 
 Select three defensible finalists from the candidates. Follow
 `.claude/skills/ideation/SKILL.md` and pass only a reviewed `shortlist-input-v1`.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
-Author `workspace/requests/shortlist-input-v1.json` (template in `workspace/README.md`).
+Author `RUN/requests/shortlist-input-v1.json` (template in `workspace/README.md`).
 Each finalist needs the three independent axes — `differentiation`,
 `technical_feasibility`, `utility_significance` — with score, rationale, confidence,
 supporting and contrary evidence references, coverage assessment, and gaps.
@@ -21,7 +25,7 @@ supporting and contrary evidence references, coverage assessment, and gaps.
 
 ```bash
 python3 -m patent_factory scaffold shortlist --run RUN --run-id RUN_ID \
-  --out workspace/requests/shortlist-input-v1.json
+  --out RUN/requests/shortlist-input-v1.json
 ```
 1. Run the CLI verb.
 

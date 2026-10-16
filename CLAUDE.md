@@ -2,9 +2,10 @@
 
 1. Read `README.md`, `SETUP.md`, and this file first.
 2. Keep source text and profiles only under `documents/` and `workspace/`.
-3. Treat SQLite `workspace/profile.sqlite3` as the only authoritative state.
-   `profile.json` is a deterministic export, so do not edit it directly and do not
-   bypass `conflict_resolution_required`.
+3. Use the core-managed catalog, versioned profile/topic databases, and run
+   databases as the authority. Follow [inventor management](docs/inventor-management.md)
+   for ID selection, replacement, fixed run context, and legacy adoption. Use the
+   CLI for state access; preserve conflict stops and never edit databases/exports.
 4. Before putting private source text into model context, verify the transfer
    scope. Every command is offline except three opt-in networked paths, each
    credential-gated: `research kipris` and `audit retrieve --live` egress the

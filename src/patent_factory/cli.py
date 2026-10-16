@@ -175,8 +175,8 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="bootstrap and inspect private workflow runs")
     run_commands = run.add_subparsers(dest="run_command", required=True)
     start = run_commands.add_parser("start", help="bind an authoritative profile and enter research_ready")
-    start.add_argument("--run", type=Path, required=True)
-    start.add_argument("--run-id", required=True)
+    start.add_argument("--run", type=Path)
+    start.add_argument("--run-id")
     start.add_argument("--profile", type=Path, help="current profile export")
     start.add_argument("--profile-database", type=Path, help="authoritative profile SQLite database")
     start.add_argument("--byte-budget", type=int, default=2_000_000)
@@ -292,8 +292,8 @@ def build_parser() -> argparse.ArgumentParser:
     ideate = commands.add_parser("ideate", help="validate and persist structured candidate proposals")
     ideate.add_argument("--run", type=Path, required=True, help="private run directory under workspace root")
     ideate.add_argument("--run-id", required=True)
-    ideate.add_argument("--profile", type=Path, required=True, help="current profile export under workspace root")
-    ideate.add_argument("--profile-database", type=Path, required=True, help="authoritative profile SQLite database")
+    ideate.add_argument("--profile", type=Path, help="profile export (resolved from managed run)")
+    ideate.add_argument("--profile-database", type=Path, help="profile SQLite (resolved from managed run)")
     ideate.add_argument("--input", type=Path, required=True, help="candidate-input-v1 JSON under workspace root")
     ideate.add_argument("--byte-budget", type=int, default=2_000_000)
     ideate.add_argument("--decision-id", help="current domain-pivot approval for this exact input")
@@ -427,6 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
     deletion = commands.add_parser("delete-run", help="delete one contained private run without following links")
     deletion.add_argument("--run", type=Path, required=True)
     deletion.add_argument("--workspace-root", type=Path, default=Path("workspace"))
+    from .managed import configure_parser
+    configure_parser(commands)
     return parser
 
 
@@ -534,11 +536,17 @@ def _profile_conflict(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     workspace_root = private_root(args.workspace_root, "workspace root", create=True)
     database_path = contained_output(args.database or args.workspace_root / "profile.sqlite3", workspace_root, "profile database")
     batch_id = normalize(args.batch_id)
-    with connect_database(database_path) as connection:
+    from .legacy import read_legacy_database
+    connector = read_legacy_database if args.profile_command == "conflict-inspect" else connect_database
+    with connector(database_path) as connection:
         if args.profile_command == "conflict-inspect":
             return ({"command": "profile.conflict-inspect", **profile_conflict_snapshot(connection, batch_id)}, 0)
         input_path = contained_input(args.input, workspace_root, "profile conflict decision")
         decision_input = _json_object(input_path, args.byte_budget, "profile conflict decision")
+        if getattr(args, "_managed_conflict", False):
+            decision_input = dict(decision_input)
+            decision_input.pop("candidate_version_id")
+            decision_input.pop("inventor_id")
         if decision_input.get("batch_id") != batch_id:
             raise CliError("profile conflict batch id does not match --batch-id")
         canaries = credential_canaries()
@@ -563,7 +571,7 @@ def _run_start(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if database_candidate == profile_database_path:
         raise CliError("run database must be distinct from the authoritative profile database")
     with connect_database(profile_database_path) as profile_connection:
-        prepared_profile = prepare_run_profile(profile_connection, profile)
+        prepared_profile = getattr(args, "_prepared_profile", None) or prepare_run_profile(profile_connection, profile)
         run_root = private_contained_directory(args.run, workspace_root, "run root", create=True)
         database_path = contained_output(args.run / "factory.sqlite3", workspace_root, "run database")
         with connect_database(database_path) as connection:
@@ -578,7 +586,8 @@ def _run_inspect(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     workspace_root = private_root(args.workspace_root, "workspace root")
     run_root = contained_input(args.run, workspace_root, "run root", directory=True)
     database_path = contained_input(args.run / "factory.sqlite3", workspace_root, "run database")
-    with connect_database(database_path) as connection:
+    from .legacy import read_legacy_database
+    with read_legacy_database(database_path) as connection:
         if args.run_command == "status":
             return run_status(connection, args.run_id), 0
         return run_show(connection, args.run_id, args.kind), 0
@@ -669,7 +678,7 @@ def _research_kipris(
             discovered_terms=tuple(args.discovered_term or ()),
             classifications=tuple(args.classification or ()),
             applicants=tuple(args.applicant or ()),
-            inventors=tuple(args.inventor or ()),
+            inventors=tuple(args.inventor_terms or ()),
             budget=budget,
         )
     service_key = environment_secret("KIPRIS_PLUS_API_KEY") or ""
@@ -938,12 +947,17 @@ def _serpapi_quota_exhausted(
     *, state: StateStore, run_id: str, envelope: QueryEnvelope,
     extra: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], int]:
+    request_root = args.documents_root / "requests"
+    binding = getattr(args, "_managed_binding", None)
+    if binding:
+        request_root = (args.documents_root / "inventors" / binding["inventor_id"] / "topics"
+                        / binding["topic_id"] / "runs" / args.run_id / "requests")
     private_contained_directory(
-        args.documents_root / "requests", documents_root, "manual web template directory", create=True,
+        request_root, documents_root, "manual web template directory", create=True,
     )
-    template_relative = (args.documents_root / "requests" / "manual-web-template.json").as_posix()
+    template_relative = (request_root / "manual-web-template.json").as_posix()
     template_path = contained_output(
-        args.documents_root / "requests" / "manual-web-template.json",
+        request_root / "manual-web-template.json",
         documents_root, "manual web template",
     )
     template = {"records": [{
@@ -1596,6 +1610,34 @@ def _report_command(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         return result.as_dict(), 0
 
 
+def _dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if args.command == "run":
+        payload, code = (
+            _run_start(args) if args.run_command == "start" else _run_inspect(args)
+        )
+    elif args.command == "research":
+        payload, code = _research(args)
+    elif args.command == "ideate":
+        payload, code = _ideate(args)
+    elif args.command == "shortlist":
+        payload, code = _shortlist(args)
+    elif args.command == "scaffold":
+        payload, code = _scaffold(args)
+    elif args.command == "audit":
+        payload, code = _audit(args)
+    elif args.command == "gate":
+        payload, code = _gate(args)
+    elif args.command in {"draft", "review", "validate", "share"}:
+        payload, code = _report_command(args)
+    elif args.command == "delete-run":
+        payload, code = _delete_run_command(args)
+    elif args.command == "profile" and args.profile_command in {"conflict-inspect", "conflict-decide"}:
+        payload, code = _profile_conflict(args)
+    else:
+        payload, code = _profile(args)
+    return payload, code
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     started_at = utc_now()
@@ -1608,30 +1650,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 started_at=started_at, ended_at=utc_now(), failure_code=None,
             ))
             return 0
-        if args.command == "run":
-            payload, code = (
-                _run_start(args) if args.run_command == "start" else _run_inspect(args)
-            )
-        elif args.command == "research":
-            payload, code = _research(args)
-        elif args.command == "ideate":
-            payload, code = _ideate(args)
-        elif args.command == "shortlist":
-            payload, code = _shortlist(args)
-        elif args.command == "scaffold":
-            payload, code = _scaffold(args)
-        elif args.command == "audit":
-            payload, code = _audit(args)
-        elif args.command == "gate":
-            payload, code = _gate(args)
-        elif args.command in {"draft", "review", "validate", "share"}:
-            payload, code = _report_command(args)
-        elif args.command == "delete-run":
-            payload, code = _delete_run_command(args)
-        elif args.command == "profile" and args.profile_command in {"conflict-inspect", "conflict-decide"}:
-            payload, code = _profile_conflict(args)
-        else:
-            payload, code = _profile(args)
+        from .managed import execute
+        payload, code = execute(args, _dispatch)
         emit(_cli_result(
             payload, args=args, started_at=started_at, ended_at=utc_now(), failure_code=None,
         ))

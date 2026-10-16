@@ -16,9 +16,13 @@ The run must already be `audit_approved` — the post-audit checkpoint resolved 
 first; `draft` stops on a stale or unresolved audit/decision, it does not raise or
 resolve the gate itself.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
-Author `workspace/requests/report-input-v2.json` (template in `workspace/README.md`).
+Author `RUN/requests/report-input-v2.json` (template in `workspace/README.md`).
 The report renders in English (`"language": "en"`, the default) or Korean
 (`"language": "ko"`); the legacy `report-input-v1` shape is accepted and means
 Korean. The core renders the eleven sections and the citation/decision bindings —
@@ -31,8 +35,8 @@ this wrapper never writes or edits `draft.md` or the report export.
    drafter identity, date, and questions):
 
 ```bash
-python3 -m patent_factory scaffold report --language en \
-  --out workspace/requests/report-input-v2.json
+python3 -m patent_factory scaffold report --run RUN --run-id RUN_ID --language en \
+  --out RUN/requests/report-input-v2.json
 ```
 1. Run the CLI verb.
 

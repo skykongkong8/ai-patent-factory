@@ -437,6 +437,8 @@ def _current_artifact(connection: sqlite3.Connection, run_id: str, kind: str) ->
 
 def _profile_field_category(field: str) -> str | None:
     normalized = normalize(field).casefold()
+    if normalized.startswith("topic."):
+        normalized = normalized.removeprefix("topic.")
     problem_markers = ("problem", "constraint", "challenge", "pain", "need", "opportunity")
     capability_markers = ("capability", "competenc", "skill", "expertise", "experience", "domain", "interest")
     if normalized == "project_summary" or any(marker in normalized for marker in problem_markers):
@@ -583,7 +585,9 @@ def run_ideation(
     authoritative_profile = profile_payload(profile_connection)
     if canonical_json(profile) != canonical_json(authoritative_profile):
         raise ValueError("profile_context: supplied export does not match authoritative profile database")
-    profile = authoritative_profile
+    from .contexts import resolve_pinned_profile
+
+    profile = resolve_pinned_profile(connection, profile_connection, run_id)
 
     state, _exports = _state_with_exports(connection, run_root, create_ideation=False)
     prior = state.snapshot(run_id)
@@ -608,13 +612,15 @@ def run_ideation(
         "WHERE ca.run_id=? AND ca.kind='profile_context' AND ar.stale=0",
         (run_id,),
     ).fetchone()
-    if (
-        existing_profile_context is not None
-        and canonical_json(json.loads(existing_profile_context["content_json"])) != canonical_json(profile_context_payload)
-    ):
-        raise ValueError("profile_context: current run is bound to a different profile revision")
+    if existing_profile_context is not None:
+        existing = json.loads(existing_profile_context["content_json"])
+        if existing.get("version") == "profile-context-v2":
+            profile_context_payload = existing
+        elif canonical_json(existing) != canonical_json(profile_context_payload):
+            raise ValueError("profile_context: current run is bound to a different profile revision")
     profile_context = state.add_revision(
-        run_id, "profile_context", profile_context_payload, schema_version="profile-context-v1",
+        run_id, "profile_context", profile_context_payload,
+        schema_version=profile_context_payload["version"],
     )
     ordered = tuple(sorted(candidates, key=lambda candidate: candidate.candidate_id))
     request_context = normalize({

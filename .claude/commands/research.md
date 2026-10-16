@@ -8,6 +8,10 @@ Bind your profile into a fresh run and collect bounded evidence. Follow `SETUP.m
 `CLAUDE.md`, `AGENTS.md`, and `.claude/skills/research/SKILL.md`. Do not read or
 summarize the source yourself — pass the user's paths to the local CLI.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
 Local source files live under `documents/` (e.g. `documents/kipris.xml` for a fixture,
@@ -15,8 +19,16 @@ or `documents/manual-results.json` for a manual import). See `documents/README.m
 
 ## Steps
 
-0. Start the run once — it binds your profile and enters `research_ready`. Omit
-   `--profile`/`--profile-database` to use the defaults.
+0. Select the intended inventor and topic IDs, then start the run once. It fixes
+   their active versions and enters `research_ready`; use the returned run path.
+
+```bash
+python3 -m patent_factory run start --inventor INVENTOR_ID --topic TOPIC_ID
+```
+
+For a legacy installation with no catalog, the existing portable bootstrap is
+still available. Once a catalog exists, explicitly adopt older data before a
+legacy write; use managed selection for new work.
 
 ```bash
 python3 -m patent_factory run start --run RUN --run-id RUN_ID --profile PROFILE --profile-database PROFILE_DATABASE
@@ -38,8 +50,10 @@ python3 -m patent_factory research kipris --run RUN --run-id RUN_ID --query QUER
 
 # Web evidence — agent searches out-of-band, then normalizes + imports offline
 python3 -m patent_factory research normalize-web documents/web-rows.json \
-  --out documents/normalized.json --allow-host HOST --source-type arxiv
-python3 -m patent_factory research manual documents/normalized.json \
+  --run RUN --run-id RUN_ID \
+  --out documents/inventors/INVENTOR_ID/topics/TOPIC_ID/runs/RUN_ID/normalized.json \
+  --allow-host HOST --source-type arxiv
+python3 -m patent_factory research manual documents/inventors/INVENTOR_ID/topics/TOPIC_ID/runs/RUN_ID/normalized.json \
   --run RUN --run-id RUN_ID --query QUERY --allow-host HOST
 ```
 

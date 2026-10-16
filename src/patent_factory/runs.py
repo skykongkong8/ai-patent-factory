@@ -119,8 +119,19 @@ def start_run(
         raise ValueError("run_start.run_id: non-empty string required")
     prepared = prepared_profile or prepare_run_profile(profile_connection, profile)
     profile_revision = prepared.revision
-    profile_hash = prepared.content_hash
     profile_context = prepared.context
+    context_version = profile_context.get("version", PROFILE_CONTEXT_VERSION)
+    if context_version == "profile-context-v2":
+        authoritative = prepare_run_profile(profile_connection, profile)
+        if (prepared.revision != authoritative.revision
+                or canonical_json(profile_context.get("profile")) != canonical_json(profile)
+                or profile_context.get("profile_revision_id") != authoritative.revision):
+            raise ValueError("run_start: prepared context does not match authoritative profile")
+        if (prepared.content_hash != digest(profile_context)
+                or profile_context.get("profile_revision_hash") != authoritative.content_hash):
+            raise ValueError("run_start: prepared context hash does not match profile binding")
+        assert_canaries_absent(profile_context, credential_canaries(), boundary="run_start.profile_context")
+    profile_hash = digest(profile_context) if context_version == "profile-context-v2" else prepared.content_hash
 
     state, exports = _state(connection, run_root)
     try:
@@ -150,7 +161,7 @@ def start_run(
         reason="profile context registered and research enabled",
         operation="run.start.profile_context", idempotency_key=identity,
         artifact_kind="profile_context", artifact_content=profile_context,
-        artifact_schema_version=PROFILE_CONTEXT_VERSION, evidence_hashes=(profile_hash,),
+        artifact_schema_version=context_version, evidence_hashes=(profile_hash,),
         export_directory=exports, fault_at=_fault(fault_at, "profile_context"),
     )
     if published.artifact is None:

@@ -12,12 +12,22 @@ exports are performed only by the Python core.
 - Only the `help/version` probes are intentionally plain text. Every other command
   result, and any missing or invalid argument, is a single JSON object on stdout
   carrying `schema_version: cli-result-v1` and `envelope_version: cli-envelope-v1`.
-- Do not read the SQLite databases or the immutable exports under `workspace/`
-  directly to guess or modify state.
+- Do not read the catalog, profile, or run SQLite databases or immutable exports
+  under `workspace/` directly to guess or modify state.
 - Do not create state, gates, reports, reviews, validations, or share receipts with
   SQL, arbitrary scripts, or file copy/move operations.
 - Every input uses a relative, non-symlink path under the configured documents root;
   every run and input contract uses one under the configured workspace root.
+
+## Inventor and run selection
+
+For setup, replacement, topic selection, managed runs, or older data, follow
+[the inventor-management guide](docs/inventor-management.md). Select core-issued
+inventor/topic IDs; clarify duplicate names before mutation. Use only the run's
+fixed context and keep workspace requests beneath its `requests/` directory.
+Setup can prepare the selected topic but never starts a run; only an explicit
+research request does. Return selected IDs, version IDs, and core-returned paths
+so a fresh session can resume the same scope.
 
 ## Gate handling
 
@@ -73,7 +83,7 @@ unless the state is `reviewed`; on `revision_required`, return to drafting.
 Clean up private runs only with the safe core command. It takes no `run-id`.
 
 ```bash
-python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace
+python3 -m patent_factory delete-run --run RUN --workspace-root workspace
 ```
 
 Preserve the partial-failure/status from the deletion JSON. Do not directly delete

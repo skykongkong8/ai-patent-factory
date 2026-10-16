@@ -42,7 +42,7 @@ on these rather than treating non-zero as failure:
 
 | Code | Meaning | What to do |
 | ---: | --- | --- |
-| `0` | The operation completed. | Continue to the next stage. |
+| `0` | The operation completed. | Report completion; the next workflow stage needs an explicit request. |
 | `2` | Invalid input, unsafe path, or a validation error. `status` is `error` and `failure_code` names the class. | Fix the input and re-run. Nothing was written. |
 | `3` | `conflict_resolution_required` — a profile batch conflicts with existing facts. | Resolve with `profile conflict-inspect` / `conflict-decide`. Never bypass. |
 | `4` | The stage ran but did not reach its complete state (e.g. research `incomplete`). | Read `status`, `next_state`, and `incomplete_reason`. This is recoverable, not a dead end — see below. |
@@ -67,47 +67,36 @@ evidence.
   root. Absolute paths, `..`, symlinks (root, intermediate, or target),
   non-regular files, and documents larger than 2,000,000 bytes are rejected.
 
-## Profile — three input paths
+## Inventors, profiles, and topics
 
-Choose exactly one path. All three write the authoritative
-`workspace/profile.sqlite3` and regenerate the deterministic `workspace/profile.json`
-export.
-
-```bash
-# 1. Ingest a whole folder (UTF-8 .md/.txt/.json, in name order)
-python3 -m patent_factory profile folder documents
-
-# 2. Ingest a single document
-python3 -m patent_factory profile document documents/background.md
-
-# 3. Interview — interactive in a terminal…
-python3 -m patent_factory profile interview
-
-#    …or reproducible from a scripted response file (kept under documents/)
-cp examples/redacted/interview.json documents/interview.json
-python3 -m patent_factory profile interview --responses documents/interview.json
-```
-
-Input formats: text documents use `field: value` lines; JSON is a plain object or
-a `{"facts": [...]}` array. Document-derived items are `source_fact`; interview
-answers are `user_statement`. Re-running the same input does **not** duplicate
-batches, claims, or conflicts.
-
-Common options: `--documents-root`, `--workspace-root` (repository-relative roots),
-`--profile` (default `WORKSPACE_ROOT/profile.json`), `--database` (default
-`WORKSPACE_ROOT/profile.sqlite3`).
-
-### Conflicts
-
-If any single item in a batch conflicts with an existing value, the whole
-transaction records only the conflict batch, conflict records, and state, applies
-**no** canonical or compatible facts, and exits with code 3
-(`conflict_resolution_required`). Resolve it explicitly — never bypass it:
+Follow [the inventor-management guide](docs/inventor-management.md) for identity
+selection, input ownership, version replacement, conflicts, archives, and legacy
+adoption. The managed path starts by selecting or creating an inventor ID:
 
 ```bash
-python3 -m patent_factory profile conflict-inspect --batch-id BATCH_ID
-python3 -m patent_factory profile conflict-decide  --batch-id BATCH_ID --input DECISION_JSON
+python3 -m patent_factory inventor list --name "Example Inventor"
+python3 -m patent_factory inventor create --name "Example Inventor"
+python3 -m patent_factory profile document documents/background.md --inventor INVENTOR_ID
 ```
+
+Choose exactly one `profile document SOURCE`, `profile folder SOURCE`, or
+`profile interview --responses FILE` route. Append `--replace` to publish only the
+new input's facts as a fresh active version; earlier versions and runs remain.
+Default ingestion enriches from the active version. Conflicted or failed
+candidates do not activate. Managed interviews require an explicit response file.
+Input formats and limits are in [documents/README.md](documents/README.md).
+
+```bash
+python3 -m patent_factory topic create --inventor INVENTOR_ID --name "센서 보정" --tag "센서"
+python3 -m patent_factory topic document documents/topic.md --inventor INVENTOR_ID --topic TOPIC_ID
+```
+
+`inventor list|status` and `topic list|status` return metadata, including versions.
+Select IDs explicitly when names repeat. Custom root options must be passed
+consistently on each CLI call. Existing global-profile calls remain available only
+before managed catalog creation; once it exists, assign legacy data explicitly
+before a legacy write. The guide explains the read-only inspection and adoption
+commands.
 
 ## Credentials (KIPRIS Plus)
 
@@ -124,29 +113,29 @@ python3 scripts/check_credentials.py --check-name KIPRIS_PLUS_API_KEY --fixture-
 ## Research
 
 Research operates only on a run directory already bootstrapped to `research_ready`.
-`run start` binds an authoritative profile into a fresh run (omit `--profile` /
-`--profile-database` to use the defaults):
+`run start` fixes the selected inventor profile and topic versions in a fresh
+managed run. Both need active versions:
 
 ```bash
 python3 -m patent_factory run start \
-  --run workspace/runs/example --run-id example \
-  --profile workspace/profile.json --profile-database workspace/profile.sqlite3
+  --inventor INVENTOR_ID --topic TOPIC_ID --run-id example
 ```
 
-Then run one bounded operation. `fixture` is the offline acceptance path; `manual`
+Use the returned run path as `RUN` below (or a cataloged `--run-id` alone), then
+run one bounded operation. `fixture` is the offline acceptance path; `manual`
 imports user-supplied, HTTPS-derived results and requires an explicit
 `--allow-host`:
 
 ```bash
 python3 -m patent_factory research fixture documents/kipris.xml \
-  --run workspace/runs/example --run-id example --query 센서
+  --run RUN --run-id example --query 센서
 
 python3 -m patent_factory research manual documents/manual-results.json \
-  --run workspace/runs/example --run-id example --query 센서 --allow-host example.com
+  --run RUN --run-id example --query 센서 --allow-host example.com
 
 # Live KIPRIS — credentialed multi-keyword batch (Korean/English expansions)
 python3 -m patent_factory research kipris \
-  --run workspace/runs/example --run-id example \
+  --run RUN --run-id example \
   --query 센서 --korean-synonym 감지기 --english-synonym sensor
 ```
 
@@ -157,6 +146,10 @@ research session. Every expansion kind is sent as the same free-text `word=`
 term — these are **query expansions, not fielded searches**; KIPRIS
 `getWordSearch` accepts no per-field parameter, so `--classification G06N
 3/04` is a text match, not an IPC lookup.
+
+For a managed owner assertion on `research kipris`, use
+`--inventor-id INVENTOR_ID`. Its repeatable `--inventor NAME` option retains the
+query-expansion meaning and also accepts `--inventor-term NAME`.
 
 By default each planned term fetches exactly one page (`--result-budget`,
 default 30, is a single KIPRIS page: `min(30, --result-budget)` rows), so the
@@ -290,28 +283,24 @@ Operator-facing consequences:
 ## Ideation workbench
 
 `/ideate` now starts with a non-authoritative workbench under
-`workspace/requests/ideation/RUN_ID/`. Scaffold the minimized brief first, then run
+`RUN/requests/ideation/`. Scaffold the minimized brief first, then run
 three read-only validation stages before publishing promoted candidates:
 
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+  --out RUN/requests/ideation/brief-v1.json
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage diverge
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage entangle
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage promote
 ```
 
@@ -333,55 +322,51 @@ byte-identical promoted candidate content is a hard `StateError`, not a silent r
 
 ## Full pipeline verbs
 
-Each stage below takes a versioned `*-input-v1.json` you author under
-`workspace/requests/` (templates and field notes in
+Each stage below takes a versioned request you author under the selected run
+path, `RUN/requests/` (templates and field notes in
 [`workspace/README.md`](workspace/README.md); JSON Schemas in `schemas/`). The core
 validates the input, binds hashes to prior stages, and records state — it never
-trusts a hand-copied export.
+trusts a hand-copied export. All managed scaffolds, including `scaffold report`,
+need the selected run scope and an explicit `--out` beneath `RUN/requests/`.
 
 ```bash
 # Divergence-first ideation workbench, then candidates and finalists
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+  --out RUN/requests/ideation/brief-v1.json
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage diverge
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage entangle
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database workspace/profile.sqlite3 \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage promote
 python3 -m patent_factory ideate    --run RUN --run-id RUN_ID \
-  --profile workspace/profile.json --profile-database workspace/profile.sqlite3 \
-  --input workspace/requests/ideation/RUN_ID/promoted/candidate-input-v1.json
+  --input RUN/requests/ideation/promoted/candidate-input-v1.json
 python3 -m patent_factory shortlist --run RUN --run-id RUN_ID \
-  --input workspace/requests/shortlist-input-v1.json
+  --input RUN/requests/shortlist-input-v1.json
 
 # Finalist similarity audit (per-finalist KIPRIS groups; scorer simrisk-v1.0.0)
 python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
-  --query-input workspace/requests/audit-query-input-v1.json \
+  --query-input RUN/requests/audit-query-input-v1.json \
   --fixture-manifest documents/requests/audit-fixture-manifest-v1.json
 # …or live retrieval with the credentialed adapter (no fixture manifest):
 python3 -m patent_factory audit retrieve --run RUN --run-id RUN_ID \
-  --query-input workspace/requests/audit-query-input-v1.json --live
+  --query-input RUN/requests/audit-query-input-v1.json --live
 python3 -m patent_factory audit score    --run RUN --run-id RUN_ID \
-  --feature-input workspace/requests/feature-map-set-input-v1.json
+  --feature-input RUN/requests/feature-map-set-input-v1.json
 
 # Post-audit checkpoint — ALWAYS raised, clean or breaching (exit 8). Scaffold a
 # pre-filled gate-decision-input-v2 draft (judgment fields left TODO(agent));
 # the user completes action/reason/per-finalist feedback (and, on re_research,
 # a bounded plan) before gate decide.
 python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
-  --gate-id GATE_ID --out workspace/requests/gate-decision-input-v2.json
+  --gate-id GATE_ID --out RUN/requests/gate-decision-input-v2.json
 
 # One exact gate (read-only inspect; decide needs a user-authored decision input).
 # Legacy gate kinds (credential, coverage, domain_pivot, sensitive_disclosure,
@@ -390,23 +375,23 @@ python3 -m patent_factory scaffold gate-decision --run RUN --run-id RUN_ID \
 # gate-decision-input-v2 and rejects v1 outright, and vice versa.
 python3 -m patent_factory gate inspect --run RUN --run-id RUN_ID --gate-id GATE_ID
 python3 -m patent_factory gate decide  --run RUN --run-id RUN_ID --gate-id GATE_ID \
-  --input workspace/requests/gate-decision-input-v1.json
+  --input RUN/requests/gate-decision-input-v1.json
 python3 -m patent_factory gate decide  --run RUN --run-id RUN_ID --gate-id GATE_ID \
-  --input workspace/requests/gate-decision-input-v2.json
+  --input RUN/requests/gate-decision-input-v2.json
 
 # Report → independent review → deterministic validate
 python3 -m patent_factory draft    --run RUN --run-id RUN_ID \
-  --input workspace/requests/report-input-v1.json
+  --input RUN/requests/report-input-v1.json
 python3 -m patent_factory review   --run RUN --run-id RUN_ID \
-  --input workspace/requests/review-input-v1.json
+  --input RUN/requests/review-input-v1.json
 python3 -m patent_factory validate --run RUN --run-id RUN_ID
 
 # Guarded external share (add --decision-id only after the core issues one)
 python3 -m patent_factory share --run RUN --run-id RUN_ID \
-  --input workspace/requests/external-report-share-v1.json
+  --input RUN/requests/external-report-share-v1.json
 
 # Safe run deletion (takes no --run-id; preserves partial-failure status)
-python3 -m patent_factory delete-run --run workspace/runs/RUN --workspace-root workspace
+python3 -m patent_factory delete-run --run RUN --workspace-root workspace
 ```
 
 Gate rule for every stage: `*_required`, `coverage_insufficient`,

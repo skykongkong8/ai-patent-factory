@@ -15,12 +15,18 @@ relevant helper. The Python JSON CLI owns state, gates, and exports.
    repository contract. Read the selected skill's linked shared command. Resolve
    its helper references using the table below, including references phrased as
    an "installed" skill; local migrated copies are not procedure authorities.
-3. Use paths, run ID, input mode, and other choices already supplied by the user
+3. For inventor/profile/topic setup, replacement, or legacy adoption, follow
+   [inventor management](../docs/inventor-management.md). Select the inventor and
+   topic IDs explicitly; preserve candidate IDs on conflicts. Setup may prepare
+   topic context but never starts a run.
+   Use paths, run ID, input mode, and other choices already supplied by the user
    or established in this session. For setup with a document path, choose the
    document route directly. When a required choice is absent or several runs or
    inputs are plausible, ask for that choice before mutation. Never select every
    file under `documents/` merely because no input was specified.
-4. For an existing run, inspect it with
+4. For an existing run, use its fixed profile/topic versions and keep every
+   workspace request or workbench beneath `RUN/requests/`. Scaffolds, including
+   report scaffolding, need the same run scope. Inspect it with
    `python3 -m patent_factory run status --run RUN --run-id RUN_ID` before a
    mutation. Let the CLI enforce prerequisites; if an earlier stage is needed,
    report the required stage and stop. Only research bootstraps a user-requested
@@ -30,7 +36,8 @@ relevant helper. The Python JSON CLI owns state, gates, and exports.
    shared helper suggests reading an immutable export or continuing elsewhere:
    use `run status`, `run show`, or `gate inspect` for supported read-only access,
    and stop with the limitation when the required current artifact is unavailable.
-6. Return the core's `status` and `next_state`, the selected run/path, any output
+6. Return the core's `status` and `next_state`, the selected inventor/topic and
+   version IDs, candidate ID when present, run ID/path, any output
    paths and limitations, and the next explicit Codex call. Preserve any
    `gate_id`, `subject_revision_hash`, `actions`, and `next_state` exactly as
    returned. End the invocation; a suggestion is not an execution request.

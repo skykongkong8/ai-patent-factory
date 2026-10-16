@@ -8,11 +8,15 @@ Run an independent reviewer pass, then deterministic validation, then (optionall
 guarded external share. Follow `.claude/skills/patent-review/SKILL.md`. The reviewer's
 identity and pass must differ from the drafter's.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where you provide input
 
-- `workspace/requests/review-input-v1.json` — reviewer identity ≠ drafter; `report_hash`
+- `RUN/requests/review-input-v1.json` — reviewer identity ≠ drafter; `report_hash`
   from the `/draft` output; all seven checks present.
-- `workspace/requests/external-report-share-v1.json` — only if sharing externally.
+- `RUN/requests/external-report-share-v1.json` — only if sharing externally.
 
 Templates are in `workspace/README.md`.
 

@@ -6,8 +6,11 @@ stage reads. `/setup` (and the raw `profile` verbs) read from here to build your
 inventor profile.
 
 Everything under this folder **except this README is git-ignored**, so your private
-text is never committed. It is safe to re-run `/setup` as you add files — the core
-merges idempotently and stops at a conflict gate instead of overwriting anything.
+text is never committed. Managed setup records owned input snapshots and publishes
+profile/topic versions.
+Follow [inventor management](../docs/inventor-management.md) for IDs, replacement,
+conflicts, retained inputs, and explicit assignment of older files. Select the
+exact source; the core keeps the original in place and returns snapshot paths.
 
 ## Supported formats
 
@@ -24,14 +27,14 @@ file **under 2,000,000 bytes**.
 
 ## What each `/setup` path reads
 
-- **Folder** (`profile folder documents`) — ingests every supported file in the
-  folder, in filename order. Use this once your notes are organized. Items ingested
+- **Folder** (`profile folder documents/my-background --inventor INVENTOR_ID`) —
+  ingests every supported file in the folder, in filename order. Use this once your notes are organized. Items ingested
   from documents are recorded as `source_fact`.
-- **Document** (`profile document documents/background.md`) — ingests a single file.
-  Good for adding one new source.
-- **Interview** (`profile interview`) — asks questions in the terminal; answers are
-  recorded as `user_statement`. For a reproducible run, provide a scripted response
-  file (see below).
+- **Document** (`profile document documents/background.md --inventor INVENTOR_ID`)
+  — ingests a single file. Good for adding one new source.
+- **Interview** (`profile interview --responses FILE --inventor INVENTOR_ID`) —
+  reads scripted responses as `user_statement`. Managed setup requires the
+  response file below.
 
 ### Text / Markdown example (`field: value`)
 
@@ -59,7 +62,7 @@ It is a flat JSON object of `field: answer`:
 ```bash
 cp examples/redacted/interview.json documents/interview.json
 # then run /setup and choose the interview path, or:
-python3 -m patent_factory profile interview --responses documents/interview.json
+python3 -m patent_factory profile interview --responses documents/interview.json --inventor INVENTOR_ID
 ```
 
 ## Local source files for research / audit
@@ -72,7 +75,11 @@ live under this root), for example:
   import.
 - `documents/requests/audit-fixture-manifest-v1.json` — the fixture manifest for `/audit`.
 
-Naming is up to you; the command asks for the exact path.
+Use the intended inventor/topic's owned input directory or explicitly select an
+unassigned source for import. The core rejects another inventor's managed input.
+Do not edit retained snapshots to change historical context; ingest a new input
+version instead. Run-generated manual-import templates use the owner-scoped path
+returned by the CLI.
 
 ## Privacy
 

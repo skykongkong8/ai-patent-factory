@@ -11,12 +11,16 @@ shortlist. Follow the installed `ideation` skill. Do not load
 private source, profile, evidence spans, or workbench briefs into hosted model
 context without a current exact egress approval.
 
+Use the selected run's fixed inventor/topic context and request paths from
+[the inventor-management guide](../../docs/inventor-management.md). Report its
+IDs and versions with the stage result.
+
 ## Where work happens
 
-Use a run-local workbench under `workspace/requests/ideation/RUN_ID/`:
+Use a run-local workbench under `RUN/requests/ideation/`:
 
 ```text
-workspace/requests/ideation/RUN_ID/
+RUN/requests/ideation/
   brief-v1.json
   history/
   sessions/SESSION_ID/
@@ -43,8 +47,7 @@ and stop at its checkpoint; resume the next stage in a fresh invocation.
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database PROFILE_DATABASE \
-  --out workspace/requests/ideation/RUN_ID/brief-v1.json
+  --out RUN/requests/ideation/brief-v1.json
 ```
 
    The private brief deliberately contains identifiers and hashes, not profile
@@ -64,8 +67,7 @@ python3 -m patent_factory scaffold ideation-workbench \
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database PROFILE_DATABASE \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage diverge
 ```
 
@@ -78,8 +80,7 @@ python3 -m patent_factory scaffold ideation-workbench \
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database PROFILE_DATABASE \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage entangle
 ```
 
@@ -88,9 +89,8 @@ python3 -m patent_factory scaffold ideation-workbench \
 ```bash
 python3 -m patent_factory scaffold candidate \
   --run RUN --run-id RUN_ID \
-  --profile-database PROFILE_DATABASE \
   --count COUNT \
-  --out workspace/requests/ideation/RUN_ID/promoted/candidate-input-v1.json
+  --out RUN/requests/ideation/promoted/candidate-input-v1.json
 ```
 
    Fill `promoted/candidate-input-v1.json`, then author
@@ -106,8 +106,7 @@ python3 -m patent_factory scaffold candidate \
 ```bash
 python3 -m patent_factory scaffold ideation-workbench \
   --run RUN --run-id RUN_ID \
-  --profile-database PROFILE_DATABASE \
-  --validate workspace/requests/ideation/RUN_ID \
+  --validate RUN/requests/ideation \
   --stage promote
 ```
 
@@ -120,9 +119,7 @@ python3 -m patent_factory scaffold ideation-workbench \
 ```bash
 python3 -m patent_factory ideate \
   --run RUN --run-id RUN_ID \
-  --profile PROFILE \
-  --profile-database PROFILE_DATABASE \
-  --input workspace/requests/ideation/RUN_ID/promoted/candidate-input-v1.json
+  --input RUN/requests/ideation/promoted/candidate-input-v1.json
 ```
 
 8. Report the stdout JSON `status`/`next_state` verbatim. On success, suggest
